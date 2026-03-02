@@ -766,7 +766,7 @@
 
           <div class="checkbox-row">
             <input type="checkbox" id="cell-use-polygon">
-            <label for="cell-use-polygon">Also filter specific IDs by polygon area</label>
+            <label for="cell-use-polygon">Search globally (ignore polygon area)</label>
           </div>
         </div>
 
@@ -1643,8 +1643,8 @@ function getRawSQL() {
 
     let conditions = [];
 
-    // Add polygon filter if no specific IDs OR if usePolygon is checked
-    if (hasPolygons && (!hasSpecificIds || cellUsePolygon)) {
+    // Always apply polygon filter when drawn (unless "search globally" is checked)
+    if (hasPolygons && !cellUsePolygon) {
       polygons.forEach((p, idx) => {
         const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
         const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
@@ -1982,8 +1982,8 @@ function buildSelectQueryForMap() {
     const hasSpecificIds = enbList.length > 0 || ciList.length > 0;
     const hasPolygons = polygons.length > 0;
 
-    // Add polygon filter if no specific IDs OR if usePolygon is checked
-    if (hasPolygons && (!hasSpecificIds || cellUsePolygon)) {
+    // Always apply polygon filter when drawn (unless "search globally" is checked)
+    if (hasPolygons && !cellUsePolygon) {
       polygons.forEach((p, idx) => {
         const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
         const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
@@ -2290,8 +2290,8 @@ function generateCellSearchSQL() {
 
   let conditions = [];
 
-  // Add polygon filter if no specific IDs OR if usePolygon is checked
-  if (hasPolygons && (!hasSpecificIds || usePolygon)) {
+  // Always apply polygon filter when drawn (unless "search globally" is checked)
+  if (hasPolygons && !usePolygon) {
     polygons.forEach((p, idx) => {
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pointInPolygon = `<span class="function">pointInPolygon</span>(${geoCol}, [${polyPoints}])`;
