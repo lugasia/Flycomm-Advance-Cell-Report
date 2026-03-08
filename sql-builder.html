@@ -67,35 +67,11 @@
       color: var(--sub);
     }
 
-    .nav-links {
-      display: flex;
-      gap: 10px;
-      margin-top: 18px;
-    }
-    .nav-link {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      color: var(--text);
-      text-decoration: none;
-      font-size: 14px;
-      font-weight: 500;
-      padding: 12px 20px;
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 10px;
-      transition: all 0.15s;
-      flex: 1;
-    }
-    .nav-link:hover {
-      background: var(--accent);
-      border-color: var(--accent);
-      color: #fff;
-    }
-    .nav-link .material-icons {
-      font-size: 20px;
-    }
+    #nav-links { padding: 10px; border-top: 1px solid var(--border); display: flex; gap: 6px; flex-shrink: 0; background: var(--dark); }
+    #nav-links a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; flex-direction: column; padding: 7px 3px; border-radius: 8px; border: 1px solid var(--border); color: var(--sub); text-decoration: none; font-size: 10px; font-weight: 500; transition: all 0.2s; text-align: center; }
+    #nav-links a .material-icons { font-size: 17px; }
+    #nav-links a:hover { border-color: var(--accent); background: rgba(59,130,246,0.1); color: var(--text); }
+    #nav-links a.current { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
 
     #sb-body {
       flex: 1;
@@ -368,6 +344,73 @@
       border-color: var(--accent);
     }
 
+    .save-btn {
+      position: absolute;
+      top: 10px;
+      right: 80px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--sub);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      cursor: pointer;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .save-btn:hover {
+      color: var(--text);
+      background: var(--dark);
+      border-color: var(--green);
+    }
+
+    .saved-query-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      background: var(--dark);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      transition: border-color 0.15s;
+    }
+    .saved-query-item:hover { border-color: var(--accent); }
+    .saved-query-item .sq-name {
+      flex: 1;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .sq-load-btn {
+      background: rgba(59,130,246,0.15);
+      border: 1px solid rgba(59,130,246,0.3);
+      color: var(--accent);
+      padding: 4px 10px;
+      border-radius: 5px;
+      font-size: 11px;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .sq-load-btn:hover { background: rgba(59,130,246,0.3); }
+    .sq-del-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 2px 4px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .sq-del-btn:hover { color: var(--red); }
+    #sq-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 16px 0; }
+
     /* Stats bar */
     #stats-bar {
       padding: 12px 20px;
@@ -379,34 +422,17 @@
       justify-content: space-between;
     }
 
-    /* Connection status */
-    .connection-status {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      border-radius: 6px;
-      font-size: 12px;
-      margin-bottom: 12px;
-    }
-    .connection-status.disconnected {
-      background: rgba(239, 68, 68, 0.1);
-      color: var(--red);
-    }
-    .connection-status.connected {
-      background: rgba(16, 185, 129, 0.1);
-      color: var(--green);
-    }
-    .connection-status.connecting {
-      background: rgba(251, 191, 36, 0.1);
-      color: var(--orange);
-    }
-    .status-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: currentColor;
-    }
+    /* Connection bar (workbench-style) */
+    .sb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--sub); margin-bottom: 7px; }
+    #conn-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); cursor: pointer; background: rgba(255,255,255,0.02); transition: all 0.15s; }
+    #conn-bar:hover { border-color: rgba(59,130,246,0.4); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sub); flex-shrink: 0; transition: background 0.3s; }
+    .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .conn-dot.connecting { background: var(--orange); }
+    #conn-panel { display: none; padding: 12px; margin-top: 8px; background: var(--dark); border-radius: 8px; border: 1px solid var(--border); }
+    #conn-panel.open { display: block; }
+    .field-label { font-size: 11px; color: var(--sub); margin-bottom: 4px; margin-top: 10px; }
+    .field-label:first-child { margin-top: 0; }
 
     /* Results table */
     #results-section {
@@ -680,54 +706,34 @@
 
 <aside id="sidebar">
   <div id="sb-header">
+    <img src="fcic copy.png" alt="FCIC" style="height:32px;object-fit:contain;opacity:0.85;display:block;margin-bottom:8px;">
     <h1><span class="material-icons">polyline</span> SQL Builder</h1>
     <p>Draw polygons to generate ClickHouse SQL queries</p>
-    <div class="nav-links">
-      <a href="index.html" class="nav-link">
-        <span class="material-icons">map</span>
-        Signal Map
-      </a>
-      <a href="anomaly-detector.html" class="nav-link">
-        <span class="material-icons">radar</span>
-        TAC Detector
-      </a>
-    </div>
   </div>
 
   <div id="sb-body">
     <!-- Database Connection -->
     <div class="section">
-      <h3><span class="material-icons">database</span> Database Connection</h3>
-      <div class="section-content">
-        <div id="connection-status" class="connection-status disconnected">
-          <span class="status-dot"></span>
-          <span id="status-text">Not connected</span>
-        </div>
-
-        <label class="field">Host</label>
-        <input type="text" id="db-host" value="vusqo3wrfh.us-east-2.aws.clickhouse.cloud" placeholder="your-instance.clickhouse.cloud">
-
-        <label class="field">Database</label>
-        <input type="text" id="db-name" value="default" placeholder="default">
-
-        <label class="field">Username</label>
+      <div class="sb-label">Database</div>
+      <div id="conn-bar" onclick="toggleConnPanel()">
+        <div class="conn-dot" id="conn-dot"></div>
+        <span id="conn-label">Not connected — click to configure</span>
+        <span class="material-icons" style="font-size:16px;color:var(--sub);margin-left:auto">settings</span>
+      </div>
+      <div id="conn-panel">
+        <div class="field-label">Host</div>
+        <input type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+        <div class="field-label">Port</div>
+        <input type="text" id="db-port" placeholder="8443" style="width:100px">
+        <div class="field-label">Database</div>
+        <input type="text" id="db-name" value="default">
+        <div class="field-label">Username</div>
         <input type="text" id="db-user" placeholder="default">
-
-        <label class="field">Password</label>
+        <div class="field-label">Password</div>
         <input type="password" id="db-pass" placeholder="••••••••">
-
-        <div class="checkbox-row">
-          <input type="checkbox" id="save-creds" checked>
-          <label for="save-creds">Remember credentials locally</label>
-        </div>
-
-        <div class="btn-row">
-          <button class="btn btn-secondary" onclick="testConnection()">
-            <span class="material-icons" style="font-size:16px">sync</span>
-            Test Connection
-          </button>
-          <button class="btn btn-danger" onclick="clearCredentials()" style="padding:10px 12px" title="Clear saved credentials">
-            <span class="material-icons" style="font-size:16px">delete</span>
+        <div style="margin-top:10px">
+          <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+            <span class="material-icons" style="font-size:14px">sync</span> Test Connection
           </button>
         </div>
       </div>
@@ -912,6 +918,9 @@
       <h3><span class="material-icons">code</span> Generated SQL</h3>
       <div class="section-content">
         <div class="sql-wrap">
+          <button class="save-btn" onclick="saveQuery()">
+            <span class="material-icons" style="font-size:14px;vertical-align:middle">bookmark</span> Save
+          </button>
           <button class="copy-btn" onclick="copySQL()">
             <span class="material-icons" style="font-size:14px;vertical-align:middle">content_copy</span> Copy
           </button>
@@ -960,11 +969,30 @@
         </div>
       </div>
     </div>
+
+    <!-- Saved Queries -->
+    <div class="section">
+      <h3><span class="material-icons">bookmarks</span> Saved Queries</h3>
+      <div class="section-content">
+        <div id="saved-queries-list">
+          <div id="sq-empty">No saved queries yet.<br>Click <strong>Save</strong> after generating a query.</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div id="stats-bar">
     <span id="polygon-count">0 polygons drawn</span>
     <span id="points-count">0 points affected</span>
+  </div>
+
+  <div id="nav-links">
+    <a href="index.html"><span class="material-icons">map</span>Signal Map</a>
+    <a href="sql-builder.html" class="current"><span class="material-icons">polyline</span>SQL Builder</a>
+    <a href="anomaly-detector.html"><span class="material-icons">radar</span>TAC Detector</a>
+    <a href="anomaly-workbench.html"><span class="material-icons">biotech</span>Workbench</a>
+    <a href="roaming-report.html"><span class="material-icons">flight</span>Roaming</a>
+    <a href="db-dashboard.html"><span class="material-icons">dashboard</span>Dashboard</a>
   </div>
 </aside>
 
@@ -1182,82 +1210,69 @@ function populateMccDropdowns() {
 
 const CREDS_KEY = 'clickhouse_credentials';
 
-function getConnectionConfig() {
-  return {
-    host: document.getElementById('db-host').value.trim(),
-    database: document.getElementById('db-name').value.trim() || 'default',
-    user: document.getElementById('db-user').value.trim(),
-    password: document.getElementById('db-pass').value
-  };
+function toggleConnPanel() {
+  document.getElementById('conn-panel').classList.toggle('open');
+}
+
+function setConnStatus(state, label) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = 'conn-dot ' + state;
+  lbl.textContent = label;
+  isConnected = (state === 'connected');
+  const executeBtn = document.getElementById('execute-btn');
+  if (executeBtn) executeBtn.disabled = !isConnected;
 }
 
 function saveCredentials() {
-  if (!document.getElementById('save-creds').checked) return;
-
-  const config = getConnectionConfig();
-  // Encode password in base64 (not secure, but better than plain text)
-  const creds = {
-    host: config.host,
-    database: config.database,
-    user: config.user,
-    password: btoa(config.password)
+  const c = {
+    host: document.getElementById('db-host').value.trim(),
+    port: document.getElementById('db-port').value.trim() || '8443',
+    database: document.getElementById('db-name').value.trim() || 'default',
+    user: document.getElementById('db-user').value.trim(),
+    password: btoa(document.getElementById('db-pass').value)
   };
-  localStorage.setItem(CREDS_KEY, JSON.stringify(creds));
+  localStorage.setItem(CREDS_KEY, JSON.stringify(c));
 }
 
 function loadCredentials() {
   const saved = localStorage.getItem(CREDS_KEY);
   if (!saved) return;
-
   try {
-    const creds = JSON.parse(saved);
-    if (creds.host) document.getElementById('db-host').value = creds.host;
-    if (creds.database) document.getElementById('db-name').value = creds.database;
-    if (creds.user) document.getElementById('db-user').value = creds.user;
-    if (creds.password) document.getElementById('db-pass').value = atob(creds.password);
-  } catch (e) {
-    console.warn('Failed to load saved credentials:', e);
-  }
+    const c = JSON.parse(saved);
+    if (c.host)     document.getElementById('db-host').value = c.host;
+    if (c.port)     document.getElementById('db-port').value = c.port;
+    if (c.database) document.getElementById('db-name').value = c.database;
+    if (c.user)     document.getElementById('db-user').value = c.user;
+    if (c.password) document.getElementById('db-pass').value = atob(c.password);
+    if (c.host && c.user && c.password) testConnection(true);
+  } catch (e) {}
 }
 
 function clearCredentials() {
   localStorage.removeItem(CREDS_KEY);
   document.getElementById('db-user').value = '';
   document.getElementById('db-pass').value = '';
-  updateConnectionStatus('disconnected', 'Credentials cleared');
-}
-
-function updateConnectionStatus(status, message) {
-  const statusEl = document.getElementById('connection-status');
-  const textEl = document.getElementById('status-text');
-  const executeBtn = document.getElementById('execute-btn');
-
-  statusEl.className = `connection-status ${status}`;
-  textEl.textContent = message;
-
-  if (status === 'connected') {
-    isConnected = true;
-    executeBtn.disabled = false;
-  } else {
-    isConnected = false;
-    executeBtn.disabled = true;
-  }
+  setConnStatus('', 'Not connected — click to configure');
 }
 
 async function executeClickHouseQuery(query, format = 'JSON') {
-  const config = getConnectionConfig();
+  const host = document.getElementById('db-host').value.trim();
+  const port = document.getElementById('db-port').value.trim() || '8443';
+  const db   = document.getElementById('db-name').value.trim() || 'default';
+  const user = document.getElementById('db-user').value.trim();
+  const pass = document.getElementById('db-pass').value;
 
-  if (!config.host || !config.user || !config.password) {
+  if (!host || !user || !pass) {
     throw new Error('Please fill in all connection fields');
   }
 
-  // Build URL with HTTPS (ClickHouse Cloud uses port 443)
-  const url = `https://${config.host}/?database=${encodeURIComponent(config.database)}&default_format=${format}`;
+  const url = `https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=${format}`;
 
   const response = await fetch(url, {
     method: 'POST',
     headers: {
-      'Authorization': 'Basic ' + btoa(`${config.user}:${config.password}`),
+      'Authorization': 'Basic ' + btoa(`${user}:${pass}`),
       'Content-Type': 'text/plain'
     },
     body: query
@@ -1274,23 +1289,23 @@ async function executeClickHouseQuery(query, format = 'JSON') {
   return await response.text();
 }
 
-async function testConnection() {
-  updateConnectionStatus('connecting', 'Connecting...');
+async function testConnection(silent = false) {
+  setConnStatus('connecting', 'Connecting…');
 
   try {
     const result = await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
 
     if (result && result.data && result.data.length > 0) {
       const version = result.data[0].version || 'unknown';
-      updateConnectionStatus('connected', `Connected (v${version})`);
+      setConnStatus('connected', `Connected — ClickHouse v${version}`);
       saveCredentials();
     } else {
-      updateConnectionStatus('connected', 'Connected');
+      setConnStatus('connected', 'Connected');
       saveCredentials();
     }
   } catch (err) {
-    console.error('Connection error:', err);
-    updateConnectionStatus('disconnected', `Error: ${err.message.substring(0, 50)}`);
+    if (!silent) console.error('Connection error:', err);
+    setConnStatus('', `Error: ${err.message.substring(0, 50)}`);
   }
 }
 
@@ -2751,6 +2766,74 @@ function copySQL() {
     }, 2000);
   });
 }
+
+// ════════════════════════════════════════════════════════════════
+//  SAVED QUERIES
+// ════════════════════════════════════════════════════════════════
+
+const SAVED_QUERIES_KEY = 'fcic_sql_saved_queries';
+
+function getSavedQueries() {
+  try { return JSON.parse(localStorage.getItem(SAVED_QUERIES_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function renderSavedQueries() {
+  const list = document.getElementById('saved-queries-list');
+  const queries = getSavedQueries();
+  if (!queries.length) {
+    list.innerHTML = '<div id="sq-empty">No saved queries yet.<br>Click <strong>Save</strong> after generating a query.</div>';
+    return;
+  }
+  list.innerHTML = queries.map(q => `
+    <div class="saved-query-item" id="sq-${q.id}">
+      <span class="material-icons" style="font-size:16px;color:var(--accent);flex-shrink:0">bookmark</span>
+      <span class="sq-name" title="${q.name}">${q.name}</span>
+      <button class="sq-load-btn" onclick="loadQuery('${q.id}')">Load</button>
+      <button class="sq-del-btn" onclick="deleteQuery('${q.id}')" title="Delete">
+        <span class="material-icons" style="font-size:16px">delete</span>
+      </button>
+    </div>
+  `).join('');
+}
+
+function saveQuery() {
+  const sqlEl = document.getElementById('sql-output');
+  const text = (sqlEl.textContent || sqlEl.innerText).trim();
+  const placeholder = 'Draw a polygon on the map to generate SQL';
+  if (!text || text.includes(placeholder)) {
+    alert('Generate a query first before saving.');
+    return;
+  }
+  const name = prompt('Name this query:', `Query ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`);
+  if (!name) return;
+  const queries = getSavedQueries();
+  queries.unshift({ id: Date.now().toString(), name: name.trim(), sql: text, savedAt: Date.now() });
+  localStorage.setItem(SAVED_QUERIES_KEY, JSON.stringify(queries));
+  renderSavedQueries();
+  const btn = document.querySelector('.save-btn');
+  btn.innerHTML = '<span class="material-icons" style="font-size:14px;vertical-align:middle">check</span> Saved!';
+  setTimeout(() => {
+    btn.innerHTML = '<span class="material-icons" style="font-size:14px;vertical-align:middle">bookmark</span> Save';
+  }, 2000);
+}
+
+function loadQuery(id) {
+  const queries = getSavedQueries();
+  const q = queries.find(x => x.id === id);
+  if (!q) return;
+  document.getElementById('sql-output').textContent = q.sql;
+  document.getElementById('sql-output').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function deleteQuery(id) {
+  const queries = getSavedQueries().filter(x => x.id !== id);
+  localStorage.setItem(SAVED_QUERIES_KEY, JSON.stringify(queries));
+  renderSavedQueries();
+}
+
+// Initialize saved queries on load
+document.addEventListener('DOMContentLoaded', renderSavedQueries);
 
 // ════════════════════════════════════════════════════════════════
 //  SOURCE FILTER

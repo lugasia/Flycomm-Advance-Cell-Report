@@ -1,0 +1,1671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Advanced Cell Report — Anomaly Workbench</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css"/>
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --navy: #0a1628; --card: #162038; --card-border: #1e3a5f;
+      --accent: #3b82f6; --red: #ef4444; --orange: #f59e0b;
+      --cyan: #06b6d4; --green: #22c55e; --text: #e2e8f0;
+      --text-muted: #94a3b8; --sidebar-width: 480px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--navy); color: var(--text); overflow: hidden; }
+    .app { display: flex; height: 100vh; }
+
+    /* ── Sidebar ── */
+    #sb { width: var(--sidebar-width); min-width: var(--sidebar-width); background: var(--card); border-right: 1px solid var(--card-border); display: flex; flex-direction: column; overflow: hidden; }
+    #sb-header { padding: 16px 20px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+    #sb-header h1 { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+    #sb-header h1 .material-icons { color: var(--accent); font-size: 20px; }
+    #sb-header p { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+    #sb-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+    #sb-body::-webkit-scrollbar { width: 4px; }
+    #sb-body::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 2px; }
+    .sb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 7px; }
+
+    /* ── Connection bar ── */
+    #conn-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--card-border); cursor: pointer; background: rgba(255,255,255,0.02); transition: all 0.15s; }
+    #conn-bar:hover { border-color: rgba(59,130,246,0.4); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; transition: background 0.3s; }
+    .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .conn-dot.connecting { background: var(--orange); }
+    #conn-label { flex: 1; font-size: 12px; color: var(--text-muted); }
+    #conn-panel { display: none; padding: 12px; background: var(--navy); border-radius: 8px; border: 1px solid var(--card-border); }
+    #conn-panel.open { display: block; }
+    .field-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px; }
+    .field-label:first-child { margin-top: 0; }
+    input.db-inp { width: 100%; background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'JetBrains Mono', monospace; outline: none; }
+    input.db-inp:focus { border-color: var(--accent); }
+
+    /* ── Anomaly list ── */
+    #anomaly-list { display: flex; flex-direction: column; gap: 3px; }
+    .anomaly-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; border: 1px solid transparent; cursor: pointer; transition: all 0.15s; background: rgba(255,255,255,0.02); }
+    .anomaly-item:hover { background: rgba(59,130,246,0.07); border-color: rgba(59,130,246,0.25); }
+    .anomaly-item.active { background: rgba(59,130,246,0.12); border-color: var(--accent); }
+    .anomaly-item .material-icons { font-size: 16px; color: var(--text-muted); flex-shrink: 0; }
+    .anomaly-item.active .material-icons { color: var(--accent); }
+    .ai-info { flex: 1; min-width: 0; }
+    .ai-info strong { font-size: 12px; font-weight: 600; display: block; }
+    .ai-info small { font-size: 10px; color: var(--text-muted); }
+    .sev-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .sev-dot.critical { background: var(--red); }
+    .sev-dot.high { background: var(--orange); }
+
+    /* ── Params ── */
+    .param-group { margin-bottom: 10px; }
+    .param-group:last-child { margin-bottom: 0; }
+    .param-label { font-size: 11px; color: var(--text-muted); margin-bottom: 5px; display: flex; justify-content: space-between; }
+    .param-label span { font-weight: 600; color: var(--text); }
+    input[type=range] { width: 100%; height: 4px; appearance: none; background: var(--card-border); border-radius: 2px; outline: none; cursor: pointer; }
+    input[type=range]::-webkit-slider-thumb { appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; }
+    input.param-inp { width: 100%; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'JetBrains Mono', monospace; outline: none; }
+    input.param-inp:focus { border-color: var(--accent); }
+
+    /* ── Polygon + time filters ── */
+    .filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .poly-status { flex: 1; font-size: 11px; color: var(--text-muted); padding: 6px 10px; background: var(--navy); border-radius: 6px; border: 1px solid var(--card-border); }
+    .poly-status.active { color: var(--green); border-color: rgba(34,197,94,0.4); }
+    .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    input[type=datetime-local], input[type=date] { width: 100%; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 11px; font-family: 'Inter', sans-serif; outline: none; }
+    input[type=datetime-local]:focus, input[type=date]:focus { border-color: var(--accent); }
+    input[type=datetime-local]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+    /* ── Buttons ── */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; transition: all 0.15s; width: 100%; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-primary:disabled { background: var(--card-border); color: var(--text-muted); cursor: not-allowed; }
+    .btn-secondary { background: var(--navy); color: var(--text); border: 1px solid var(--card-border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-sm { padding: 5px 10px; font-size: 11px; width: auto; border-radius: 6px; }
+    .btn-row { display: flex; gap: 8px; }
+    .btn-row .btn { flex: 1; }
+    .btn-icon { background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; color: var(--text-muted); cursor: pointer; padding: 5px 8px; display: inline-flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-icon .material-icons { font-size: 16px; }
+
+    /* ── SQL ── */
+    #sql-section { display: none; }
+    #sql-output { width: 100%; min-height: 90px; max-height: 160px; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; padding: 9px; color: #a5f3fc; font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.5; resize: vertical; outline: none; }
+
+    /* ── Legend ── */
+    .legend-items { display: flex; flex-direction: column; gap: 5px; }
+    .legend-item { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+    .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+
+    /* ── Nav links ── */
+    #nav-links { padding: 10px 14px; border-top: 1px solid var(--card-border); display: flex; gap: 7px; flex-shrink: 0; }
+    #nav-links a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; flex-direction: column; padding: 7px 4px; border-radius: 8px; border: 1px solid var(--card-border); color: var(--text-muted); text-decoration: none; font-size: 10px; font-weight: 500; transition: all 0.2s; text-align: center; }
+    #nav-links a .material-icons { font-size: 17px; }
+    #nav-links a:hover { border-color: var(--accent); background: rgba(59,130,246,0.1); color: var(--text); }
+    #nav-links a.current { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
+
+    /* ── Main ── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+    #map-wrap { flex: 1; position: relative; min-height: 0; }
+    #map { position: absolute; inset: 0; }
+
+    /* ── Empty state ── */
+    #empty-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; z-index: 1000; }
+    #empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    #empty-state h2 { font-size: 18px; margin-bottom: 8px; }
+    #empty-state p { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+
+    /* ── Loading overlay ── */
+    #loading-overlay { position: absolute; inset: 0; background: rgba(10,22,40,0.75); display: none; align-items: center; justify-content: center; z-index: 2000; flex-direction: column; gap: 16px; }
+    #loading-overlay.show { display: flex; }
+    .spinner { width: 40px; height: 40px; border: 3px solid var(--card-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-text { font-size: 14px; color: var(--text-muted); }
+
+    /* ── Table ── */
+    #table-wrap { height: 230px; overflow: auto; border-top: 1px solid var(--card-border); background: var(--card); display: none; flex-shrink: 0; }
+    #table-wrap::-webkit-scrollbar { width: 5px; height: 5px; }
+    #table-wrap::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+    table#results-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    table#results-table thead th { padding: 8px 12px; text-align: left; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); background: var(--navy); position: sticky; top: 0; border-bottom: 1px solid var(--card-border); white-space: nowrap; }
+    table#results-table tbody td { padding: 7px 12px; border-bottom: 1px solid rgba(30,58,95,0.5); vertical-align: middle; }
+    table#results-table tbody tr:hover { background: rgba(59,130,246,0.05); cursor: pointer; }
+
+    /* ── Severity badges ── */
+    .sev-badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; white-space: nowrap; }
+    .sev-badge.CRITICAL { background: rgba(239,68,68,0.15); color: var(--red); border: 1px solid rgba(239,68,68,0.3); }
+    .sev-badge.HIGH { background: rgba(245,158,11,0.15); color: var(--orange); border: 1px solid rgba(245,158,11,0.3); }
+    .sev-badge.MEDIUM { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+    .sev-badge.LOW { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.3); }
+    /* ── Confidence badges ── */
+    .conf-high   { color: var(--green);  font-weight: 600; font-size: 11px; }
+    .conf-medium { color: var(--orange); font-weight: 600; font-size: 11px; }
+    .conf-low    { color: var(--red);    font-weight: 600; font-size: 11px; }
+
+    /* ── Leaflet popup ── */
+    .leaflet-popup-content-wrapper { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.4); }
+    .leaflet-popup-tip { background: var(--card); }
+    .leaflet-popup-content { color: var(--text); font-family: 'Inter', sans-serif; font-size: 13px; margin: 14px 16px; }
+    .popup-title { font-weight: 700; font-size: 14px; margin-bottom: 10px; }
+    .popup-row { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 5px; font-size: 12px; }
+    .popup-row .lbl { color: var(--text-muted); }
+    .popup-assessment { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.4; border-top: 1px solid var(--card-border); padding-top: 10px; }
+
+    /* ── Leaflet Draw override ── */
+    .leaflet-draw-toolbar a { background-color: var(--card) !important; border-color: var(--card-border) !important; }
+    .leaflet-draw-toolbar a:hover { background-color: var(--accent) !important; }
+
+    /* ── Result count badges on anomaly list ── */
+    .result-badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 700; background: rgba(59,130,246,0.2); color: var(--accent); border: 1px solid rgba(59,130,246,0.35); flex-shrink: 0; min-width: 22px; text-align: center; }
+
+    /* ── Date preset buttons ── */
+    .preset-row { display: flex; gap: 4px; margin-bottom: 6px; }
+    .preset-btn { flex: 1; padding: 4px 0; font-size: 10px; font-weight: 600; font-family: 'Inter', sans-serif; border: 1px solid var(--card-border); border-radius: 5px; background: var(--navy); color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+    .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Sortable table headers ── */
+    .sortable-th { cursor: pointer; user-select: none; }
+    .sortable-th:hover { color: var(--text); }
+    .sort-icon { font-size: 9px; margin-left: 3px; opacity: 0.5; }
+    .sort-icon.active { opacity: 1; color: var(--accent); }
+
+    /* ── Correlation banner ── */
+    #corr-banner { background: rgba(239,68,68,0.08); border-bottom: 1px solid rgba(239,68,68,0.25); padding: 8px 16px; display: none; align-items: center; gap: 12px; flex-shrink: 0; z-index: 500; }
+    #corr-banner.show { display: flex; }
+    .corr-banner-text { flex: 1; font-size: 13px; font-weight: 600; }
+    .corr-banner-sub { font-size: 11px; color: var(--text-muted); font-weight: 400; margin-left: 6px; }
+
+    /* ── Pulsing hotspot marker ── */
+    @keyframes pulse-ring {
+      0%   { transform: scale(1); opacity: 0.7; }
+      100% { transform: scale(2.8); opacity: 0; }
+    }
+    .hotspot-outer { border-radius: 50%; position: relative; display: flex; align-items: center; justify-content: center; }
+    .hotspot-ring  { position: absolute; inset: -4px; border-radius: 50%; animation: pulse-ring 1.6s ease-out infinite; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div class="app">
+  <!-- ═══════ SIDEBAR ═══════ -->
+  <aside id="sb">
+    <div id="sb-header">
+      <img src="fcic copy.png" alt="FCIC" style="height:32px;max-width:100%;object-fit:contain;opacity:0.85;display:block;margin-bottom:6px;">
+      <h1><span class="material-icons">biotech</span> Anomaly Workbench</h1>
+      <p>Detect threats directly from ClickHouse</p>
+    </div>
+
+    <div id="sb-body">
+
+      <!-- Connection -->
+      <div>
+        <div class="sb-label">Database</div>
+        <div id="conn-bar" onclick="toggleConnPanel()">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Not connected — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="conn-panel">
+          <div class="field-label">Host</div>
+          <input class="db-inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <div class="field-label">Port</div>
+          <input class="db-inp" type="text" id="db-port" placeholder="8443" style="width:100px">
+          <div class="field-label">Database</div>
+          <input class="db-inp" type="text" id="db-name" value="default">
+          <div class="field-label">Username</div>
+          <input class="db-inp" type="text" id="db-user" placeholder="default">
+          <div class="field-label">Password</div>
+          <input class="db-inp" type="password" id="db-pass" placeholder="••••••••">
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+              <span class="material-icons" style="font-size:14px">sync</span> Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Anomaly type -->
+      <div>
+        <div class="sb-label">1. Detection Type</div>
+        <div id="anomaly-list"></div>
+      </div>
+
+      <!-- Thresholds -->
+      <div id="threshold-section" style="display:none">
+        <div class="sb-label">2. Thresholds</div>
+        <div id="threshold-controls"></div>
+      </div>
+
+      <!-- Filters -->
+      <div id="filters-section" style="display:none">
+        <div class="sb-label">3. Filters <span style="font-weight:400;font-size:10px;color:var(--text-muted)">(optional — leave empty for all data)</span></div>
+        <div class="filter-row">
+          <div class="poly-status" id="poly-status">No polygon — querying all locations</div>
+          <button class="btn-icon" id="poly-draw-btn" title="Draw polygon on map" onclick="startDraw()">
+            <span class="material-icons">draw</span>
+          </button>
+          <button class="btn-icon" id="poly-clear-btn" title="Clear polygon" onclick="clearPolygon()" style="display:none">
+            <span class="material-icons">clear</span>
+          </button>
+        </div>
+        <div class="preset-row">
+          <button class="preset-btn" onclick="setPreset(1)">24h</button>
+          <button class="preset-btn" onclick="setPreset(7)">7d</button>
+          <button class="preset-btn" onclick="setPreset(30)">30d</button>
+          <button class="preset-btn" onclick="clearDates()">All</button>
+        </div>
+        <div class="time-row">
+          <div>
+            <div class="param-label" style="font-size:10px">From</div>
+            <input type="datetime-local" id="time-from">
+          </div>
+          <div>
+            <div class="param-label" style="font-size:10px">To</div>
+            <input type="datetime-local" id="time-to">
+          </div>
+        </div>
+      </div>
+
+      <!-- Run + SQL -->
+      <div id="run-section" style="display:none">
+        <div class="btn-row" style="margin-bottom:6px">
+          <button class="btn btn-primary" id="run-btn" onclick="runQuery()">
+            <span class="material-icons" style="font-size:16px">play_arrow</span> Run Query
+          </button>
+          <select id="limit-select" title="Result limit" style="background:var(--navy);border:1px solid var(--card-border);border-radius:6px;color:var(--text-muted);font-size:11px;padding:0 6px;cursor:pointer;outline:none;font-family:'Inter',sans-serif;flex-shrink:0;" onchange="refreshSQL()">
+            <option value="100">100</option>
+            <option value="500" selected>500</option>
+            <option value="1000">1000</option>
+            <option value="2000">2000</option>
+          </select>
+          <button class="btn-icon" title="Show / hide SQL" onclick="toggleSQL()" style="padding:9px 10px">
+            <span class="material-icons">code</span>
+          </button>
+          <button class="btn-icon" title="Copy SQL" onclick="copySQL(this)" style="padding:9px 10px">
+            <span class="material-icons">content_copy</span>
+          </button>
+        </div>
+        <div id="sql-section">
+          <textarea id="sql-output" readonly></textarea>
+        </div>
+      </div>
+
+      <!-- Scan All -->
+      <div id="scan-all-section" style="display:none">
+        <button class="btn btn-secondary" id="scan-all-btn" onclick="runAllScans()">
+          <span class="material-icons" style="font-size:16px">manage_search</span>
+          Scan All 10 Anomalies
+        </button>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:5px;line-height:1.4">Runs all detection types and finds locations where multiple threats overlap.</div>
+      </div>
+
+      <!-- Stats -->
+      <div id="data-stats" style="display:none;font-size:12px;color:var(--text-muted);padding:8px 10px;background:var(--navy);border-radius:6px;border:1px solid var(--card-border)"></div>
+
+      <!-- Legend -->
+      <div id="legend-section" style="display:none">
+        <div class="sb-label">Severity</div>
+        <div class="legend-items" style="margin-bottom:12px">
+          <div class="legend-item"><div class="legend-dot" style="background:var(--red)"></div><span>CRITICAL — Active threat</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--orange)"></div><span>HIGH — Suspicious pattern</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--green)"></div><span>MEDIUM — Inconclusive</span></div>
+          <div class="legend-item"><div class="legend-dot" style="background:var(--cyan)"></div><span>LOW — Likely benign</span></div>
+        </div>
+        <div class="sb-label">Confidence Score</div>
+        <div style="font-size:11px;color:var(--text-muted);line-height:1.5;margin-bottom:6px">
+          Estimated probability the result is a real anomaly (not a false positive). Based on sample count + severity intensity.
+        </div>
+        <div class="legend-items">
+          <div class="legend-item"><span class="conf-high" style="font-size:12px">●</span><span>70–100% — High confidence</span></div>
+          <div class="legend-item"><span class="conf-medium" style="font-size:12px">●</span><span>40–69% — Medium (verify)</span></div>
+          <div class="legend-item"><span class="conf-low" style="font-size:12px">●</span><span>&lt;40% — Low (likely false positive)</span></div>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:8px;line-height:1.4">
+          Map: larger &amp; more opaque circle = higher confidence.
+        </div>
+      </div>
+
+      <!-- Report -->
+      <div id="report-section" style="display:none">
+        <button class="btn btn-secondary" onclick="generateReport()">
+          <span class="material-icons" style="font-size:16px">summarize</span>
+          Generate Intelligence Report
+        </button>
+      </div>
+
+      <!-- AI Analysis -->
+      <div id="ai-section" style="display:none">
+        <div class="sb-label" style="margin-top:4px">AI Intelligence Analysis</div>
+        <div id="ai-key-bar" onclick="toggleAIPanel()" style="cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1px solid var(--card-border);background:rgba(255,255,255,0.02);margin-bottom:8px;transition:all 0.15s">
+          <div class="conn-dot" id="ai-dot"></div>
+          <span id="ai-key-label" style="flex:1;font-size:12px;color:var(--text-muted)">Claude AI — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="ai-panel" style="display:none;padding:12px;background:var(--navy);border-radius:8px;border:1px solid var(--card-border);margin-bottom:8px">
+          <div class="field-label">Anthropic API Key</div>
+          <input class="db-inp" type="password" id="ai-key-input" placeholder="sk-ant-api03-...">
+          <button class="btn btn-secondary" onclick="saveAIKey()" style="margin-top:8px;font-size:12px;padding:6px 12px;width:auto">
+            <span class="material-icons" style="font-size:14px">save</span> Save Key
+          </button>
+        </div>
+        <button class="btn btn-secondary" id="ai-analyze-btn" onclick="analyzeWithAI()">
+          <span class="material-icons" style="font-size:16px">psychology</span>
+          Analyze Results with AI
+        </button>
+        <button class="btn btn-secondary" id="ai-corr-btn" onclick="analyzeCorrelationWithAI()" style="display:none;margin-top:6px">
+          <span class="material-icons" style="font-size:16px">hub</span>
+          Analyze Hotspots with AI
+        </button>
+      </div>
+
+    </div><!-- /sb-body -->
+
+    <div id="nav-links">
+      <a href="index.html"><span class="material-icons">map</span>Signal Map</a>
+      <a href="sql-builder.html"><span class="material-icons">polyline</span>SQL Builder</a>
+      <a href="anomaly-detector.html"><span class="material-icons">radar</span>TAC Detector</a>
+      <a href="anomaly-workbench.html" class="current"><span class="material-icons">biotech</span>Workbench</a>
+      <a href="roaming-report.html"><span class="material-icons">flight</span>Roaming</a>
+      <a href="db-dashboard.html"><span class="material-icons">dashboard</span>Dashboard</a>
+    </div>
+  </aside>
+
+  <!-- ═══════ MAIN ═══════ -->
+  <main id="main">
+    <!-- Correlation mode banner -->
+    <div id="corr-banner">
+      <span class="material-icons" style="color:var(--red);font-size:18px">hub</span>
+      <div class="corr-banner-text">
+        Correlation Mode
+        <span class="corr-banner-sub" id="corr-banner-sub">— run Scan All to detect multi-type hotspots</span>
+      </div>
+      <button class="btn-icon" onclick="exitCorrelationView()" title="Back to single scan" style="padding:5px 8px">
+        <span class="material-icons" style="font-size:15px">close</span>
+      </button>
+    </div>
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div id="empty-state">
+        <div class="icon">🔬</div>
+        <h2>Anomaly Workbench</h2>
+        <p>Select a detection type, configure thresholds,<br>optionally draw a polygon &amp; set a time range, then run.</p>
+      </div>
+      <div id="loading-overlay">
+        <div class="spinner"></div>
+        <div id="loading-text">Running query…</div>
+      </div>
+    </div>
+    <div id="table-wrap">
+      <table id="results-table">
+        <thead><tr id="table-head"></tr></thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+    <div id="ai-response-wrap" style="display:none;padding:20px 24px;border-top:1px solid var(--card-border);background:rgba(59,130,246,0.03);overflow-y:auto;max-height:320px;flex-shrink:0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span class="material-icons" style="font-size:18px;color:var(--accent)">psychology</span>
+          <span style="font-size:13px;font-weight:600;color:var(--text)">Claude AI Analysis</span>
+        </div>
+        <button class="btn-icon" onclick="document.getElementById('ai-response-wrap').style.display='none'" title="Close" style="padding:3px 6px;font-size:18px;line-height:1">×</button>
+      </div>
+      <div id="ai-loading" style="display:none;text-align:center;padding:20px;color:var(--text-muted)">
+        <div class="spinner" style="margin:0 auto 12px"></div>
+        <div style="font-size:13px">Analyzing with Claude AI…</div>
+      </div>
+      <div id="ai-output"></div>
+    </div>
+  </main>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+<script>
+// ══════════════════════════════════════════════════════════════
+// CELL IDENTITY HELPERS
+// ══════════════════════════════════════════════════════════════
+// Columns selected and grouped by in every anomaly SQL
+const CELL_SEL = 'cell_eci, cell_enb, cell_ecgi, cell_nci, cell_lac, cell_cid';
+const CELL_GRP = 'cell_eci, cell_enb, cell_ecgi, cell_nci, cell_lac, cell_cid';
+
+// Build a stable, human-readable cell key from a result row
+function cellKey(row) {
+  if (row.cell_ecgi)  return row.cell_ecgi;
+  if (row.cell_eci  != null && row.cell_eci  !== '') return `${row.network_PLMN || '?'}-ECI:${row.cell_eci}`;
+  if (row.cell_nci  != null && row.cell_nci  !== '') return `NR:${row.cell_nci}`;
+  if (row.cell_lac  != null && row.cell_cid  != null) return `LAC:${row.cell_lac}/CID:${row.cell_cid}`;
+  return null;
+}
+
+// Format cell identity for display
+function fmtCell(row) {
+  if (row.cell_ecgi) return row.cell_ecgi;
+  if (row.cell_eci  != null && row.cell_eci  !== '') return `ECI:${row.cell_eci}${row.cell_enb ? ` (eNB:${row.cell_enb})` : ''}`;
+  if (row.cell_nci  != null && row.cell_nci  !== '') return `NCI:${row.cell_nci}`;
+  if (row.cell_lac  != null && row.cell_cid  != null) return `LAC:${row.cell_lac} / CID:${row.cell_cid}`;
+  return '—';
+}
+
+// ══════════════════════════════════════════════════════════════
+// ANOMALY LIBRARY
+// ══════════════════════════════════════════════════════════════
+const ANOMALY_LIBRARY = [
+  {
+    id: 'tech_downgrade', name: 'Tech Downgrade', subtitle: 'LTE → GSM forced downgrade',
+    icon: 'arrow_downward', maxSeverity: 'critical',
+    params: [{ id: 'max_minutes', label: 'Max Session Window', unit: 'min', type: 'range', min: 1, max: 120, step: 1, default: 30 }],
+    metricKey: 'minutes_lte_to_gsm', metricLabel: 'Downgrade Window', metricUnit: 'min',
+    classifyRow(row) {
+      const v = parseFloat(row.minutes_lte_to_gsm);
+      if (v <= 2)  return { severity: 'CRITICAL', color: '#ef4444', label: 'IMSI Catcher / Active Jamming',   assessment: `Rapid LTE→GSM downgrade (${v} min) consistent with active IMSI-Catcher or targeted jamming forcing device to insecure 2G channel for interception.` };
+      if (v <= 15) return { severity: 'HIGH',     color: '#f59e0b', label: 'Possible Soft Jamming',           assessment: `Moderate downgrade window (${v} min) suggests soft jamming or coverage degradation. Further investigation recommended.` };
+      return               { severity: 'LOW',      color: '#06b6d4', label: 'Geographic Blind Spot',           assessment: `Downgrade over ${v} minutes consistent with geographic coverage gap rather than tactical threat.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`tech IN ('LTE', 'NR', 'GSM')`], extras);
+      return `-- Tech Downgrade Detection (LTE → GSM)\n-- CRITICAL < 2 min: IMSI-Catcher or jamming | HIGH 2-15 min: soft jamming | LOW > 15 min: blind spot\nSELECT\n    coalesce(nullIf(deviceInfo_personalId,''), nullIf(deviceInfo_imei,''), deviceInfo_deviceId) AS device_id,\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    minIf(toUnixTimestamp(timestamp), tech IN ('LTE','NR')) AS first_lte_ts,\n    minIf(toUnixTimestamp(timestamp), tech = 'GSM') AS first_gsm_ts,\n    round((first_gsm_ts - first_lte_ts) / 60.0, 1) AS minutes_lte_to_gsm,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY device_id, ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING first_lte_ts > 0\n   AND first_gsm_ts > 0\n   AND first_gsm_ts > first_lte_ts\n   AND minutes_lte_to_gsm <= ${p.max_minutes}\nORDER BY minutes_lte_to_gsm ASC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'timing_advance_zero', name: 'Timing Advance = 0', subtitle: 'Distance spoofing by rogue BTS',
+    icon: 'compress', maxSeverity: 'critical',
+    params: [{ id: 'min_count', label: 'Min TA=0 Occurrences', unit: '', type: 'range', min: 1, max: 50, step: 1, default: 5 }],
+    metricKey: 'ta_zero_count', metricLabel: 'TA=0 Count', metricUnit: '',
+    classifyRow(row) {
+      return { severity: 'CRITICAL', color: '#ef4444', label: 'IMSI Catcher Proximity Spoofing', assessment: `TA=0 indicates device appears physically adjacent to base station. Consistent with IMSI-Catcher proximity spoofing or rogue BTS at measurement point.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`signal_timingAdvance IS NOT NULL`], extras);
+      return `-- Timing Advance = 0 Detection — ALL results CRITICAL\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    countIf(signal_timingAdvance = 0) AS ta_zero_count,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING ta_zero_count >= ${p.min_count}\nORDER BY ta_zero_count DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'extreme_rsrp', name: 'Extreme RSRP', subtitle: 'Signal too strong for real tower',
+    icon: 'signal_cellular_alt', maxSeverity: 'critical',
+    params: [{ id: 'rsrp_threshold', label: 'Min RSRP Threshold', unit: 'dBm', type: 'number', min: -80, max: -30, step: 1, default: -50 }],
+    metricKey: 'avg_rsrp', metricLabel: 'Avg RSRP', metricUnit: 'dBm',
+    classifyRow(row) {
+      const v = parseFloat(row.avg_rsrp);
+      if (v >= -50) return { severity: 'CRITICAL', color: '#ef4444', label: 'Rogue BTS — Abnormal Signal Power', assessment: `RSRP ${v} dBm exceeds physically realistic values. Consistent with rogue BTS broadcasting at amplified power to force device attachment.` };
+      return               { severity: 'HIGH',     color: '#f59e0b', label: 'Suspicious Signal Strength',       assessment: `RSRP ${v} dBm is abnormally high. May indicate nearby rogue transmitter. Cross-reference with cell database.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`signal_rsrp IS NOT NULL`, `tech IN ('LTE', 'NR')`], extras);
+      return `-- Extreme RSRP Detection\n-- CRITICAL >= -50 dBm: impossible for legitimate tower\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    round(avg(signal_rsrp), 1) AS avg_rsrp,\n    max(signal_rsrp) AS max_rsrp,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING avg_rsrp >= ${p.rsrp_threshold}\nORDER BY avg_rsrp DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'unregistered_cells', name: 'Unregistered Cells', subtitle: 'isRegistered=0 — rogue BTS',
+    icon: 'gpp_bad', maxSeverity: 'critical',
+    params: [{ id: 'min_samples', label: 'Min Sample Count', unit: '', type: 'range', min: 1, max: 100, step: 1, default: 3 }],
+    metricKey: 'counted', metricLabel: 'Samples', metricUnit: '',
+    classifyRow(row) {
+      return { severity: 'CRITICAL', color: '#ef4444', label: 'Rogue / Pirate Base Station', assessment: `Cell flagged as unregistered (isRegistered=0). Direct indicator of rogue or pirate BTS operating outside legitimate spectrum licensing.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`isRegistered = 0`], extras);
+      return `-- Unregistered Cell Detection — ALL results CRITICAL\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING counted >= ${p.min_samples}\nORDER BY counted DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'forced_roaming', name: 'Forced Roaming', subtitle: 'Device roaming in home country',
+    icon: 'swap_horiz', maxSeverity: 'high',
+    params: [{ id: 'home_mcc', label: 'Home MCC', unit: '', type: 'text', default: '425' }],
+    metricKey: 'counted', metricLabel: 'Samples', metricUnit: '',
+    classifyRow(row) {
+      return { severity: 'HIGH', color: '#f59e0b', label: 'Forced Roaming Attack', assessment: `Device reports roaming inside home country. May indicate forced roaming attack routing communications through foreign partner for interception.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`network_isRoaming = 1`, `network_mcc = '${p.home_mcc}'`], extras);
+      return `-- Forced Roaming Detection (home MCC: ${p.home_mcc})\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING counted >= 3\nORDER BY counted DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'pci_mismatch', name: 'PCI Mismatch', subtitle: 'Multiple PCIs at same location',
+    icon: 'cell_tower', maxSeverity: 'critical',
+    params: [{ id: 'min_pci', label: 'Min Distinct PCIs', unit: '', type: 'range', min: 2, max: 20, step: 1, default: 3 }],
+    metricKey: 'distinct_pci_count', metricLabel: 'Distinct PCIs', metricUnit: '',
+    classifyRow(row) {
+      const v = parseInt(row.distinct_pci_count);
+      if (v >= 5) return { severity: 'CRITICAL', color: '#ef4444', label: 'Tower Impersonation / PCI Cycling', assessment: `${v} distinct PCIs at same location. IMSI-Catcher cycling through PCI values to impersonate legitimate towers.` };
+      return               { severity: 'HIGH',     color: '#f59e0b', label: 'PCI Inconsistency',                assessment: `${v} distinct PCIs at this location. May indicate rogue transmitter with rotating cell identifiers.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`cell_pci IS NOT NULL`], extras);
+      return `-- PCI Mismatch Detection\n-- CRITICAL >= 5 PCIs: tower impersonation\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    uniqExact(cell_pci) AS distinct_pci_count,\n    groupUniqArray(cell_pci) AS pci_list,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING distinct_pci_count >= ${p.min_pci}\nORDER BY distinct_pci_count DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'multi_device_imei', name: 'Multi-Device IMEI', subtitle: 'High device density — harvesting',
+    icon: 'devices', maxSeverity: 'critical',
+    params: [{ id: 'min_devices', label: 'Min Unique Devices', unit: '', type: 'range', min: 2, max: 50, step: 1, default: 10 }],
+    metricKey: 'device_count', metricLabel: 'Unique Devices', metricUnit: '',
+    classifyRow(row) {
+      const v = parseInt(row.device_count);
+      if (v > 20) return { severity: 'CRITICAL', color: '#ef4444', label: 'Mass Credential Harvesting',    assessment: `${v} unique device identifiers. Mass credential harvesting by active IMSI-Catcher.` };
+      if (v > 10) return { severity: 'HIGH',     color: '#f59e0b', label: 'Elevated Device Concentration', assessment: `${v} unique devices. Possible surveillance equipment collecting identifiers. Correlate with other anomaly types.` };
+      return               { severity: 'MEDIUM',   color: '#22c55e', label: 'Moderate Device Count',         assessment: `${v} unique devices. Inconclusive without additional correlation.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`length(coalesce(nullIf(deviceInfo_imei,''), nullIf(deviceInfo_personalId,''), nullIf(deviceInfo_deviceId,''))) > 0`], extras);
+      return `-- Multi-Device IMEI/IMSI Detection\n-- CRITICAL > 20: mass harvesting | HIGH > 10: elevated density\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    uniqExact(coalesce(nullIf(deviceInfo_imei,''), nullIf(deviceInfo_personalId,''), deviceInfo_deviceId)) AS device_count,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING device_count >= ${p.min_devices}\nORDER BY device_count DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'no_signal_blackout', name: 'No-Signal Blackout', subtitle: 'RF jamming zone detection',
+    icon: 'signal_wifi_off', maxSeverity: 'critical',
+    params: [{ id: 'min_duration', label: 'Min Blackout Duration', unit: 'sec', type: 'range', min: 5, max: 3600, step: 5, default: 120 }],
+    metricKey: 'avg_blackout_seconds', metricLabel: 'Avg Blackout', metricUnit: 'sec',
+    classifyRow(row) {
+      const v = parseFloat(row.avg_blackout_seconds);
+      if (v > 300) return { severity: 'CRITICAL', color: '#ef4444', label: 'Active RF Jamming Zone',      assessment: `Extended blackout ${v}s average. Consistent with active RF jamming of cellular frequencies.` };
+      if (v > 60)  return { severity: 'HIGH',     color: '#f59e0b', label: 'Significant Signal Blackout', assessment: `Signal blackout ${v}s. May indicate targeted jamming. Correlate with other indicators.` };
+      return                { severity: 'LOW',      color: '#06b6d4', label: 'Brief Signal Loss',           assessment: `Short blackout ${v}s. Likely normal infrastructure event or brief coverage gap.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`delta_no_signal IS NOT NULL`, `delta_no_signal > 0`], extras);
+      return `-- No-Signal Blackout Detection\n-- CRITICAL > 300s: active jamming | HIGH > 60s: significant blackout\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    round(avg(delta_no_signal), 0) AS avg_blackout_seconds,\n    max(delta_no_signal) AS max_blackout_seconds,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING avg_blackout_seconds >= ${p.min_duration}\nORDER BY avg_blackout_seconds DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'tx_power_spike', name: 'TX Power Spike', subtitle: 'Device fighting local jammer',
+    icon: 'bolt', maxSeverity: 'critical',
+    params: [{ id: 'tx_threshold', label: 'Min TX Power', unit: 'dBm', type: 'range', min: 10, max: 30, step: 1, default: 20 }],
+    metricKey: 'avg_tx_power', metricLabel: 'Avg TX Power', metricUnit: 'dBm',
+    classifyRow(row) {
+      const v = parseFloat(row.avg_tx_power);
+      if (v > 25) return { severity: 'CRITICAL', color: '#ef4444', label: 'Device Fighting Jammer',  assessment: `TX power ${v} dBm average. Device transmitting at near-max power fighting strong local interferer.` };
+      return               { severity: 'HIGH',     color: '#f59e0b', label: 'Elevated TX Power',       assessment: `TX ${v} dBm abnormally high. Possible interference from nearby rogue equipment.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`signal_txPower IS NOT NULL`], extras);
+      return `-- TX Power Spike Detection\n-- CRITICAL > 25 dBm: device fighting jammer\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso, tech,\n    round(avg(signal_txPower), 1) AS avg_tx_power,\n    max(signal_txPower) AS max_tx_power,\n    round(avg(signal_rsrp), 1) AS avg_rsrp,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso, tech\nHAVING avg_tx_power > ${p.tx_threshold}\n   AND count() > 5\nORDER BY avg_tx_power DESC\nLIMIT 500;`;
+    }
+  },
+  {
+    id: 'gps_satellite_drop', name: 'GPS Satellite Drop', subtitle: 'GPS jamming zone detection',
+    icon: 'satellite_alt', maxSeverity: 'critical',
+    params: [{ id: 'min_drop', label: 'Min Satellite Drop', unit: '', type: 'range', min: 2, max: 12, step: 1, default: 5 }],
+    metricKey: 'satellite_drop', metricLabel: 'Sat Drop', metricUnit: '',
+    classifyRow(row) {
+      const v = parseFloat(row.satellite_drop);
+      if (v > 8)  return { severity: 'CRITICAL', color: '#ef4444', label: 'GPS Jamming Zone',           assessment: `Satellite drop ${v}. Active GPS jamming often accompanies IMSI-Catcher deployment for location obfuscation.` };
+      if (v >= 4) return { severity: 'HIGH',     color: '#f59e0b', label: 'GPS Interference',            assessment: `Satellite reduction ${v}. May indicate GPS interference or targeted jamming.` };
+      return               { severity: 'MEDIUM',   color: '#22c55e', label: 'Satellite Count Variation',  assessment: `Moderate satellite drop ${v}. Could be physical obstruction or minor interference.` };
+    },
+    generateSQL(p, extras) {
+      const w = buildWhere([`satellites_gps_satellitesNo IS NOT NULL`, `satellites_gps_satellitesNo >= 0`], extras);
+      return `-- GPS Satellite Drop Detection\n-- CRITICAL > 8: active GPS jamming zone\nSELECT\n    ${CELL_SEL},\n    network_PLMN, network_operator, network_iso,\n    round(avg(satellites_gps_satellitesNo), 1) AS avg_satellites,\n    min(satellites_gps_satellitesNo) AS min_satellites,\n    round(avg(satellites_gps_satellitesNo) - min(satellites_gps_satellitesNo), 0) AS satellite_drop,\n    count() AS counted,\n    min(timestamp) AS first_seen,\n    max(timestamp) AS last_seen,\n    avg(location_geo_coordinates.2) AS lat,\n    avg(location_geo_coordinates.1) AS lon\nFROM measurements\n${w}\nGROUP BY ${CELL_GRP}, network_PLMN, network_operator, network_iso\nHAVING satellite_drop >= ${p.min_drop}\n   AND avg_satellites > 0\nORDER BY satellite_drop DESC\nLIMIT 500;`;
+    }
+  }
+];
+
+// ══════════════════════════════════════════════════════════════
+// SQL HELPERS
+// ══════════════════════════════════════════════════════════════
+function buildWhere(baseConditions, extras = []) {
+  const all = [...baseConditions, ...extras].filter(Boolean);
+  return all.length ? 'WHERE ' + all.join('\n  AND ') : '';
+}
+
+function buildExtraFilters() {
+  const extras = [];
+  // Polygon
+  if (drawnLayer && drawnLayer.getLayers().length > 0) {
+    const lls = drawnLayer.getLayers()[0].getLatLngs()[0];
+    const pts = lls.map(ll => `(${ll.lng.toFixed(6)}, ${ll.lat.toFixed(6)})`).join(', ');
+    extras.push(`pointInPolygon(location_geo_coordinates, [${pts}])`);
+  }
+  // Time range
+  const from = document.getElementById('time-from').value;
+  const to   = document.getElementById('time-to').value;
+  if (from) extras.push(`timestamp >= '${from.replace('T', ' ')}:00'`);
+  if (to)   extras.push(`timestamp <= '${to.replace('T', ' ')}:00'`);
+  return extras;
+}
+
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let selectedAnomaly = null;
+let currentParams   = {};
+let currentResults  = [];
+let map             = null;
+let drawnLayer      = null;
+let drawControl     = null;
+let markers         = [];
+let isConnected     = false;
+const CREDS_KEY     = 'clickhouse_credentials';
+
+// Correlation engine state
+const sessionStore  = {};    // { anomaly_id: [classified rows] }
+let corrMode        = false;  // true when showing correlation view
+let lastQueryMs     = 0;      // last query duration in ms
+
+// Table sort state
+let sortCol = null;
+let sortDir = 1;  // 1 = asc, -1 = desc
+
+// ── Utility helpers ──
+function getLimit() { return parseInt(document.getElementById('limit-select')?.value || 500); }
+
+function setPreset(days) {
+  const now  = new Date();
+  const from = new Date(now.getTime() - days * 86400000);
+  document.getElementById('time-to').value   = now.toISOString().slice(0, 16);
+  document.getElementById('time-from').value = from.toISOString().slice(0, 16);
+  refreshSQL();
+}
+
+function clearDates() {
+  document.getElementById('time-from').value = '';
+  document.getElementById('time-to').value   = '';
+  refreshSQL();
+}
+
+function updateAnomalyBadges() {
+  ANOMALY_LIBRARY.forEach(a => {
+    const el = document.getElementById('badge-' + a.id);
+    if (!el) return;
+    const stored = sessionStore[a.id];
+    if (stored !== undefined) {
+      el.textContent = stored.length;
+      el.style.display = 'inline-block';
+    }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAP
+// ══════════════════════════════════════════════════════════════
+function initMap() {
+  map = L.map('map', { zoomControl: true }).setView([31.5, 34.9], 8);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '&copy; OpenStreetMap &copy; CARTO', subdomains: 'abcd', maxZoom: 20
+  }).addTo(map);
+  document.getElementById('map').style.filter = 'brightness(1.6) contrast(1.1) saturate(1.1)';
+
+  // Draw layer
+  drawnLayer = new L.FeatureGroup().addTo(map);
+  drawControl = new L.Control.Draw({
+    draw: {
+      polygon: { shapeOptions: { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.12, weight: 2 } },
+      rectangle: { shapeOptions: { color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.12, weight: 2 } },
+      polyline: false, circle: false, circlemarker: false, marker: false
+    },
+    edit: { featureGroup: drawnLayer }
+  });
+
+  map.on(L.Draw.Event.CREATED, e => {
+    drawnLayer.clearLayers();
+    drawnLayer.addLayer(e.layer);
+    updatePolyStatus();
+  });
+  map.on(L.Draw.Event.DELETED, () => updatePolyStatus());
+}
+
+function startDraw() {
+  map.addControl(drawControl);
+  new L.Draw.Polygon(map, drawControl.options.draw.polygon).enable();
+}
+
+function clearPolygon() {
+  drawnLayer.clearLayers();
+  updatePolyStatus();
+}
+
+function updatePolyStatus() {
+  const hasPolygon = drawnLayer && drawnLayer.getLayers().length > 0;
+  const el = document.getElementById('poly-status');
+  const clearBtn = document.getElementById('poly-clear-btn');
+  if (hasPolygon) {
+    el.textContent = 'Polygon set — query will be filtered';
+    el.className = 'poly-status active';
+    clearBtn.style.display = 'inline-flex';
+  } else {
+    el.textContent = 'No polygon — querying all locations';
+    el.className = 'poly-status';
+    clearBtn.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONNECTION
+// ══════════════════════════════════════════════════════════════
+function toggleConnPanel() {
+  document.getElementById('conn-panel').classList.toggle('open');
+}
+
+function loadCredentials() {
+  const saved = localStorage.getItem(CREDS_KEY);
+  if (!saved) return;
+  try {
+    const c = JSON.parse(saved);
+    if (c.host)     document.getElementById('db-host').value = c.host;
+    if (c.port)     document.getElementById('db-port').value = c.port;
+    if (c.database) document.getElementById('db-name').value = c.database;
+    if (c.user)     document.getElementById('db-user').value = c.user;
+    if (c.password) document.getElementById('db-pass').value = atob(c.password);
+    // Auto-test if creds exist
+    if (c.host && c.user && c.password) testConnection(true);
+  } catch (e) {}
+}
+
+function saveCredentials() {
+  const c = {
+    host: document.getElementById('db-host').value.trim(),
+    port: document.getElementById('db-port').value.trim() || '8443',
+    database: document.getElementById('db-name').value.trim() || 'default',
+    user: document.getElementById('db-user').value.trim(),
+    password: btoa(document.getElementById('db-pass').value)
+  };
+  localStorage.setItem(CREDS_KEY, JSON.stringify(c));
+}
+
+function setConnStatus(state, label) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = 'conn-dot ' + state;
+  lbl.textContent = label;
+  isConnected = (state === 'connected');
+}
+
+async function executeClickHouseQuery(query) {
+  const host = document.getElementById('db-host').value.trim();
+  const port = document.getElementById('db-port').value.trim() || '8443';
+  const db   = document.getElementById('db-name').value.trim() || 'default';
+  const user = document.getElementById('db-user').value.trim();
+  const pass = document.getElementById('db-pass').value;
+  if (!host || !user || !pass) throw new Error('Fill in connection details first');
+  const url = `https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': 'Basic ' + btoa(`${user}:${pass}`), 'Content-Type': 'text/plain' },
+    body: query
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let errMsg = `HTTP ${resp.status}`;
+    try {
+      const errJson = JSON.parse(errText);
+      errMsg = errJson.exception || errJson.error?.message || errText;
+    } catch { errMsg = errText || errMsg; }
+    throw new Error(errMsg);
+  }
+  const json = await resp.json();
+  if (json.exception) throw new Error(json.exception);
+  return json;
+}
+
+async function testConnection(silent = false) {
+  setConnStatus('connecting', 'Connecting…');
+  try {
+    const r = await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
+    const ver = r.data?.[0]?.version || '';
+    setConnStatus('connected', `Connected ${ver ? '· ' + ver.split('.').slice(0,2).join('.') : ''}`);
+    saveCredentials();
+    if (!silent) document.getElementById('conn-panel').classList.remove('open');
+  } catch (e) {
+    setConnStatus('disconnected', 'Error: ' + e.message.substring(0, 50));
+    if (!silent) document.getElementById('conn-panel').classList.add('open');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// ANOMALY LIST
+// ══════════════════════════════════════════════════════════════
+function renderAnomalyList() {
+  document.getElementById('anomaly-list').innerHTML = ANOMALY_LIBRARY.map(a => `
+    <div class="anomaly-item" data-id="${a.id}" onclick="selectAnomaly('${a.id}')">
+      <span class="material-icons">${a.icon}</span>
+      <div class="ai-info"><strong>${a.name}</strong><small>${a.subtitle}</small></div>
+      <div class="sev-dot ${a.maxSeverity}"></div>
+      <span id="badge-${a.id}" class="result-badge" style="display:none">0</span>
+    </div>`).join('');
+}
+
+function selectAnomaly(id) {
+  selectedAnomaly = ANOMALY_LIBRARY.find(a => a.id === id);
+  if (!selectedAnomaly) return;
+  document.querySelectorAll('.anomaly-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+  currentParams = {};
+  selectedAnomaly.params.forEach(p => { currentParams[p.id] = p.default; });
+  renderThresholds();
+  document.getElementById('threshold-section').style.display = 'block';
+  document.getElementById('filters-section').style.display = 'block';
+  document.getElementById('run-section').style.display = 'block';
+  document.getElementById('scan-all-section').style.display = 'block';
+  document.getElementById('sql-section').style.display = 'none';
+  // Show current SQL
+  refreshSQL();
+}
+
+// ══════════════════════════════════════════════════════════════
+// THRESHOLDS
+// ══════════════════════════════════════════════════════════════
+function renderThresholds() {
+  document.getElementById('threshold-controls').innerHTML = selectedAnomaly.params.map(p => {
+    if (p.type === 'range') return `<div class="param-group">
+      <div class="param-label">${p.label}${p.unit ? ' (' + p.unit + ')' : ''} <span id="val-${p.id}">${currentParams[p.id]}</span></div>
+      <input type="range" min="${p.min}" max="${p.max}" step="${p.step}" value="${currentParams[p.id]}" oninput="updateParam('${p.id}', this.value)">
+    </div>`;
+    if (p.type === 'number') return `<div class="param-group">
+      <div class="param-label">${p.label}${p.unit ? ' (' + p.unit + ')' : ''}</div>
+      <input class="param-inp" type="number" min="${p.min}" max="${p.max}" step="${p.step}" value="${currentParams[p.id]}" oninput="updateParam('${p.id}', this.value)">
+    </div>`;
+    return `<div class="param-group">
+      <div class="param-label">${p.label}</div>
+      <input class="param-inp" type="text" value="${currentParams[p.id]}" oninput="updateParam('${p.id}', this.value)">
+    </div>`;
+  }).join('');
+}
+
+function updateParam(id, value) {
+  currentParams[id] = value;
+  const el = document.getElementById('val-' + id);
+  if (el) el.textContent = value;
+  refreshSQL();
+}
+
+// ══════════════════════════════════════════════════════════════
+// SQL
+// ══════════════════════════════════════════════════════════════
+function refreshSQL() {
+  if (!selectedAnomaly) return;
+  const lim = getLimit();
+  const sql = selectedAnomaly.generateSQL(currentParams, buildExtraFilters()).replace(/LIMIT \d+;/, `LIMIT ${lim};`);
+  document.getElementById('sql-output').value = sql;
+}
+
+function toggleSQL() {
+  const s = document.getElementById('sql-section');
+  s.style.display = s.style.display === 'none' ? 'block' : 'none';
+  if (s.style.display === 'block') refreshSQL();
+}
+
+function copySQL(btn) {
+  refreshSQL();
+  navigator.clipboard.writeText(document.getElementById('sql-output').value).then(() => {
+    const orig = btn.innerHTML;
+    btn.innerHTML = '<span class="material-icons" style="font-size:16px">check</span>';
+    setTimeout(() => { btn.innerHTML = orig; }, 1500);
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
+// RUN QUERY
+// ══════════════════════════════════════════════════════════════
+async function runQuery() {
+  if (!selectedAnomaly) { alert('Select a detection type first.'); return; }
+  if (!isConnected) {
+    document.getElementById('conn-panel').classList.add('open');
+    alert('Please connect to the database first.');
+    return;
+  }
+
+  const lim = getLimit();
+  const sql = selectedAnomaly.generateSQL(currentParams, buildExtraFilters()).replace(/LIMIT \d+;/, `LIMIT ${lim};`);
+  document.getElementById('sql-output').value = sql;
+
+  const btn = document.getElementById('run-btn');
+  const overlay = document.getElementById('loading-overlay');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-icons" style="font-size:16px">hourglass_top</span> Running…';
+  overlay.classList.add('show');
+  document.getElementById('loading-text').textContent = `Running ${selectedAnomaly.name} query…`;
+
+  const t0 = Date.now();
+  try {
+    const result = await executeClickHouseQuery(sql);
+    lastQueryMs = Date.now() - t0;
+    processResults(result.data || []);
+  } catch (err) {
+    overlay.classList.remove('show');
+    alert('Query failed:\n' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-icons" style="font-size:16px">play_arrow</span> Run Query';
+    overlay.classList.remove('show');
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// RESULTS
+// ══════════════════════════════════════════════════════════════
+// Confidence = how likely this is a real anomaly (not false positive)
+// Based on: sample count (more = reliable) + severity tier intensity
+function computeConfidence(row) {
+  const counted     = parseFloat(row.counted || 1);
+  const sampleScore = Math.min(counted / 25, 1.0); // 25+ samples → full sample credit
+  const sevScore    = { CRITICAL: 1.0, HIGH: 0.7, MEDIUM: 0.45, LOW: 0.25 }[row._severity] || 0.5;
+  return Math.round((sampleScore * 0.4 + sevScore * 0.6) * 100);
+}
+
+function confLabel(pct) {
+  if (pct >= 70) return { cls: 'conf-high',   text: pct + '% — High' };
+  if (pct >= 40) return { cls: 'conf-medium', text: pct + '% — Medium' };
+  return               { cls: 'conf-low',    text: pct + '% — Low (possible FP)' };
+}
+
+function processResults(data, anomaly) {
+  const anom = anomaly || selectedAnomaly;
+  currentResults = data.filter(row => {
+    const lat = parseFloat(row.lat), lon = parseFloat(row.lon);
+    return !isNaN(lat) && !isNaN(lon) && lat !== 0 && lon !== 0;
+  }).map(row => {
+    const cls  = anom.classifyRow(row);
+    const conf = computeConfidence({ ...row, _severity: cls.severity });
+    return { ...row, _severity: cls.severity, _color: cls.color, _label: cls.label, _assessment: cls.assessment, _confidence: conf };
+  });
+
+  // Save to session store
+  if (anom) {
+    sessionStore[anom.id] = currentResults;
+    updateAnomalyBadges();
+    // Show scan-all button once connected and something selected
+    document.getElementById('scan-all-section').style.display = 'block';
+  }
+
+  const critical = currentResults.filter(r => r._severity === 'CRITICAL').length;
+  const high     = currentResults.filter(r => r._severity === 'HIGH').length;
+  const elapsed  = lastQueryMs > 0 ? ` &nbsp;·&nbsp; Query: ${(lastQueryMs/1000).toFixed(2)}s` : '';
+  const statsEl  = document.getElementById('data-stats');
+  statsEl.style.display = 'block';
+
+  if (currentResults.length === 0) {
+    statsEl.innerHTML = 'No results matched the query. Try adjusting thresholds or removing filters.';
+    return;
+  }
+
+  statsEl.innerHTML = `<strong>${currentResults.length}</strong> results &nbsp;·&nbsp; <span style="color:var(--red)">${critical} CRITICAL</span> &nbsp;·&nbsp; <span style="color:var(--orange)">${high} HIGH</span>${elapsed}
+    <button class="btn-sm btn-secondary" onclick="exportCSV()" style="margin-left:10px;padding:3px 8px;font-size:10px;display:inline-flex;align-items:center;gap:3px;border-radius:5px">
+      <span class="material-icons" style="font-size:12px">download</span>CSV
+    </button>`;
+
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('legend-section').style.display = 'block';
+  document.getElementById('report-section').style.display = 'block';
+  document.getElementById('ai-section').style.display = 'block';
+  document.getElementById('table-wrap').style.display = 'block';
+  document.getElementById('ai-response-wrap').style.display = 'none';
+
+  sortCol = null; sortDir = 1;
+  renderMarkers();
+  renderTable();
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAP MARKERS
+// ══════════════════════════════════════════════════════════════
+function renderMarkers() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+  currentResults.forEach((row, i) => {
+    const lat = parseFloat(row.lat), lon = parseFloat(row.lon);
+    const conf = row._confidence || 50;
+    // Smaller circles: 4–9px radius, opacity driven by confidence
+    const radius      = 4 + (conf / 100) * 5;           // 4–9 px
+    const fillOpacity = 0.30 + (conf / 100) * 0.55;     // 0.30–0.85
+    const weight      = conf >= 70 ? 1.5 : 1;
+    const metric = selectedAnomaly.metricKey ? row[selectedAnomaly.metricKey] : null;
+    const md = metric != null ? `${metric}${selectedAnomaly.metricUnit ? ' ' + selectedAnomaly.metricUnit : ''}` : '—';
+    const cl = confLabel(conf);
+    const m = L.circleMarker([lat, lon], { radius, color: row._color, fillColor: row._color, fillOpacity, weight, opacity: 0.9 });
+    m.bindPopup(`
+      <div class="popup-title">${selectedAnomaly.name}</div>
+      <div class="popup-row"><span class="lbl">Severity</span><span class="sev-badge ${row._severity}">${row._severity}</span></div>
+      <div class="popup-row"><span class="lbl">Confidence</span><span class="${cl.cls}">${cl.text}</span></div>
+      <div class="popup-row"><span class="lbl">Cell ID</span><span style="font-family:monospace;font-size:11px">${fmtCell(row)}</span></div>
+      ${row.cell_enb != null ? `<div class="popup-row"><span class="lbl">eNB</span><span style="font-family:monospace;font-size:11px">${row.cell_enb}</span></div>` : ''}
+      <div class="popup-row"><span class="lbl">PLMN</span><span>${row.network_PLMN || '—'}</span></div>
+      <div class="popup-row"><span class="lbl">Operator</span><span>${row.network_operator || '—'}</span></div>
+      <div class="popup-row"><span class="lbl">${selectedAnomaly.metricLabel}</span><span>${md}</span></div>
+      <div class="popup-row"><span class="lbl">Samples</span><span>${row.counted || '—'}</span></div>
+      <div class="popup-row"><span class="lbl">First Seen</span><span style="font-family:monospace;font-size:11px">${row.first_seen ? String(row.first_seen).replace('T',' ').slice(0,16) : '—'}</span></div>
+      <div class="popup-row"><span class="lbl">Last Seen</span><span style="font-family:monospace;font-size:11px">${row.last_seen ? String(row.last_seen).replace('T',' ').slice(0,16) : '—'}</span></div>
+      <div class="popup-row"><span class="lbl">Coords</span><span style="font-family:monospace;font-size:11px">${lat.toFixed(5)}, ${lon.toFixed(5)}</span></div>
+      <div class="popup-assessment">${row._assessment}</div>`);
+    m.on('click', () => highlightTableRow(i));
+    m.addTo(map);
+    markers.push(m);
+  });
+  if (currentResults.length > 0) {
+    const lats = currentResults.map(r => parseFloat(r.lat));
+    const lons = currentResults.map(r => parseFloat(r.lon));
+    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [40, 40] });
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// TABLE
+// ══════════════════════════════════════════════════════════════
+const SEV_ORDER = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+function sortTable(col) {
+  if (sortCol === col) { sortDir *= -1; } else { sortCol = col; sortDir = 1; }
+  renderTable();
+}
+
+function sortedResults() {
+  if (!sortCol) return currentResults;
+  return [...currentResults].sort((a, b) => {
+    let va, vb;
+    if (sortCol === '_severity') {
+      va = SEV_ORDER[a._severity] ?? 3;
+      vb = SEV_ORDER[b._severity] ?? 3;
+    } else if (sortCol === '_confidence') {
+      va = a._confidence || 0; vb = b._confidence || 0;
+    } else if (sortCol === 'counted') {
+      va = parseFloat(a.counted) || 0; vb = parseFloat(b.counted) || 0;
+    } else if (sortCol === 'metric') {
+      va = parseFloat(a[selectedAnomaly.metricKey]) || 0;
+      vb = parseFloat(b[selectedAnomaly.metricKey]) || 0;
+    } else if (sortCol === 'first_seen') {
+      va = a.first_seen || ''; vb = b.first_seen || '';
+    } else if (sortCol === 'last_seen') {
+      va = a.last_seen || ''; vb = b.last_seen || '';
+    } else { return 0; }
+    if (va < vb) return -sortDir;
+    if (va > vb) return  sortDir;
+    return 0;
+  });
+}
+
+function th(label, col) {
+  const active = sortCol === col;
+  const arrow  = active ? (sortDir === 1 ? ' ▲' : ' ▼') : ' ⇅';
+  return `<th class="sortable-th" onclick="sortTable('${col}')">${label}<span class="sort-icon${active ? ' active' : ''}">${arrow}</span></th>`;
+}
+
+function renderTable() {
+  const mk = selectedAnomaly.metricKey, ml = selectedAnomaly.metricLabel, mu = selectedAnomaly.metricUnit || '';
+  document.getElementById('table-head').innerHTML =
+    th('Severity', '_severity') + th('Confidence', '_confidence') +
+    `<th>Cell / ECI</th><th>eNB</th><th>PLMN</th><th>Operator</th>` +
+    th(ml, 'metric') + th('Samples', 'counted') +
+    th('First Seen', 'first_seen') + th('Last Seen', 'last_seen') +
+    `<th>Lat / Lon</th>`;
+
+  const fmtTs = ts => ts ? String(ts).replace('T', ' ').slice(0, 16) : '—';
+  document.getElementById('table-body').innerHTML = sortedResults().map((row, i) => {
+    const lat = parseFloat(row.lat).toFixed(5), lon = parseFloat(row.lon).toFixed(5);
+    const md  = mk && row[mk] != null ? `${row[mk]}${mu ? ' ' + mu : ''}` : '—';
+    const cl  = confLabel(row._confidence || 50);
+    const cellDisp = row.cell_ecgi || (row.cell_eci != null ? `ECI:${row.cell_eci}` : (row.cell_nci != null ? `NCI:${row.cell_nci}` : (row.cell_lac != null ? `LAC:${row.cell_lac}/CID:${row.cell_cid}` : '—')));
+    const enbDisp  = row.cell_enb != null ? row.cell_enb : '—';
+    return `<tr id="trow-${i}" onclick="flyToRow(${i})" title="${row._assessment}">
+      <td><span class="sev-badge ${row._severity}">${row._severity}</span></td>
+      <td><span class="${cl.cls}">${cl.text}</span></td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${cellDisp}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${enbDisp}</td>
+      <td>${row.network_PLMN || '—'}</td><td>${row.network_operator || '—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace">${md}</td>
+      <td>${row.counted || '—'}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap">${fmtTs(row.first_seen)}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap">${fmtTs(row.last_seen)}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${lat}, ${lon}</td>
+    </tr>`;
+  }).join('');
+}
+
+function flyToRow(i) {
+  const row = currentResults[i]; if (!row) return;
+  map.flyTo([parseFloat(row.lat), parseFloat(row.lon)], 15, { duration: 0.8 });
+  if (markers[i]) markers[i].openPopup();
+  highlightTableRow(i);
+}
+
+function highlightTableRow(i) {
+  document.querySelectorAll('#table-body tr').forEach(tr => tr.style.background = '');
+  const tr = document.getElementById('trow-' + i);
+  if (tr) { tr.style.background = 'rgba(59,130,246,0.1)'; tr.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+}
+
+// ══════════════════════════════════════════════════════════════
+// INTELLIGENCE REPORT
+// ══════════════════════════════════════════════════════════════
+function generateReport() {
+  if (!currentResults.length) { alert('No results to report.'); return; }
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  const sevOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+  const sorted = [...currentResults].sort((a, b) => (sevOrder[a._severity] || 3) - (sevOrder[b._severity] || 3));
+  const counts = {}; sorted.forEach(r => { counts[r._severity] = (counts[r._severity] || 0) + 1; });
+  const mk = selectedAnomaly.metricKey, ml = selectedAnomaly.metricLabel, mu = selectedAnomaly.metricUnit || '';
+  const bc = { CRITICAL: '#ef4444', HIGH: '#f59e0b', MEDIUM: '#22c55e', LOW: '#06b6d4' };
+
+  const fmtTs = ts => ts ? String(ts).replace('T', ' ').slice(0, 16) : '—';
+  const rowsHTML = sorted.slice(0, 200).map((row, i) => {
+    const lat = parseFloat(row.lat).toFixed(5), lon = parseFloat(row.lon).toFixed(5);
+    const md = mk && row[mk] != null ? `${row[mk]}${mu ? ' ' + mu : ''}` : '—';
+    const c = bc[row._severity] || '#94a3b8';
+    return `<div style="background:${c}14;border:1px solid ${c}33;border-radius:10px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div><span style="background:${c}22;color:${c};border:1px solid ${c}44;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:700">${row._severity}</span>
+        <span style="margin-left:8px;font-size:13px;font-weight:600">${row._label}</span></div>
+        <span style="font-size:11px;color:#64748b">#${i+1}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;font-size:12px">
+        <div><span style="color:#94a3b8">Cell ID:</span> <strong style="font-family:monospace;font-size:11px">${fmtCell(row)}</strong></div>
+        <div><span style="color:#94a3b8">eNB:</span> <strong style="font-family:monospace">${row.cell_enb != null ? row.cell_enb : '—'}</strong></div>
+        <div><span style="color:#94a3b8">PLMN:</span> <strong>${row.network_PLMN||'—'}</strong></div>
+        <div><span style="color:#94a3b8">Operator:</span> <strong>${row.network_operator||'—'}</strong></div>
+        <div><span style="color:#94a3b8">${ml}:</span> <strong style="color:${c}">${md}</strong></div>
+        <div><span style="color:#94a3b8">Samples:</span> <strong>${row.counted||'—'}</strong></div>
+        <div><span style="color:#94a3b8">Country:</span> <strong>${row.network_iso||'—'}</strong></div>
+        <div><span style="color:#94a3b8">Coords:</span> <strong style="font-family:monospace;font-size:11px">${lat}, ${lon}</strong></div>
+        <div><span style="color:#94a3b8">First Seen:</span> <strong style="font-family:monospace;font-size:11px">${fmtTs(row.first_seen)}</strong></div>
+        <div><span style="color:#94a3b8">Last Seen:</span> <strong style="font-family:monospace;font-size:11px">${fmtTs(row.last_seen)}</strong></div>
+      </div>
+      <div style="font-size:12px;color:#cbd5e1;line-height:1.5;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px">
+        <strong style="color:#94a3b8">Intel Assessment:</strong> ${row._assessment}
+      </div>
+    </div>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>Anomaly Report — ${selectedAnomaly.name}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a1628; color: #e2e8f0; font-family: 'Inter', sans-serif; padding: 32px; }
+.wrap { max-width: 900px; margin: 0 auto; }
+.rh { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 2px solid #1e3a5f; }
+.rh img { height: 40px; object-fit: contain; opacity: 0.9; }
+.rt { text-align: right; }
+.rt h1 { font-size: 22px; font-weight: 700; color: #fff; }
+.rt h2 { font-size: 14px; color: #3b82f6; font-weight: 500; margin-top: 4px; }
+.rt p  { font-size: 12px; color: #64748b; margin-top: 8px; }
+.sg { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; margin-bottom: 28px; }
+.sc { background: #162038; border: 1px solid #1e3a5f; border-radius: 10px; padding: 16px; text-align: center; }
+.sc .num { font-size: 28px; font-weight: 700; }
+.sc .lbl { font-size: 11px; color: #94a3b8; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; }
+.sl { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin-bottom: 16px; }
+.ft { margin-top: 32px; padding-top: 16px; border-top: 1px solid #1e3a5f; font-size: 11px; color: #475569; text-align: center; }</style></head>
+<body><div class="wrap">
+<div class="rh"><img src="fcic copy.png" alt="FCIC" onerror="this.style.display='none'">
+<div class="rt"><h1>Anomaly Intelligence Report</h1><h2>${selectedAnomaly.name} — ${selectedAnomaly.subtitle}</h2><p>Generated: ${dateStr} at ${timeStr}</p></div></div>
+<div style="margin-bottom:24px"><div class="sl">Executive Summary</div><div class="sg">
+<div class="sc"><div class="num">${currentResults.length}</div><div class="lbl">Total Events</div></div>
+<div class="sc"><div class="num" style="color:#ef4444">${counts.CRITICAL||0}</div><div class="lbl">Critical</div></div>
+<div class="sc"><div class="num" style="color:#f59e0b">${counts.HIGH||0}</div><div class="lbl">High</div></div>
+<div class="sc"><div class="num" style="color:#06b6d4">${(counts.MEDIUM||0)+(counts.LOW||0)}</div><div class="lbl">Med / Low</div></div>
+</div></div>
+<div><div class="sl">Anomaly Events (sorted by severity)</div>${rowsHTML}
+${sorted.length > 200 ? `<p style="text-align:center;color:#64748b;font-size:12px;margin-top:12px">Showing top 200 of ${sorted.length}.</p>` : ''}</div>
+<div class="ft"><p>FCIC — Advanced Cell Report Platform &nbsp;|&nbsp; ${selectedAnomaly.name} Detection &nbsp;|&nbsp; ${dateStr}</p>
+<p style="margin-top:4px">Sensitive intelligence data. Handle per classification protocols.</p></div>
+</div></body></html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+// ══════════════════════════════════════════════════════════════
+// CSV EXPORT
+// ══════════════════════════════════════════════════════════════
+function exportCSV() {
+  if (!currentResults.length || !selectedAnomaly) return;
+  const mk   = selectedAnomaly.metricKey;
+  const cols  = ['_severity', '_confidence', 'cell_ecgi', 'cell_eci', 'cell_enb', 'cell_nci', 'cell_lac', 'cell_cid', 'network_PLMN', 'network_operator', 'network_iso', mk, 'counted', 'first_seen', 'last_seen', 'lat', 'lon', '_label', '_assessment'];
+  const header = cols.join(',');
+  const rows   = sortedResults().map(r => cols.map(c => {
+    const v = r[c] ?? '';
+    return typeof v === 'string' ? '"' + v.replace(/"/g, '""') + '"' : v;
+  }).join(','));
+  const blob = new Blob([header + '\n' + rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const a    = document.createElement('a');
+  a.href     = URL.createObjectURL(blob);
+  a.download = `${selectedAnomaly.id}_${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+// ══════════════════════════════════════════════════════════════
+// CORRELATION ENGINE
+// ══════════════════════════════════════════════════════════════
+function defaultParamsFor(a) {
+  const p = {};
+  a.params.forEach(param => { p[param.id] = param.default; });
+  return p;
+}
+
+async function runAllScans() {
+  if (!isConnected) {
+    document.getElementById('conn-panel').classList.add('open');
+    alert('Please connect to the database first.');
+    return;
+  }
+
+  const btn     = document.getElementById('scan-all-btn');
+  const overlay = document.getElementById('loading-overlay');
+  const ltxt    = document.getElementById('loading-text');
+  btn.disabled  = true;
+  overlay.classList.add('show');
+  lastQueryMs   = 0;
+
+  const lim     = getLimit();
+  const extras  = buildExtraFilters();
+  let successCount = 0;
+
+  for (let i = 0; i < ANOMALY_LIBRARY.length; i++) {
+    const a = ANOMALY_LIBRARY[i];
+    ltxt.textContent = `Scanning ${i + 1}/${ANOMALY_LIBRARY.length}: ${a.name}…`;
+    try {
+      const t0  = Date.now();
+      const sql = a.generateSQL(defaultParamsFor(a), extras).replace(/LIMIT \d+;/, `LIMIT ${lim};`);
+      const result = await executeClickHouseQuery(sql);
+      lastQueryMs  += Date.now() - t0;
+      const rows = (result.data || []).filter(r => !isNaN(parseFloat(r.lat)) && !isNaN(parseFloat(r.lon)));
+      sessionStore[a.id] = rows.map(row => {
+        const cls  = a.classifyRow(row);
+        const conf = computeConfidence({ ...row, _severity: cls.severity });
+        return { ...row, _severity: cls.severity, _color: cls.color, _label: cls.label, _assessment: cls.assessment, _confidence: conf, _anomalyId: a.id, _anomalyName: a.name };
+      });
+      successCount++;
+    } catch (e) {
+      console.warn(`Scan failed for ${a.id}:`, e.message);
+      sessionStore[a.id] = [];
+    }
+    updateAnomalyBadges();
+  }
+
+  overlay.classList.remove('show');
+  btn.disabled = false;
+  showCorrelationView();
+}
+
+function computeCorrelations() {
+  const cellMap  = {}; // cell_key → Set of anomaly ids
+  const cellRows = {}; // cell_key → first representative row per anomaly id
+  const sevOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+
+  for (const [aId, rows] of Object.entries(sessionStore)) {
+    rows.forEach(row => {
+      const key = cellKey(row);
+      if (!key) return;
+      if (!cellMap[key]) { cellMap[key] = new Set(); cellRows[key] = []; }
+      if (!cellMap[key].has(aId)) {
+        cellMap[key].add(aId);
+        cellRows[key].push(row);
+      }
+    });
+  }
+
+  return Object.entries(cellMap)
+    .filter(([, ids]) => ids.size >= 2)
+    .map(([key, ids]) => {
+      const hits = cellRows[key];
+      const worstRow = [...hits].sort((a, b) => (sevOrder[a._severity] || 3) - (sevOrder[b._severity] || 3))[0];
+      const anomalyNames = [...ids].map(id => ANOMALY_LIBRARY.find(a => a.id === id)?.name || id);
+      return {
+        cellId: key,
+        cellDisplay: fmtCell(worstRow),
+        anomalyCount: ids.size,
+        anomalyIds: [...ids],
+        anomalyNames,
+        lat: worstRow.lat,
+        lon: worstRow.lon,
+        maxSeverity: worstRow._severity,
+        maxColor: worstRow._color,
+        hits
+      };
+    })
+    .sort((a, b) => b.anomalyCount - a.anomalyCount || (sevOrder[a.maxSeverity] || 3) - (sevOrder[b.maxSeverity] || 3));
+}
+
+function showCorrelationView() {
+  corrMode = true;
+  document.getElementById('ai-corr-btn').style.display = 'block';
+  document.getElementById('ai-analyze-btn').style.display = 'none';
+  const corrs = computeCorrelations();
+
+  // Update banner
+  const banner = document.getElementById('corr-banner');
+  banner.classList.add('show');
+  document.getElementById('corr-banner-sub').textContent =
+    corrs.length > 0
+      ? `— ${corrs.length} hotspot${corrs.length !== 1 ? 's' : ''} where multiple threat types overlap`
+      : '— No overlapping locations found across scanned anomaly types';
+
+  // Clear existing markers
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  if (corrs.length === 0) {
+    document.getElementById('data-stats').style.display = 'block';
+    document.getElementById('data-stats').innerHTML = 'No correlated hotspots found. All anomaly types fired at different locations.';
+    return;
+  }
+
+  // Render pulsing hotspot markers
+  corrs.forEach((c, i) => {
+    const lat  = parseFloat(c.lat), lon = parseFloat(c.lon);
+    if (isNaN(lat) || isNaN(lon)) return;
+    const sz   = 8 + Math.min(c.anomalyCount - 2, 4) * 4; // 8–24px
+    const color = c.maxColor;
+    const assessmentList = c.hits.map(h => `<div style="margin-bottom:4px"><span style="background:${h._color}22;color:${h._color};border:1px solid ${h._color}44;border-radius:8px;padding:1px 6px;font-size:10px;font-weight:700">${h._severity}</span> <strong>${h._anomalyName}</strong><br><span style="font-size:11px;color:#94a3b8">${h._assessment}</span></div>`).join('');
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="hotspot-outer" style="width:${sz}px;height:${sz}px;background:${color};box-shadow:0 0 ${sz/2}px ${color}66">
+               <div class="hotspot-ring" style="border:2px solid ${color}"></div>
+             </div>`,
+      iconSize: [sz, sz],
+      iconAnchor: [sz / 2, sz / 2]
+    });
+
+    const m = L.marker([lat, lon], { icon });
+    m.bindPopup(`
+      <div class="popup-title" style="color:${color}">Threat Hotspot — ${c.anomalyCount} Anomaly Types</div>
+      <div class="popup-row"><span class="lbl">Max Severity</span><span class="sev-badge ${c.maxSeverity}">${c.maxSeverity}</span></div>
+      <div class="popup-row"><span class="lbl">Cell ID</span><span style="font-family:monospace;font-size:11px">${c.cellDisplay}</span></div>
+      <div class="popup-row"><span class="lbl">Anomaly Types</span><span>${c.anomalyNames.join(', ')}</span></div>
+      <div class="popup-row"><span class="lbl">Coordinates</span><span style="font-family:monospace;font-size:11px">${lat.toFixed(5)}, ${lon.toFixed(5)}</span></div>
+      <div style="margin-top:10px;border-top:1px solid var(--card-border);padding-top:10px">${assessmentList}</div>`);
+    m.addTo(map);
+    markers.push(m);
+  });
+
+  // Fit map to hotspots
+  const lats = corrs.map(c => parseFloat(c.lat));
+  const lons = corrs.map(c => parseFloat(c.lon));
+  map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [40, 40] });
+
+  // Update stats bar
+  const statsEl = document.getElementById('data-stats');
+  statsEl.style.display = 'block';
+  const critHots = corrs.filter(c => c.maxSeverity === 'CRITICAL').length;
+  statsEl.innerHTML = `<strong>${corrs.length}</strong> hotspots &nbsp;·&nbsp; <span style="color:var(--red)">${critHots} CRITICAL</span> &nbsp;·&nbsp; Total scanned: ${Object.values(sessionStore).reduce((s, r) => s + r.length, 0)} events
+    <button class="btn-sm btn-secondary" onclick="generateCorrelationReport()" style="margin-left:10px;padding:3px 8px;font-size:10px;display:inline-flex;align-items:center;gap:3px;border-radius:5px">
+      <span class="material-icons" style="font-size:12px">summarize</span>Report
+    </button>`;
+
+  // Render correlation table
+  document.getElementById('table-wrap').style.display = 'block';
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('table-head').innerHTML = `<th>Max Severity</th><th>Cell / ECI</th><th>Count</th><th>Anomaly Types</th><th>Lat / Lon</th>`;
+  document.getElementById('table-body').innerHTML = corrs.map((c, i) => `
+    <tr onclick="flyToCorr(${i})" style="cursor:pointer">
+      <td><span class="sev-badge ${c.maxSeverity}">${c.maxSeverity}</span></td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${c.cellDisplay}</td>
+      <td><strong style="color:${c.maxColor}">${c.anomalyCount}</strong></td>
+      <td style="font-size:11px">${c.anomalyNames.join(', ')}</td>
+      <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${parseFloat(c.lat).toFixed(5)}, ${parseFloat(c.lon).toFixed(5)}</td>
+    </tr>`).join('');
+
+  // Store corrs for flyToCorr
+  window._corrResults = corrs;
+}
+
+function flyToCorr(i) {
+  const c = (window._corrResults || [])[i];
+  if (!c) return;
+  map.flyTo([parseFloat(c.lat), parseFloat(c.lon)], 15, { duration: 0.8 });
+  if (markers[i]) markers[i].openPopup();
+}
+
+function exitCorrelationView() {
+  corrMode = false;
+  document.getElementById('corr-banner').classList.remove('show');
+  document.getElementById('ai-corr-btn').style.display = 'none';
+  document.getElementById('ai-analyze-btn').style.display = 'block';
+  document.getElementById('ai-response-wrap').style.display = 'none';
+  document.getElementById('ai-output').innerHTML = '';
+  // Restore single-scan view if results exist
+  if (currentResults.length > 0) {
+    renderMarkers();
+    renderTable();
+  } else {
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    document.getElementById('table-wrap').style.display = 'none';
+    document.getElementById('empty-state').style.display = 'block';
+    document.getElementById('data-stats').style.display = 'none';
+  }
+}
+
+function generateCorrelationReport() {
+  const corrs = window._corrResults || [];
+  const now = new Date();
+  const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+  const timeStr = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+  const totalEvents = Object.values(sessionStore).reduce((s, r) => s + r.length, 0);
+  const scannedTypes = Object.keys(sessionStore).length;
+
+  const rowsHTML = corrs.slice(0, 100).map((c, i) => {
+    const color = c.maxColor;
+    const assessList = c.hits.map(h =>
+      `<div style="margin-bottom:6px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px">
+        <span style="background:${h._color}22;color:${h._color};border:1px solid ${h._color}44;border-radius:8px;padding:1px 6px;font-size:11px;font-weight:700">${h._severity}</span>
+        <strong style="margin-left:6px">${h._anomalyName}</strong>
+        <div style="margin-top:4px;font-size:12px;color:#94a3b8">${h._assessment}</div>
+      </div>`).join('');
+    const cellBadge = c.cellDisplay !== '—'
+      ? `<span style="display:inline-block;background:#0f2a4a;border:1px solid #3b82f644;border-radius:6px;padding:3px 10px;font-family:monospace;font-size:12px;color:#38bdf8;letter-spacing:0.02em">${c.cellDisplay}</span>`
+      : `<span style="color:#475569;font-size:12px">Cell ID unavailable</span>`;
+    return `<div style="background:${color}14;border:1px solid ${color}33;border-radius:10px;padding:16px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div><span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:12px;padding:3px 10px;font-size:11px;font-weight:700">${c.maxSeverity}</span>
+        <span style="margin-left:8px;font-size:13px;font-weight:600">Hotspot — ${c.anomalyCount} Threat Types</span></div>
+        <span style="font-size:11px;color:#64748b">#${i+1}</span>
+      </div>
+      <div style="background:rgba(56,189,248,0.06);border:1px solid rgba(56,189,248,0.15);border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;white-space:nowrap">Cell Reference</span>
+        ${cellBadge}
+        <span style="margin-left:auto;font-size:11px;color:#475569;font-family:monospace">${parseFloat(c.lat).toFixed(5)}, ${parseFloat(c.lon).toFixed(5)}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px;font-size:12px">
+        <div><span style="color:#94a3b8">Anomaly Types:</span> <strong style="color:${color}">${c.anomalyNames.join(', ')}</strong></div>
+      </div>
+      <div style="font-size:12px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px">${assessList}</div>
+    </div>`;
+  }).join('');
+
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Correlation Report</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0a1628;color:#e2e8f0;font-family:'Inter',sans-serif;padding:32px}.wrap{max-width:960px;margin:0 auto}
+.rh{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:32px;padding-bottom:24px;border-bottom:2px solid #1e3a5f}
+.rh img{height:40px;opacity:0.9}.rt{text-align:right}.rt h1{font-size:22px;font-weight:700;color:#fff}.rt h2{font-size:14px;color:#3b82f6;font-weight:500;margin-top:4px}.rt p{font-size:12px;color:#64748b;margin-top:8px}
+.sg{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:28px}.sc{background:#162038;border:1px solid #1e3a5f;border-radius:10px;padding:16px;text-align:center}
+.sc .num{font-size:28px;font-weight:700}.sc .lbl{font-size:11px;color:#94a3b8;margin-top:4px;text-transform:uppercase;letter-spacing:0.06em}
+.sl{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8;margin-bottom:16px}
+.ft{margin-top:32px;padding-top:16px;border-top:1px solid #1e3a5f;font-size:11px;color:#475569;text-align:center}</style></head>
+<body><div class="wrap">
+<div class="rh"><img src="fcic copy.png" alt="FCIC" onerror="this.style.display='none'">
+<div class="rt"><h1>Multi-Anomaly Correlation Report</h1><h2>Threat Hotspot Analysis — ${scannedTypes} Detection Types Scanned</h2><p>Generated: ${dateStr} at ${timeStr}</p></div></div>
+<div style="margin-bottom:24px"><div class="sl">Scan Summary</div><div class="sg">
+<div class="sc"><div class="num">${scannedTypes}</div><div class="lbl">Types Scanned</div></div>
+<div class="sc"><div class="num">${totalEvents}</div><div class="lbl">Total Events</div></div>
+<div class="sc"><div class="num" style="color:#ef4444">${corrs.length}</div><div class="lbl">Hotspots</div></div>
+<div class="sc"><div class="num" style="color:#f59e0b">${corrs.filter(c=>c.anomalyCount>=3).length}</div><div class="lbl">3+ Type Overlap</div></div>
+</div></div>
+<div><div class="sl">Threat Hotspots (by severity × overlap count)</div>${rowsHTML}</div>
+<div class="ft"><p>FCIC — Advanced Cell Report Platform &nbsp;|&nbsp; Multi-Anomaly Correlation &nbsp;|&nbsp; ${dateStr}</p>
+<p style="margin-top:4px">Sensitive intelligence data. Handle per classification protocols.</p></div>
+</div></body></html>`;
+
+  const win = window.open('', '_blank');
+  win.document.write(html);
+  win.document.close();
+}
+
+// ══════════════════════════════════════════════════════════════
+// AI ANALYSIS ENGINE
+// ══════════════════════════════════════════════════════════════
+const AI_KEY_STORE = 'fcic_ai_key';
+function getAIKey()  { return localStorage.getItem(AI_KEY_STORE) || ''; }
+function saveAIKey() {
+  const k = document.getElementById('ai-key-input').value.trim();
+  if (!k) return;
+  localStorage.setItem(AI_KEY_STORE, k);
+  document.getElementById('ai-panel').style.display = 'none';
+  updateAIDot();
+}
+function loadAIKey() {
+  const k = getAIKey();
+  if (k) {
+    document.getElementById('ai-key-input').value = k;
+    document.getElementById('ai-key-label').textContent = 'Claude AI — key saved';
+    document.getElementById('ai-dot').className = 'conn-dot connected';
+  }
+}
+function toggleAIPanel() {
+  const p = document.getElementById('ai-panel');
+  p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+function updateAIDot() {
+  const k = getAIKey();
+  document.getElementById('ai-dot').className = 'conn-dot ' + (k ? 'connected' : '');
+  document.getElementById('ai-key-label').textContent = k ? 'Claude AI — key saved' : 'Claude AI — click to configure';
+}
+async function callClaudeAPI(prompt) {
+  const key = getAIKey();
+  if (!key) { alert('Set your Anthropic API key first.'); toggleAIPanel(); return null; }
+  // Route through local server proxy (/api/claude) to avoid browser CORS restrictions
+  let resp;
+  try {
+    resp = await fetch('/api/claude', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        api_key:    key,
+        model:      'claude-haiku-4-5-20251001',
+        max_tokens: 1200,
+        messages:   [{ role: 'user', content: prompt }]
+      })
+    });
+  } catch(netErr) {
+    throw new Error('Cannot reach server — restart server.py: python3 server.py');
+  }
+  const raw = await resp.text();
+  if (raw.trim().startsWith('<')) {
+    throw new Error('Server needs restart — stop and run: python3 server.py');
+  }
+  let data;
+  try { data = JSON.parse(raw); } catch(e) {
+    throw new Error('Bad proxy response: ' + raw.slice(0, 100));
+  }
+  if (!resp.ok) throw new Error(data.error?.message || `API error ${resp.status}`);
+  return data.content[0].text;
+}
+async function analyzeWithAI() {
+  if (!currentResults.length) return;
+  const top10 = currentResults.slice(0, 10).map(r => ({
+    severity: r._severity, confidence: r._confidence + '%',
+    metric: `${selectedAnomaly.metricLabel}: ${r[selectedAnomaly.metricKey]}${selectedAnomaly.metricUnit ? ' ' + selectedAnomaly.metricUnit : ''}`,
+    plmn: r.network_PLMN, operator: r.network_operator, country: r.network_iso,
+    samples: r.counted, firstSeen: r.first_seen, lastSeen: r.last_seen, label: r._label
+  }));
+  const prompt = `You are a cellular network forensics expert for FCIC (law enforcement intelligence unit) in Israel.
+
+Anomaly Detection Results:
+- Type: ${selectedAnomaly.name} — ${selectedAnomaly.subtitle}
+- Thresholds used: ${JSON.stringify(currentParams)}
+- Total results: ${currentResults.length} | CRITICAL: ${currentResults.filter(r=>r._severity==='CRITICAL').length} | HIGH: ${currentResults.filter(r=>r._severity==='HIGH').length}
+- Top ${top10.length} results (sorted by severity):
+${JSON.stringify(top10, null, 2)}
+
+Provide a forensic intelligence assessment with these sections:
+
+**THREAT ASSESSMENT**
+2-3 sentences: What does this pattern indicate? Is this consistent with a real threat or likely infrastructure?
+
+**THRESHOLD OPTIMIZATION**
+Are the current thresholds appropriate? Suggest specific adjustments with reasoning to reduce false positives or improve detection precision.
+
+**KEY OBSERVATIONS**
+Bullet points: notable patterns in timing, specific operators/PLMNs, geographic clustering, or data quality issues.
+
+**NEXT STEPS**
+Which other anomaly types should be correlated: Tech Downgrade, Timing Advance=0, Extreme RSRP, Unregistered Cells, Forced Roaming, PCI Mismatch, Multi-Device IMEI, No-Signal Blackout, TX Power Spike, GPS Satellite Drop?
+
+**CONFIDENCE RATING**
+Overall: HIGH / MEDIUM / LOW — brief justification.
+
+Be direct and actionable. Use technical language for a cellular forensics investigator.`;
+  showAILoading(true);
+  try { const text = await callClaudeAPI(prompt); if (text) renderAIResponse(text); }
+  catch (e) { renderAIResponse(`**Error:** ${e.message}`); }
+  finally { showAILoading(false); }
+}
+async function analyzeCorrelationWithAI() {
+  const corrs = window._corrResults || [];
+  if (!corrs.length) return;
+  const top5 = corrs.slice(0, 5).map(c => ({
+    anomalyCount: c.anomalyCount, anomalyTypes: c.anomalyNames, maxSeverity: c.maxSeverity,
+    coords: `${parseFloat(c.lat).toFixed(4)}, ${parseFloat(c.lon).toFixed(4)}`
+  }));
+  const allTypes = Object.keys(sessionStore).map(id => {
+    const a = ANOMALY_LIBRARY.find(x => x.id === id);
+    return `${a?.name}: ${sessionStore[id].length} results`;
+  });
+  const prompt = `You are a cellular network forensics expert for FCIC.
+
+Multi-Anomaly Correlation Analysis:
+- Anomaly types scanned: ${allTypes.join(', ')}
+- Hotspot locations found (tiles with 2+ anomaly types): ${corrs.length}
+- Top ${top5.length} hotspots:
+${JSON.stringify(top5, null, 2)}
+
+**TACTICAL ASSESSMENT**
+Does this multi-type overlap pattern fit a known IMSI-Catcher deployment profile? What type of equipment/operation does this suggest?
+
+**HOTSPOT PRIORITY**
+Which location(s) warrant immediate physical investigation? Why?
+
+**PATTERN ANALYSIS**
+Any patterns across the hotspots (timing overlap? same operators? geographic clustering)?
+
+**INVESTIGATION RECOMMENDATIONS**
+Specific next steps for the field team.
+
+Keep response concise and actionable for an active investigation.`;
+  showAILoading(true);
+  try { const text = await callClaudeAPI(prompt); if (text) renderAIResponse(text); }
+  catch (e) { renderAIResponse(`**Error:** ${e.message}`); }
+  finally { showAILoading(false); }
+}
+function showAILoading(show) {
+  document.getElementById('ai-response-wrap').style.display = 'block';
+  document.getElementById('ai-loading').style.display = show ? 'block' : 'none';
+  document.getElementById('ai-output').style.display = show ? 'none' : 'block';
+}
+function renderAIResponse(text) {
+  const html = text.split('\n').map(line => {
+    if (line.startsWith('**') && line.endsWith('**'))
+      return `<div style="color:var(--accent);font-weight:700;font-size:11px;text-transform:uppercase;letter-spacing:0.07em;margin:14px 0 6px;padding-bottom:4px;border-bottom:1px solid rgba(59,130,246,0.2)">${line.replace(/\*\*/g,'')}</div>`;
+    if (line.startsWith('- ') || line.startsWith('• '))
+      return `<div style="padding-left:14px;margin-bottom:4px;font-size:12px;color:var(--text);line-height:1.5">· ${line.slice(2)}</div>`;
+    if (line.trim() === '') return '<div style="height:4px"></div>';
+    return `<div style="font-size:12px;color:var(--text);line-height:1.55;margin-bottom:3px">${line}</div>`;
+  }).join('');
+  document.getElementById('ai-output').innerHTML = html;
+  document.getElementById('ai-response-wrap').style.display = 'block';
+}
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  renderAnomalyList();
+  loadCredentials();
+  loadAIKey();
+
+  // Refresh SQL when time filters change
+  document.getElementById('time-from').addEventListener('change', refreshSQL);
+  document.getElementById('time-to').addEventListener('change', refreshSQL);
+
+  // Show scan-all section once connected (even without an anomaly selected)
+  document.getElementById('conn-bar').addEventListener('click', () => {
+    // Shown via selectAnomaly() once user picks a type; also shown after connection
+  });
+});
+</script>
+</body>
+</html>

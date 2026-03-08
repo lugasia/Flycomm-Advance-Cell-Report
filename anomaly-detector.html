@@ -20,7 +20,7 @@
             --green: #22c55e;
             --text: #e2e8f0;
             --text-dim: #94a3b8;
-            --sidebar-w: 340px;
+            --sidebar-w: 480px;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
@@ -177,29 +177,39 @@
 
         /* Nav links */
         #nav-links {
-            padding: 12px 20px;
+            padding: 10px;
             border-top: 1px solid var(--card-border);
             display: flex;
-            gap: 8px;
+            gap: 6px;
+            flex-shrink: 0;
         }
         #nav-links a {
             flex: 1;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            padding: 10px;
-            background: var(--navy);
+            gap: 3px;
+            flex-direction: column;
+            padding: 7px 3px;
             border: 1px solid var(--card-border);
-            border-radius: 6px;
-            color: var(--text);
+            border-radius: 8px;
+            color: #94a3b8;
             text-decoration: none;
-            font-size: 0.8rem;
+            font-size: 10px;
+            font-weight: 500;
+            text-align: center;
             transition: all 0.2s;
         }
+        #nav-links a .material-icons { font-size: 17px; }
         #nav-links a:hover {
             border-color: var(--accent);
             background: rgba(59, 130, 246, 0.1);
+            color: var(--text);
+        }
+        #nav-links a.current {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(59, 130, 246, 0.08);
         }
 
         /* Main content */
@@ -377,6 +387,7 @@
 <!-- SIDEBAR -->
 <aside id="sidebar">
     <div id="sb-header">
+        <img src="fcic copy.png" alt="FCIC" style="height:32px;object-fit:contain;opacity:0.85;display:block;margin-bottom:8px;">
         <h1>📡 SIGINT Anomaly Detector</h1>
         <p>Detect TAC-changing cells (IMSI-Catcher suspects)</p>
         <label id="upload-area" for="file-input">
@@ -428,12 +439,28 @@
 
     <div id="nav-links">
         <a href="index.html">
-            <span class="material-icons" style="font-size:16px">map</span>
+            <span class="material-icons">map</span>
             Signal Map
         </a>
         <a href="sql-builder.html">
-            <span class="material-icons" style="font-size:16px">polyline</span>
+            <span class="material-icons">polyline</span>
             SQL Builder
+        </a>
+        <a href="anomaly-detector.html" class="current">
+            <span class="material-icons">radar</span>
+            TAC Detector
+        </a>
+        <a href="anomaly-workbench.html">
+            <span class="material-icons">biotech</span>
+            Workbench
+        </a>
+        <a href="roaming-report.html">
+            <span class="material-icons">flight</span>
+            Roaming
+        </a>
+        <a href="db-dashboard.html">
+            <span class="material-icons">dashboard</span>
+            Dashboard
         </a>
     </div>
 </aside>

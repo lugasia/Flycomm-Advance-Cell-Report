@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Advanced Cell Report — DB Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:        #0a1628;
+      --card:        #162038;
+      --card2:       #1a2744;
+      --card-border: #1e3a5f;
+      --accent:      #3b82f6;
+      --accent2:     #60a5fa;
+      --red:         #ef4444;
+      --orange:      #f59e0b;
+      --green:       #22c55e;
+      --cyan:        #06b6d4;
+      --purple:      #a78bfa;
+      --text:        #e2e8f0;
+      --text-muted:  #94a3b8;
+      --text-dim:    #64748b;
+    }
+
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--navy); color: var(--text); overflow: hidden; }
+
+    /* ── LAYOUT ── */
+    #app { display: flex; height: 100vh; }
+
+    /* ── SIDEBAR ── */
+    aside {
+      width: 480px; min-width: 480px;
+      background: var(--card);
+      border-right: 1px solid var(--card-border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    #sb-header { padding: 16px 20px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+    #sb-header img { height: 32px; max-width: 100%; object-fit: contain; opacity: 0.85; display: block; margin-bottom: 6px; }
+    #sb-header h1 { font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; margin-top: 0; }
+    #sb-header h1 .material-icons { font-size: 20px; color: var(--accent); }
+    #sb-header p { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+    #sb-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+    #sb-body::-webkit-scrollbar { width: 4px; }
+    #sb-body::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 2px; }
+    .sb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 7px; }
+
+    /* ── Connection bar (identical to workbench) ── */
+    #conn-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--card-border); cursor: pointer; background: rgba(255,255,255,0.02); transition: all 0.15s; }
+    #conn-bar:hover { border-color: rgba(59,130,246,0.4); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; transition: background 0.3s; }
+    .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .conn-dot.connecting { background: var(--orange); }
+    #conn-label { flex: 1; font-size: 12px; color: var(--text-muted); }
+    #conn-panel { display: none; padding: 12px; background: var(--navy); border-radius: 8px; border: 1px solid var(--card-border); margin-top: 6px; }
+    #conn-panel.open { display: block; }
+    .field-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px; }
+    .field-label:first-child { margin-top: 0; }
+    input.db-inp { width: 100%; background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'JetBrains Mono', monospace; outline: none; }
+    input.db-inp:focus { border-color: var(--accent); }
+    input[type=datetime-local] { width: 100%; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 11px; font-family: 'Inter', sans-serif; outline: none; }
+    input[type=datetime-local]:focus { border-color: var(--accent); }
+    input[type=datetime-local]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+    input.filter-inp { width: 100%; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'JetBrains Mono', monospace; outline: none; }
+    input.filter-inp:focus { border-color: var(--accent); }
+
+    .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .param-label { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+    .preset-row { display: flex; gap: 5px; margin-bottom: 8px; }
+    .preset-btn { flex: 1; padding: 5px 4px; background: var(--navy); border: 1px solid var(--card-border); border-radius: 5px; color: var(--text-muted); font-size: 10px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.15s; }
+    .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; transition: all 0.15s; width: 100%; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-primary:disabled { background: var(--card-border); color: var(--text-muted); cursor: not-allowed; }
+    .btn-secondary { background: var(--navy); color: var(--text); border: 1px solid var(--card-border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn .material-icons { font-size: 15px; }
+
+    /* ── NAV ── */
+    #nav-links { padding: 10px 14px; border-top: 1px solid var(--card-border); display: flex; gap: 7px; flex-shrink: 0; }
+    #nav-links a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; flex-direction: column; padding: 7px 4px; border-radius: 8px; border: 1px solid var(--card-border); color: var(--text-muted); text-decoration: none; font-size: 10px; font-weight: 500; transition: all 0.2s; text-align: center; }
+    #nav-links a .material-icons { font-size: 17px; }
+    #nav-links a:hover { border-color: var(--accent); background: rgba(59,130,246,0.1); color: var(--text); }
+    #nav-links a.current { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
+
+    /* ── MAIN ── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    #top-bar {
+      padding: 14px 20px; border-bottom: 1px solid var(--card-border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; background: var(--card);
+    }
+    #top-bar h2 { font-size: 14px; font-weight: 700; color: var(--text); }
+    #top-bar-right { display: flex; align-items: center; gap: 10px; }
+    #last-refresh { font-size: 11px; color: var(--text-dim); }
+    #loading-bar {
+      height: 3px; background: linear-gradient(90deg, var(--accent), var(--cyan));
+      width: 0%; transition: width 0.3s; flex-shrink: 0;
+    }
+
+    #content { flex: 1; overflow-y: auto; padding: 20px; }
+
+    /* ── EMPTY STATE ── */
+    #empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; color: var(--text-muted); }
+    #empty-state .material-icons { font-size: 56px; color: var(--text-dim); }
+    #empty-state h3 { font-size: 16px; font-weight: 600; }
+    #empty-state p { font-size: 13px; text-align: center; max-width: 320px; line-height: 1.6; }
+
+    /* ── KPI ROW ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .kpi-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 14px 16px; }
+    .kpi-card .kpi-val { font-size: 26px; font-weight: 700; line-height: 1; margin-bottom: 4px; }
+    .kpi-card .kpi-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; }
+    .kpi-card .kpi-sub { font-size: 10px; color: var(--text-dim); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── SECTION GRID ── */
+    .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .dash-grid.cols3 { grid-template-columns: 1fr 1fr 1fr; }
+    .dash-grid.full { grid-template-columns: 1fr; }
+
+    .dash-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 16px; }
+    .dash-card h3 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+    .dash-card h3 .material-icons { font-size: 15px; color: var(--accent); }
+
+    /* ── BAR CHART ── */
+    .bar-item { margin-bottom: 9px; }
+    .bar-label { display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 4px; color: var(--text); }
+    .bar-label .bar-val { color: var(--text-muted); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+    .bar-track { height: 6px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+
+    /* ── TABLES ── */
+    .dash-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .dash-table th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--card-border); color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .dash-table td { padding: 7px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text); vertical-align: middle; }
+    .dash-table tr:last-child td { border-bottom: none; }
+    .dash-table tr:hover td { background: rgba(59,130,246,0.05); }
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-muted); }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+
+    /* Tech colors */
+    .tech-NR     { color: #a78bfa; }
+    .tech-LTE    { color: #60a5fa; }
+    .tech-WCDMA  { color: #34d399; }
+    .tech-GSM    { color: #f59e0b; }
+    .fill-NR     { background: #a78bfa; }
+    .fill-LTE    { background: #3b82f6; }
+    .fill-WCDMA  { background: #22c55e; }
+    .fill-GSM    { background: #f59e0b; }
+    .fill-default { background: var(--accent); }
+
+    /* Security badge colors */
+    .sev-critical { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+    .sev-high     { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+    .sev-ok       { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+
+    /* ── TIMELINE ── */
+    .timeline-bars { display: flex; align-items: flex-end; gap: 2px; height: 60px; padding-top: 8px; }
+    .timeline-bar { flex: 1; border-radius: 2px 2px 0 0; background: var(--accent); opacity: 0.7; min-height: 2px; transition: all 0.3s; cursor: default; position: relative; }
+    .timeline-bar:hover { opacity: 1; }
+    .timeline-bar:hover::after { content: attr(data-tip); position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #1e3a5f; color: var(--text); font-size: 9px; padding: 3px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none; margin-bottom: 3px; }
+    .timeline-labels { display: flex; justify-content: space-between; margin-top: 4px; font-size: 9px; color: var(--text-dim); }
+
+    /* ── QUALITY METER ── */
+    .quality-item { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .quality-label { font-size: 11px; color: var(--text); width: 140px; flex-shrink: 0; }
+    .quality-bar-wrap { flex: 1; }
+    .quality-pct { font-size: 11px; color: var(--text-muted); width: 36px; text-align: right; flex-shrink: 0; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── ERROR ── */
+    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ef4444; margin-bottom: 12px; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside>
+    <div id="sb-header">
+      <img src="fcic copy.png" alt="FCIC" onerror="this.style.display='none'">
+      <h1><span class="material-icons">dashboard</span> DB Dashboard</h1>
+      <p>Live intelligence overview from ClickHouse</p>
+    </div>
+
+    <div id="sb-body">
+
+      <!-- Connection — identical to Anomaly Workbench -->
+      <div>
+        <div class="sb-label">Database</div>
+        <div id="conn-bar" onclick="toggleConnPanel()">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Not connected — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="conn-panel">
+          <div class="field-label">Host</div>
+          <input class="db-inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <div class="field-label">Port</div>
+          <input class="db-inp" type="text" id="db-port" placeholder="8443" style="width:100px">
+          <div class="field-label">Database</div>
+          <input class="db-inp" type="text" id="db-name" value="default">
+          <div class="field-label">Username</div>
+          <input class="db-inp" type="text" id="db-user" placeholder="default">
+          <div class="field-label">Password</div>
+          <input class="db-inp" type="password" id="db-pass" placeholder="••••••••">
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+              <span class="material-icons" style="font-size:14px">sync</span> Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Time Range -->
+      <div>
+        <div class="sb-label">Time Range <span style="font-weight:400;font-size:10px;color:var(--text-muted)">(optional)</span></div>
+        <div class="preset-row">
+          <button class="preset-btn" onclick="setPreset(1)">24h</button>
+          <button class="preset-btn" onclick="setPreset(7)">7d</button>
+          <button class="preset-btn" onclick="setPreset(30)">30d</button>
+          <button class="preset-btn" onclick="clearDates()">All</button>
+        </div>
+        <div class="time-row">
+          <div>
+            <div class="param-label">From</div>
+            <input type="datetime-local" id="time-from">
+          </div>
+          <div>
+            <div class="param-label">To</div>
+            <input type="datetime-local" id="time-to">
+          </div>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div>
+        <div class="sb-label">Filters <span style="font-weight:400;font-size:10px;color:var(--text-muted)">(optional)</span></div>
+        <div class="field-label">SDK Source</div>
+        <input class="filter-inp" type="text" id="filter-source" placeholder="e.g. flycomm">
+        <div class="field-label" style="margin-top:8px">Country ISO</div>
+        <input class="filter-inp" type="text" id="filter-iso" placeholder="e.g. IL, DE">
+      </div>
+
+      <!-- Load -->
+      <button class="btn btn-primary" id="btn-load" onclick="loadDashboard()">
+        <span class="material-icons">refresh</span>Load Dashboard
+      </button>
+
+    </div><!-- /sb-body -->
+
+    <div id="nav-links">
+      <a href="index.html"><span class="material-icons">map</span>Signal Map</a>
+      <a href="sql-builder.html"><span class="material-icons">polyline</span>SQL Builder</a>
+      <a href="anomaly-detector.html"><span class="material-icons">radar</span>TAC Detector</a>
+      <a href="anomaly-workbench.html"><span class="material-icons">biotech</span>Workbench</a>
+      <a href="roaming-report.html"><span class="material-icons">flight</span>Roaming</a>
+      <a href="db-dashboard.html" class="current"><span class="material-icons">dashboard</span>Dashboard</a>
+    </div>
+  </aside>
+
+  <!-- ═══════════════ MAIN ═══════════════ -->
+  <main id="main">
+    <div id="top-bar">
+      <h2>Database Intelligence Dashboard</h2>
+      <div id="top-bar-right">
+        <span id="last-refresh"></span>
+        <button class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:11px" onclick="loadDashboard()" id="btn-refresh" disabled>
+          <span class="material-icons" style="font-size:13px">refresh</span>Refresh
+        </button>
+      </div>
+    </div>
+    <div id="loading-bar"></div>
+
+    <div id="content">
+      <div id="empty-state">
+        <span class="material-icons">analytics</span>
+        <h3>No data loaded</h3>
+        <p>Configure your ClickHouse connection in the sidebar and click <strong>Load Dashboard</strong> to populate all metrics.</p>
+      </div>
+      <div id="dashboard" style="display:none"></div>
+    </div>
+  </main>
+
+</div><!-- /app -->
+
+<script>
+// ══════════════════════════════════════════
+// CONNECTION — identical to Anomaly Workbench
+// ══════════════════════════════════════════
+const CREDS_KEY = 'clickhouse_credentials';
+let isConnected = false;
+
+function toggleConnPanel() {
+  document.getElementById('conn-panel').classList.toggle('open');
+}
+
+function loadCredentials() {
+  const saved = localStorage.getItem(CREDS_KEY);
+  if (!saved) return;
+  try {
+    const c = JSON.parse(saved);
+    if (c.host)     document.getElementById('db-host').value = c.host;
+    if (c.port)     document.getElementById('db-port').value = c.port;
+    if (c.database) document.getElementById('db-name').value = c.database;
+    if (c.user)     document.getElementById('db-user').value = c.user;
+    if (c.password) document.getElementById('db-pass').value = atob(c.password);
+    if (c.host && c.user && c.password) testConnection(true);
+  } catch (e) {}
+}
+
+function saveCredentials() {
+  const c = {
+    host:     document.getElementById('db-host').value.trim(),
+    port:     document.getElementById('db-port').value.trim() || '8443',
+    database: document.getElementById('db-name').value.trim() || 'default',
+    user:     document.getElementById('db-user').value.trim(),
+    password: btoa(document.getElementById('db-pass').value)
+  };
+  localStorage.setItem(CREDS_KEY, JSON.stringify(c));
+}
+
+function setConnStatus(state, label) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = 'conn-dot ' + state;
+  lbl.textContent = label;
+  isConnected = (state === 'connected');
+}
+
+async function executeClickHouseQuery(sql) {
+  const host = document.getElementById('db-host').value.trim();
+  const port = document.getElementById('db-port').value.trim() || '8443';
+  const db   = document.getElementById('db-name').value.trim() || 'default';
+  const user = document.getElementById('db-user').value.trim();
+  const pass = document.getElementById('db-pass').value;
+  if (!host || !user || !pass) throw new Error('Fill in connection details first');
+  const url = `https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Authorization': 'Basic ' + btoa(`${user}:${pass}`), 'Content-Type': 'text/plain' },
+    body: sql
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let errMsg = `HTTP ${resp.status}`;
+    try {
+      const errJson = JSON.parse(errText);
+      errMsg = errJson.exception || errJson.error?.message || errText;
+    } catch { errMsg = errText || errMsg; }
+    throw new Error(errMsg);
+  }
+  const json = await resp.json();
+  if (json.exception) throw new Error(json.exception);
+  return json;
+}
+
+async function testConnection(silent = false) {
+  setConnStatus('connecting', 'Connecting…');
+  try {
+    const r = await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
+    const ver = r.data?.[0]?.version || '';
+    setConnStatus('connected', `Connected ${ver ? '· ' + ver.split('.').slice(0,2).join('.') : ''}`);
+    saveCredentials();
+    if (!silent) document.getElementById('conn-panel').classList.remove('open');
+  } catch (e) {
+    setConnStatus('disconnected', 'Error: ' + e.message.substring(0, 50));
+    if (!silent) document.getElementById('conn-panel').classList.add('open');
+  }
+}
+
+// helper: run query and return data array
+async function runQuery(sql) {
+  const result = await executeClickHouseQuery(sql);
+  return result.data || [];
+}
+
+function setPreset(days) {
+  const to = new Date();
+  const from = new Date(to - days * 86400000);
+  document.getElementById('time-from').value = from.toISOString().slice(0,16);
+  document.getElementById('time-to').value   = to.toISOString().slice(0,16);
+}
+function clearDates() {
+  document.getElementById('time-from').value = '';
+  document.getElementById('time-to').value = '';
+}
+
+function timeWhere() {
+  const f = document.getElementById('time-from').value;
+  const t = document.getElementById('time-to').value;
+  const src = document.getElementById('filter-source').value.trim();
+  const iso = document.getElementById('filter-iso').value.trim().toUpperCase();
+  const clauses = [];
+  if (f) clauses.push(`timestamp >= '${f.replace('T',' ')}:00'`);
+  if (t) clauses.push(`timestamp <= '${t.replace('T',' ')}:00'`);
+  if (src) clauses.push(`source = '${src.replace(/'/g,"''")}'`);
+  if (iso) clauses.push(`upper(network_iso) = '${iso.replace(/'/g,"''")}'`);
+  return clauses.length ? 'WHERE ' + clauses.join(' AND ') : '';
+}
+
+function setProgress(p) {
+  document.getElementById('loading-bar').style.width = p + '%';
+}
+
+loadCredentials();
+
+// ══════════════════════════════════════════
+// LOAD ALL
+// ══════════════════════════════════════════
+async function loadDashboard() {
+  const btn = document.getElementById('btn-load');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-icons" style="font-size:15px;animation:spin 1s linear infinite">refresh</span>Loading…';
+  document.getElementById('btn-refresh').disabled = true;
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  setProgress(5);
+
+  setConnStatus('connecting', 'Connecting…');
+
+  const w = timeWhere();
+  const errors = [];
+
+  function safe(p) { return p.catch(e => { errors.push(e.message); return []; }); }
+
+  try {
+    const [kpi, byTech, byCountry, byOperator, bySource, signalQ, speedQ, secQ, topCells, daily, quality, byBand, byEnv, byDevice] = await Promise.all([
+      safe(runQuery(`SELECT count() AS total, uniqExact(deviceInfo_deviceId) AS devices, uniqExactIf(cell_ecgi, cell_ecgi IS NOT NULL AND cell_ecgi != '') AS cells_ecgi, uniqExactIf(cell_enb, cell_enb IS NOT NULL) AS enbs, min(timestamp) AS first_seen, max(timestamp) AS last_seen, countIf(network_isRoaming = 1) AS roaming, countIf(isRegistered = 0) AS unregistered, countIf(signal_timingAdvance = 0) AS ta_zero FROM measurements ${w}`)),
+      safe(runQuery(`SELECT tech, count() AS n FROM measurements ${w} GROUP BY tech ORDER BY n DESC`)),
+      safe(runQuery(`SELECT upper(network_iso) AS country, count() AS n, uniqExact(network_operator) AS operators FROM measurements ${w} GROUP BY country ORDER BY n DESC LIMIT 20`)),
+      safe(runQuery(`SELECT network_operator AS operator, network_PLMN AS plmn, count() AS n FROM measurements ${w} GROUP BY operator, plmn ORDER BY n DESC LIMIT 20`)),
+      safe(runQuery(`SELECT source, count() AS n FROM measurements ${w} GROUP BY source ORDER BY n DESC LIMIT 15`)),
+      safe(runQuery(`SELECT tech, round(avg(signal_rsrp),1) AS avg_rsrp, round(avg(signal_rsrq),1) AS avg_rsrq, round(avg(signal_snr),1) AS avg_snr, round(avg(signal_timingAdvance),1) AS avg_ta, count() AS n FROM measurements ${w} WHERE signal_rsrp IS NOT NULL GROUP BY tech ORDER BY n DESC`)),
+      safe(runQuery(`SELECT network_operator AS operator, tech, round(avg(internet_downloadMbps),1) AS dl, round(avg(internet_uploadMbps),1) AS ul, round(avg(internet_latency),0) AS latency, count() AS n FROM measurements ${w} WHERE internet_downloadMbps IS NOT NULL GROUP BY operator, tech ORDER BY n DESC LIMIT 15`)),
+      safe(runQuery(`SELECT countIf(isRegistered = 0) AS unregistered_cells, countIf(network_isRoaming = 1) AS roaming_rows, countIf(signal_timingAdvance = 0) AS ta_zero_rows, countIf(network_isRoaming = 1 AND network_mcc = 425) AS forced_roaming, countIf(signal_rsrp >= -50) AS extreme_rsrp, count() AS total FROM measurements ${w}`)),
+      safe(runQuery(`SELECT cell_ecgi, cell_eci, cell_enb, network_operator AS operator, upper(network_iso) AS country, count() AS n FROM measurements ${w} WHERE cell_ecgi IS NOT NULL AND cell_ecgi != '' GROUP BY cell_ecgi, cell_eci, cell_enb, operator, country ORDER BY n DESC LIMIT 10`)),
+      safe(runQuery(`SELECT toDate(timestamp) AS day, count() AS n FROM measurements ${w} GROUP BY day ORDER BY day DESC LIMIT 60`)),
+      safe(runQuery(`SELECT count() AS total, countIf(cell_ecgi IS NOT NULL AND cell_ecgi != '') AS has_ecgi, countIf(deviceInfo_imsi != '') AS has_imsi, countIf(internet_downloadMbps IS NOT NULL) AS has_speed, countIf(satellites_gps_satellitesNo IS NOT NULL) AS has_gps, countIf(signal_rsrp IS NOT NULL) AS has_rsrp, countIf(cell_enb IS NOT NULL) AS has_enb, countIf(building_info_indoor IS NOT NULL) AS has_indoor FROM measurements ${w}`)),
+      safe(runQuery(`SELECT band_number, band_name, band_duplexMode AS duplex, count() AS n FROM measurements ${w} WHERE band_number IS NOT NULL GROUP BY band_number, band_name, duplex ORDER BY n DESC LIMIT 15`)),
+      safe(runQuery(`SELECT multiIf(building_info_indoor = 1, 'Indoor', building_info_indoor = 0, 'Outdoor', 'Unknown') AS env, count() AS n FROM measurements ${w} GROUP BY env ORDER BY n DESC`)),
+      safe(runQuery(`SELECT deviceInfo_deviceModel AS model, count() AS n FROM measurements ${w} WHERE deviceInfo_deviceModel != '' GROUP BY model ORDER BY n DESC LIMIT 12`)),
+    ]);
+
+    setProgress(90);
+    setConnStatus('connected', 'Connected');
+
+    renderDashboard({ kpi: kpi[0]||{}, byTech, byCountry, byOperator, bySource, signalQ, speedQ, secQ: secQ[0]||{}, topCells, daily: daily.reverse(), quality: quality[0]||{}, byBand, byEnv, byDevice, errors });
+
+    document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('btn-refresh').disabled = false;
+    setProgress(100);
+    setTimeout(() => setProgress(0), 600);
+
+  } catch(e) {
+    setConnStatus('disconnected', 'Error: ' + e.message.substring(0, 50));
+    document.getElementById('conn-panel').classList.add('open');
+    document.getElementById('empty-state').style.display = 'flex';
+    document.getElementById('empty-state').innerHTML = `
+      <span class="material-icons" style="color:var(--red)">error_outline</span>
+      <h3>Connection Error</h3>
+      <p>${e.message}</p>`;
+    setProgress(0);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<span class="material-icons">refresh</span>Load Dashboard';
+}
+
+// ══════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════
+function fmt(n) {
+  if (n == null || n === '') return '—';
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  if (isNaN(num)) return n;
+  if (num >= 1_000_000) return (num/1_000_000).toFixed(1) + 'M';
+  if (num >= 1_000) return (num/1_000).toFixed(1) + 'K';
+  return num.toLocaleString();
+}
+function pct(a, b) { return b > 0 ? ((a/b)*100).toFixed(1)+'%' : '—'; }
+function techColor(t) { return {NR:'#a78bfa',LTE:'#3b82f6',WCDMA:'#22c55e',GSM:'#f59e0b'}[t] || '#64748b'; }
+function barColor(i) { return ['#3b82f6','#06b6d4','#a78bfa','#22c55e','#f59e0b','#ef4444','#f97316','#8b5cf6'][i % 8]; }
+
+function hbar(items, valKey, labelKey, total) {
+  if (!items || !items.length) return '<p style="color:var(--text-dim);font-size:12px;padding:8px 0">No data</p>';
+  const max = Math.max(...items.map(r => Number(r[valKey])));
+  return items.map((r, i) => {
+    const v = Number(r[valKey]);
+    const pctWidth = max > 0 ? (v/max*100).toFixed(1) : 0;
+    const pctTotal = total ? ' · ' + pct(v, total) : '';
+    const color = techColor(r[labelKey]) !== '#64748b' ? techColor(r[labelKey]) : barColor(i);
+    return `<div class="bar-item">
+      <div class="bar-label">
+        <span>${r[labelKey] || '(blank)'}</span>
+        <span class="bar-val">${fmt(v)}${pctTotal}</span>
+      </div>
+      <div class="bar-track"><div class="bar-fill" style="width:${pctWidth}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashboard(d) {
+  const total = Number(d.kpi.total) || 0;
+  const dateRange = d.kpi.first_seen && d.kpi.last_seen
+    ? `${d.kpi.first_seen.slice(0,10)} → ${d.kpi.last_seen.slice(0,10)}` : '—';
+
+  // KPI cards
+  const kpiCards = [
+    { val: fmt(d.kpi.total),       label: 'Total Samples',    sub: dateRange,                      color: 'var(--accent)' },
+    { val: fmt(d.kpi.devices),     label: 'Unique Devices',   sub: 'by deviceId',                  color: 'var(--cyan)' },
+    { val: fmt(d.kpi.cells_ecgi),  label: 'Unique Cells',     sub: 'ECGI (globally unique)',        color: '#a78bfa' },
+    { val: fmt(d.kpi.enbs),        label: 'Unique eNodeBs',   sub: 'base station hardware',         color: '#34d399' },
+    { val: fmt(d.kpi.roaming),     label: 'Roaming Rows',     sub: pct(d.kpi.roaming, total) + ' of total', color: 'var(--orange)' },
+    { val: fmt(d.kpi.unregistered),label: 'Unregistered Cells',sub: 'isRegistered = 0',            color: 'var(--red)' },
+    { val: fmt(d.kpi.ta_zero),     label: 'TA = 0 Events',    sub: 'IMSI-Catcher proximity flag',  color: 'var(--red)' },
+  ].map(k => `<div class="kpi-card">
+    <div class="kpi-val" style="color:${k.color}">${k.val}</div>
+    <div class="kpi-label">${k.label}</div>
+    <div class="kpi-sub">${k.sub}</div>
+  </div>`).join('');
+
+  // Error banner
+  const errBanner = d.errors.length
+    ? `<div class="error-msg"><strong>⚠ Some queries failed:</strong> ${d.errors.slice(0,3).join(' · ')}</div>` : '';
+
+  // Tech distribution
+  const techBars = hbar(d.byTech, 'n', 'tech', total);
+
+  // Country table
+  const countryRows = (d.byCountry||[]).slice(0,12).map(r =>
+    `<tr><td><strong>${r.country||'—'}</strong></td>
+     <td class="mono">${fmt(r.n)}</td>
+     <td class="mono">${pct(r.n, total)}</td>
+     <td class="mono">${r.operators}</td></tr>`).join('');
+
+  // Operator table
+  const operatorRows = (d.byOperator||[]).slice(0,12).map((r,i) =>
+    `<tr><td><strong>${r.operator||'—'}</strong></td>
+     <td class="mono" style="color:var(--text-dim)">${r.plmn}</td>
+     <td class="mono">${fmt(r.n)}</td>
+     <td class="mono">${pct(r.n, total)}</td></tr>`).join('');
+
+  // SDK Source bars
+  const sourceBars = hbar(d.bySource, 'n', 'source', total);
+
+  // Signal quality table
+  const signalRows = (d.signalQ||[]).map(r =>
+    `<tr><td><strong class="tech-${r.tech}">${r.tech||'—'}</strong></td>
+     <td class="mono">${r.avg_rsrp ?? '—'} dBm</td>
+     <td class="mono">${r.avg_rsrq ?? '—'} dB</td>
+     <td class="mono">${r.avg_snr ?? '—'} dB</td>
+     <td class="mono">${r.avg_ta ?? '—'}</td>
+     <td class="mono">${fmt(r.n)}</td></tr>`).join('');
+
+  // Speed table
+  const speedRows = (d.speedQ||[]).slice(0,10).map(r =>
+    `<tr><td>${r.operator||'—'}</td>
+     <td><span class="tech-${r.tech}">${r.tech}</span></td>
+     <td class="mono" style="color:var(--green)">${r.dl ?? '—'}</td>
+     <td class="mono" style="color:var(--cyan)">${r.ul ?? '—'}</td>
+     <td class="mono">${r.latency ?? '—'} ms</td>
+     <td class="mono">${fmt(r.n)}</td></tr>`).join('');
+
+  // Security quick-scan
+  const sec = d.secQ;
+  const secItems = [
+    { label: 'Unregistered Cells', val: fmt(sec.unregistered_cells), pct: pct(sec.unregistered_cells, total), sev: Number(sec.unregistered_cells) > 0 ? 'critical' : 'ok' },
+    { label: 'Roaming Rows', val: fmt(sec.roaming_rows), pct: pct(sec.roaming_rows, total), sev: Number(sec.roaming_rows) > 100 ? 'high' : 'ok' },
+    { label: 'Forced Roaming (home MCC 425)', val: fmt(sec.forced_roaming), pct: pct(sec.forced_roaming, total), sev: Number(sec.forced_roaming) > 0 ? 'high' : 'ok' },
+    { label: 'Timing Advance = 0', val: fmt(sec.ta_zero_rows), pct: pct(sec.ta_zero_rows, total), sev: Number(sec.ta_zero_rows) > 10 ? 'critical' : 'ok' },
+    { label: 'Extreme RSRP (≥ −50 dBm)', val: fmt(sec.extreme_rsrp), pct: pct(sec.extreme_rsrp, total), sev: Number(sec.extreme_rsrp) > 0 ? 'high' : 'ok' },
+  ].map(s => `<tr>
+    <td>${s.label}</td>
+    <td class="mono">${s.val}</td>
+    <td class="mono">${s.pct}</td>
+    <td><span class="badge sev-${s.sev}">${s.sev.toUpperCase()}</span></td>
+  </tr>`).join('');
+
+  // Top cells
+  const cellRows = (d.topCells||[]).map((r,i) =>
+    `<tr><td style="color:var(--text-dim)">${i+1}</td>
+     <td class="mono" style="color:var(--accent2)">${r.cell_ecgi||'—'}</td>
+     <td class="mono">${r.cell_eci ?? '—'}</td>
+     <td class="mono">${r.cell_enb ?? '—'}</td>
+     <td>${r.operator||'—'}</td>
+     <td class="mono">${r.country||'—'}</td>
+     <td class="mono"><strong>${fmt(r.n)}</strong></td></tr>`).join('');
+
+  // Daily timeline
+  const dailyHTML = (() => {
+    if (!d.daily || !d.daily.length) return '<p style="color:var(--text-dim);font-size:12px">No data</p>';
+    const recent = d.daily.slice(-60);
+    const max = Math.max(...recent.map(r => Number(r.n)));
+    const bars = recent.map(r => {
+      const h = max > 0 ? Math.max(2, Math.round((Number(r.n)/max)*56)) : 2;
+      return `<div class="timeline-bar" style="height:${h}px" data-tip="${r.day}: ${fmt(r.n)}"></div>`;
+    }).join('');
+    const first = recent[0]?.day || '';
+    const last  = recent[recent.length-1]?.day || '';
+    return `<div class="timeline-bars">${bars}</div>
+            <div class="timeline-labels"><span>${first}</span><span>${last}</span></div>`;
+  })();
+
+  // Data quality
+  const q = d.quality;
+  const qTotal = Number(q.total) || 1;
+  const qualityItems = [
+    { label: 'Cell ECGI populated', val: q.has_ecgi },
+    { label: 'eNodeB ID populated', val: q.has_enb },
+    { label: 'RSRP signal data', val: q.has_rsrp },
+    { label: 'GPS satellite data', val: q.has_gps },
+    { label: 'IMSI present', val: q.has_imsi },
+    { label: 'Speed test data', val: q.has_speed },
+    { label: 'Indoor/outdoor tag', val: q.has_indoor },
+  ].map(qi => {
+    const p = qTotal > 0 ? Math.round(Number(qi.val)/qTotal*100) : 0;
+    const color = p > 70 ? 'var(--green)' : p > 30 ? 'var(--orange)' : 'var(--red)';
+    return `<div class="quality-item">
+      <span class="quality-label">${qi.label}</span>
+      <div class="quality-bar-wrap"><div class="bar-track"><div class="bar-fill" style="width:${p}%;background:${color}"></div></div></div>
+      <span class="quality-pct">${p}%</span>
+    </div>`;
+  }).join('');
+
+  // Band distribution
+  const bandBars = hbar(d.byBand, 'n', 'band_number', total);
+
+  // Environment split
+  const envBars = hbar(d.byEnv, 'n', 'env', total);
+
+  // Device models
+  const deviceBars = hbar(d.byDevice, 'n', 'model', total);
+
+  const dash = document.getElementById('dashboard');
+  dash.innerHTML = `
+    ${errBanner}
+
+    <!-- KPI ROW -->
+    <div class="kpi-grid">${kpiCards}</div>
+
+    <!-- ROW 1: Tech + Country -->
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3><span class="material-icons">cell_tower</span>Technology Distribution</h3>
+        ${techBars}
+      </div>
+      <div class="dash-card">
+        <h3><span class="material-icons">public</span>Top Countries</h3>
+        <table class="dash-table">
+          <thead><tr><th>Country</th><th>Samples</th><th>% Total</th><th>Operators</th></tr></thead>
+          <tbody>${countryRows || '<tr><td colspan="4" style="color:var(--text-dim)">No data</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ROW 2: Operator + Source -->
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3><span class="material-icons">business</span>Top Operators</h3>
+        <table class="dash-table">
+          <thead><tr><th>Operator</th><th>PLMN</th><th>Samples</th><th>% Total</th></tr></thead>
+          <tbody>${operatorRows || '<tr><td colspan="4" style="color:var(--text-dim)">No data</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="dash-card">
+        <h3><span class="material-icons">developer_mode</span>SDK Source Distribution</h3>
+        ${sourceBars}
+      </div>
+    </div>
+
+    <!-- ROW 3: Security -->
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <h3><span class="material-icons">shield</span>Security Quick-Scan</h3>
+        <table class="dash-table">
+          <thead><tr><th>Indicator</th><th>Count</th><th>% of Total</th><th>Status</th></tr></thead>
+          <tbody>${secItems}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ROW 4: Signal + Speed -->
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3><span class="material-icons">signal_cellular_alt</span>Signal Quality by Technology</h3>
+        <table class="dash-table">
+          <thead><tr><th>Tech</th><th>Avg RSRP</th><th>Avg RSRQ</th><th>Avg SNR</th><th>Avg TA</th><th>Samples</th></tr></thead>
+          <tbody>${signalRows || '<tr><td colspan="6" style="color:var(--text-dim)">No data</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="dash-card">
+        <h3><span class="material-icons">speed</span>Internet Speed by Operator + Tech</h3>
+        <table class="dash-table">
+          <thead><tr><th>Operator</th><th>Tech</th><th>DL Mbps</th><th>UL Mbps</th><th>Latency</th><th>Tests</th></tr></thead>
+          <tbody>${speedRows || '<tr><td colspan="6" style="color:var(--text-dim)">No speed test data</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ROW 5: Top Cells -->
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <h3><span class="material-icons">cell_wifi</span>Top 10 Cells by Measurement Count</h3>
+        <table class="dash-table">
+          <thead><tr><th>#</th><th>ECGI</th><th>ECI</th><th>eNB</th><th>Operator</th><th>Country</th><th>Samples</th></tr></thead>
+          <tbody>${cellRows || '<tr><td colspan="7" style="color:var(--text-dim)">No ECGI data available</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ROW 6: Band + Environment + Device -->
+    <div class="dash-grid cols3">
+      <div class="dash-card">
+        <h3><span class="material-icons">radio</span>Band Distribution</h3>
+        ${bandBars || '<p style="color:var(--text-dim);font-size:12px">No data</p>'}
+      </div>
+      <div class="dash-card">
+        <h3><span class="material-icons">home</span>Environment (Indoor/Outdoor)</h3>
+        ${envBars || '<p style="color:var(--text-dim);font-size:12px">No data</p>'}
+      </div>
+      <div class="dash-card">
+        <h3><span class="material-icons">smartphone</span>Top Device Models</h3>
+        ${deviceBars || '<p style="color:var(--text-dim);font-size:12px">No data</p>'}
+      </div>
+    </div>
+
+    <!-- ROW 7: Daily Activity + Data Quality -->
+    <div class="dash-grid">
+      <div class="dash-card">
+        <h3><span class="material-icons">bar_chart</span>Daily Activity (last 60 days)</h3>
+        ${dailyHTML}
+      </div>
+      <div class="dash-card">
+        <h3><span class="material-icons">checklist</span>Data Quality / Field Completeness</h3>
+        ${qualityItems}
+      </div>
+    </div>
+  `;
+
+  dash.style.display = 'block';
+}
+
+// spin animation
+const style = document.createElement('style');
+style.textContent = '@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }';
+document.head.appendChild(style);
+</script>
+</body>
+</html>
