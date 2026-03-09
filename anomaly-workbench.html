@@ -1530,10 +1530,13 @@ function updateAIDot() {
 async function callClaudeAPI(prompt) {
   const key = getAIKey();
   if (!key) { alert('Set your Anthropic API key first.'); toggleAIPanel(); return null; }
-  // Route through local server proxy (/api/claude) to avoid browser CORS restrictions
+  // Route through local server proxy to avoid browser CORS restrictions.
+  // Always use absolute localhost:8000 so this works regardless of how the
+  // page is opened (VS Code Live Server, file://, etc.)
+  const PROXY = 'http://localhost:8000/api/claude';
   let resp;
   try {
-    resp = await fetch('/api/claude', {
+    resp = await fetch(PROXY, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1544,11 +1547,11 @@ async function callClaudeAPI(prompt) {
       })
     });
   } catch(netErr) {
-    throw new Error('Cannot reach server — restart server.py: python3 server.py');
+    throw new Error('Cannot reach proxy — make sure server.py is running: python3 server.py');
   }
   const raw = await resp.text();
   if (raw.trim().startsWith('<')) {
-    throw new Error('Server needs restart — stop and run: python3 server.py');
+    throw new Error('Proxy returned HTML — make sure you started server.py: python3 server.py');
   }
   let data;
   try { data = JSON.parse(raw); } catch(e) {
