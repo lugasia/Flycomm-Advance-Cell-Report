@@ -706,6 +706,274 @@ LIMIT 100;
 
 ---
 
+## DB Insight Dashboard Queries
+
+> **Platform:** `db-dashboard.html` — all 11 queries run in parallel on page load via `Promise.all()`.
+> Time/source/ISO filters are appended dynamically as a `WHERE` clause (`timeWhere()` helper).
+> Monthly growth query always runs **without** any time filter to capture full calendar months.
+
+---
+
+### KPI-1 · Totals (Wild Cards)
+
+Populates the four top KPI cards: Total Samples, Unique Devices, Unique Cells, date range.
+
+```sql
+SELECT
+    count()                                                          AS total,
+    uniqExact(deviceInfo_deviceId)                                   AS devices,
+    uniqExactIf(cell_ecgi, cell_ecgi IS NOT NULL AND cell_ecgi != '') AS cells,
+    min(timestamp)                                                   AS first_seen,
+    max(timestamp)                                                   AS last_seen
+FROM measurements
+-- WHERE <time / source / ISO filters>
+```
+
+| Output | KPI Card |
+|--------|----------|
+| `total` | Total Samples |
+| `devices` | Unique Devices (by `deviceInfo_deviceId`) |
+| `cells` | Unique Cells (ECGI — globally unique) |
+| `first_seen` / `last_seen` | Date range sub-label |
+
+---
+
+### KPI-2 · Avg Monthly Growth (last 3 months)
+
+Counts samples per calendar month for the current and previous 2 months. Always runs **without** a time filter so the monthly buckets reflect complete calendar months.
+
+```sql
+SELECT
+    countIf(toYYYYMM(timestamp) = toYYYYMM(today()))                     AS m0,
+    countIf(toYYYYMM(timestamp) = toYYYYMM(today() - INTERVAL 1 MONTH)) AS m1,
+    countIf(toYYYYMM(timestamp) = toYYYYMM(today() - INTERVAL 2 MONTH)) AS m2,
+    formatDateTime(today(), '%b %Y')                                     AS cur_month,
+    formatDateTime(today() - INTERVAL 1 MONTH, '%b %Y')                 AS prev_month
+FROM measurements
+```
+
+**Client-side growth formula:**
+```
+g1 = (m0 - m1) / m1 × 100   -- current vs. last month
+g2 = (m1 - m2) / m2 × 100   -- last vs. two months ago
+avgGrowth = (g1 + g2) / 2
+```
+Displayed with `trending_up` (green) or `trending_down` (red) icon.
+
+---
+
+### Dashboard-1 · Data Source Breakdown
+
+SDK source distribution — who is contributing data to the database.
+
+```sql
+SELECT
+    source,
+    count()                        AS n,
+    uniqExact(deviceInfo_deviceId) AS users
+FROM measurements
+-- WHERE <filters>
+GROUP BY source
+ORDER BY n DESC
+LIMIT 15
+```
+
+Rendered as a table with Users, Samples, and a horizontal contribution bar (% of source total).
+
+---
+
+### Dashboard-2 · Technology Distribution
+
+Sample breakdown by radio access technology.
+
+```sql
+SELECT
+    tech,
+    count() AS n
+FROM measurements
+-- WHERE <filters>
+GROUP BY tech
+ORDER BY n DESC
+```
+
+Color coding: NR = purple `#a78bfa`, LTE = blue `#3b82f6`, WCDMA = green `#22c55e`, GSM = orange `#f59e0b`.
+
+---
+
+### Dashboard-3 · Top Countries
+
+Geographic distribution of measurements by country.
+
+```sql
+SELECT
+    upper(network_iso)             AS country,
+    count()                        AS n,
+    uniqExact(network_operator)    AS ops
+FROM measurements
+-- WHERE <filters>
+GROUP BY country
+ORDER BY n DESC
+LIMIT 15
+```
+
+Columns: Country ISO, Samples, Operator count, Share bar.
+
+---
+
+### Dashboard-4 · Top Operators
+
+Per-operator breakdown, grouped by PLMN and technology to show multi-tech operators correctly.
+
+```sql
+SELECT
+    network_operator AS operator,
+    network_PLMN     AS plmn,
+    tech,
+    count()          AS n
+FROM measurements
+-- WHERE <filters>
+GROUP BY operator, plmn, tech
+ORDER BY n DESC
+LIMIT 20
+```
+
+Client-side merges rows with the same `operator+plmn` key to sum samples and collect distinct techs as badges.
+
+---
+
+### Dashboard-5 · Signal Quality by Technology
+
+Average signal metrics per radio technology for network quality assessment.
+
+```sql
+SELECT
+    tech,
+    round(avg(signal_rsrp), 1) AS avg_rsrp,
+    round(avg(signal_rsrq), 1) AS avg_rsrq,
+    round(avg(signal_snr),  1) AS avg_snr,
+    count()                    AS n
+FROM measurements
+-- WHERE <filters>
+WHERE signal_rsrp IS NOT NULL
+GROUP BY tech
+ORDER BY n DESC
+```
+
+| Column | Unit | Good Range |
+|--------|------|------------|
+| `avg_rsrp` | dBm | −80 to −100 = good LTE |
+| `avg_rsrq` | dB | −10 to −15 = good |
+| `avg_snr` | dB | > 10 = good |
+
+---
+
+### Dashboard-6 · Internet Speed by Operator + Tech
+
+Average download/upload throughput and latency per operator per technology.
+
+```sql
+SELECT
+    network_operator               AS operator,
+    tech,
+    round(avg(internet_downloadMbps), 1) AS dl,
+    round(avg(internet_uploadMbps),   1) AS ul,
+    round(avg(internet_latency),      0) AS latency,
+    count()                             AS n
+FROM measurements
+-- WHERE <filters>
+WHERE internet_downloadMbps IS NOT NULL
+GROUP BY operator, tech
+ORDER BY n DESC
+LIMIT 15
+```
+
+Only rows with at least one speed test measurement (`internet_downloadMbps IS NOT NULL`) are included.
+
+---
+
+### Dashboard-7 · Band Distribution
+
+Frequency band usage breakdown with duplex mode.
+
+```sql
+SELECT
+    band_number,
+    band_name,
+    band_duplexMode AS duplex,
+    count()         AS n
+FROM measurements
+-- WHERE <filters>
+WHERE band_number IS NOT NULL
+GROUP BY band_number, band_name, duplex
+ORDER BY n DESC
+LIMIT 15
+```
+
+Rendered as horizontal bars labeled `B{band_number} · {band_name} ({duplex})`.
+
+---
+
+### Dashboard-8 · Top Device Models
+
+Most common device hardware models in the dataset.
+
+```sql
+SELECT
+    deviceInfo_deviceModel AS model,
+    count()                AS n
+FROM measurements
+-- WHERE <filters>
+WHERE deviceInfo_deviceModel != ''
+GROUP BY model
+ORDER BY n DESC
+LIMIT 12
+```
+
+---
+
+### Dashboard-9 · Daily Activity (last 60 days)
+
+Time-series histogram of measurement volume for trend visibility.
+
+```sql
+SELECT
+    toDate(timestamp) AS day,
+    count()           AS n
+FROM measurements
+-- WHERE <filters>
+GROUP BY day
+ORDER BY day ASC
+LIMIT 60
+```
+
+Rendered as a bar chart with hover tooltips (`day: count`). Bar height is scaled relative to the daily maximum.
+
+---
+
+### Full Dashboard Execution Pattern
+
+All 11 queries run in a single `Promise.all()` call. Each is wrapped in a `safe()` catch so one failed query does not block the rest:
+
+```javascript
+const [kpi, growth, bySource, byTech, byCountry,
+       byOperator, signalQ, speedQ, byBand, byDevice, daily]
+  = await Promise.all([
+    safe(runQuery(KPI_SQL)),
+    safe(runQuery(GROWTH_SQL)),   // no time filter
+    safe(runQuery(SOURCE_SQL)),
+    safe(runQuery(TECH_SQL)),
+    safe(runQuery(COUNTRY_SQL)),
+    safe(runQuery(OPERATOR_SQL)),
+    safe(runQuery(SIGNAL_SQL)),
+    safe(runQuery(SPEED_SQL)),
+    safe(runQuery(BAND_SQL)),
+    safe(runQuery(DEVICE_SQL)),
+    safe(runQuery(DAILY_SQL)),
+]);
+```
+
+---
+
 ## SQL Helper Patterns
 
 ### Polygon Filter (pointInPolygon)
