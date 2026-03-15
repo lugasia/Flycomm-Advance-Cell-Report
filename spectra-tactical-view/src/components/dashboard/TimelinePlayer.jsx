@@ -176,21 +176,21 @@ export default function TimelinePlayer({ onFrame, onExit }) {
         </div>
 
         {/* Row 2: query config */}
-        <div className="flex items-center gap-3 mt-2 pt-2 border-t border-white/[0.05]">
+        <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/[0.05]">
           <span className="text-[10px] text-slate-500 uppercase tracking-wider flex-shrink-0">Range</span>
 
           <input
             type="datetime-local"
             value={fromTs}
             onChange={e => setFromTs(e.target.value)}
-            className="text-[11px] bg-[#1A2238] border border-white/10 rounded px-2 py-1 text-slate-300 flex-shrink-0"
+            className="text-[11px] bg-[#1A2238] border border-white/10 rounded px-2 py-1 text-slate-300 min-w-0 w-auto"
           />
           <span className="text-slate-600 text-[11px]">→</span>
           <input
             type="datetime-local"
             value={toTs}
             onChange={e => setToTs(e.target.value)}
-            className="text-[11px] bg-[#1A2238] border border-white/10 rounded px-2 py-1 text-slate-300 flex-shrink-0"
+            className="text-[11px] bg-[#1A2238] border border-white/10 rounded px-2 py-1 text-slate-300 min-w-0 w-auto"
           />
 
           <span className="text-[10px] text-slate-500 uppercase tracking-wider flex-shrink-0">Bucket</span>

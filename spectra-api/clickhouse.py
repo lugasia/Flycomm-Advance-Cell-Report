@@ -1,12 +1,28 @@
-"""ClickHouse HTTP client — uses requests for reliable SSL on Vercel."""
+"""ClickHouse HTTP client — uses requests with custom TLS for Vercel compatibility."""
 from typing import Optional
+import ssl
 import urllib3
 import requests as http_requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.ssl_ import create_urllib3_context
 from config import CH_HOST, CH_PORT, CH_DB, CH_USER, CH_PASSWORD, CH_SSL
 
-# Vercel's Python 3.9 OpenSSL build has TLS compatibility issues with
-# ClickHouse Cloud — disable verification for this server-to-server call.
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+
+class _TLSAdapter(HTTPAdapter):
+    """Force TLS 1.2 — Vercel's OpenSSL has handshake issues with ClickHouse Cloud."""
+    def init_poolmanager(self, *args, **kwargs):
+        ctx = create_urllib3_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+        kwargs["ssl_context"] = ctx
+        return super().init_poolmanager(*args, **kwargs)
+
+
+_session = http_requests.Session()
+_session.mount("https://", _TLSAdapter())
 
 
 def run_query(sql: str) -> list[dict]:
@@ -14,14 +30,13 @@ def run_query(sql: str) -> list[dict]:
     protocol = "https" if CH_SSL else "http"
     url = f"{protocol}://{CH_HOST}:{CH_PORT}/"
 
-    resp = http_requests.post(
+    resp = _session.post(
         url,
         params={"database": CH_DB, "default_format": "JSON"},
         data=sql.encode("utf-8"),
         auth=(CH_USER, CH_PASSWORD),
         headers={"Content-Type": "text/plain; charset=utf-8"},
         timeout=30,
-        verify=False,
     )
 
     if resp.status_code != 200:
