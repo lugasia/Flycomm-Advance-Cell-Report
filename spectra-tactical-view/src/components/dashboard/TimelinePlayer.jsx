@@ -25,6 +25,7 @@ export default function TimelinePlayer({ onFrame, onExit, orgId }) {
   const [playing, setPlaying]     = useState(false);
   const [speed, setSpeed]         = useState(2);
   const [loading, setLoading]     = useState(false);
+  const [rangeLoading, setRangeLoading] = useState(true);
   const [error, setError]         = useState(null);
 
   const intervalRef = useRef(null);
@@ -32,10 +33,11 @@ export default function TimelinePlayer({ onFrame, onExit, orgId }) {
   // Auto-set date range from actual data on mount
   useEffect(() => {
     if (!orgId) return;
+    setRangeLoading(true);
     spectra.fetchTimelineRange(orgId).then(r => {
       if (r.min_ts) setFromTs(chTsToInput(r.min_ts));
       if (r.max_ts) setToTs(chTsToInput(r.max_ts));
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => setRangeLoading(false));
   }, [orgId]);
 
   // Advance one frame
@@ -206,11 +208,11 @@ export default function TimelinePlayer({ onFrame, onExit, orgId }) {
 
           <button
             onClick={handleLoad}
-            disabled={loading}
+            disabled={loading || rangeLoading || !fromTs || !toTs}
             className="ml-auto px-3 py-1 rounded text-[11px] font-medium bg-blue-500/20 border border-blue-500/30 text-blue-400 hover:bg-blue-500/30 transition-colors disabled:opacity-50 flex items-center gap-1.5 flex-shrink-0"
           >
-            {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
-            {loading ? "Loading…" : "Load"}
+            {(loading || rangeLoading) ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+            {rangeLoading ? "Fetching range…" : loading ? "Loading…" : "Load"}
           </button>
 
           {frames.length > 0 && (
