@@ -1,28 +1,18 @@
-"""ClickHouse HTTP client — uses requests with custom TLS for Vercel compatibility."""
+"""ClickHouse HTTP client — uses httpx for Vercel TLS compatibility."""
 from typing import Optional
-import ssl
-import urllib3
-import requests as http_requests
-from requests.adapters import HTTPAdapter
-from urllib3.util.ssl_ import create_urllib3_context
 from config import CH_HOST, CH_PORT, CH_DB, CH_USER, CH_PASSWORD, CH_SSL
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-
-class _TLSAdapter(HTTPAdapter):
-    """Force TLS 1.2 — Vercel's OpenSSL has handshake issues with ClickHouse Cloud."""
-    def init_poolmanager(self, *args, **kwargs):
-        ctx = create_urllib3_context()
-        ctx.check_hostname = False
-        ctx.verify_mode = ssl.CERT_NONE
-        ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
-        kwargs["ssl_context"] = ctx
-        return super().init_poolmanager(*args, **kwargs)
-
-
-_session = http_requests.Session()
-_session.mount("https://", _TLSAdapter())
+def _get_client():
+    """Build an httpx client (lazy import so httpx is only needed when CH is used)."""
+    import httpx
+    import ssl
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+    return httpx.Client(verify=ctx, timeout=30.0)
 
 
 def run_query(sql: str) -> list[dict]:
@@ -30,14 +20,22 @@ def run_query(sql: str) -> list[dict]:
     protocol = "https" if CH_SSL else "http"
     url = f"{protocol}://{CH_HOST}:{CH_PORT}/"
 
-    resp = _session.post(
-        url,
-        params={"database": CH_DB, "default_format": "JSON"},
-        data=sql.encode("utf-8"),
-        auth=(CH_USER, CH_PASSWORD),
-        headers={"Content-Type": "text/plain; charset=utf-8"},
-        timeout=30,
-    )
+    import base64
+    creds = base64.b64encode(f"{CH_USER}:{CH_PASSWORD}".encode()).decode()
+
+    client = _get_client()
+    try:
+        resp = client.post(
+            url,
+            params={"database": CH_DB, "default_format": "JSON"},
+            content=sql.encode("utf-8"),
+            headers={
+                "Content-Type": "text/plain; charset=utf-8",
+                "Authorization": f"Basic {creds}",
+            },
+        )
+    finally:
+        client.close()
 
     if resp.status_code != 200:
         raise RuntimeError(f"ClickHouse HTTP {resp.status_code}: {resp.text[:300]}")
