@@ -10,8 +10,9 @@ if DATABASE_URL:
     # Supabase / Postgres
     engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 else:
-    # Local SQLite fallback
-    _db_path = os.path.join(os.path.dirname(__file__), "spectra.db")
+    # SQLite fallback — /tmp on Vercel (read-only filesystem), local file otherwise
+    _local_db = os.path.join(os.path.dirname(__file__), "spectra.db")
+    _db_path = "/tmp/spectra.db" if os.getenv("VERCEL") else _local_db
     engine = create_engine(
         f"sqlite:///{_db_path}",
         connect_args={"check_same_thread": False},
