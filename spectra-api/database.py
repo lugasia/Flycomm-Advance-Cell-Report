@@ -1,26 +1,35 @@
-"""SQLAlchemy database setup — Supabase Postgres in production, SQLite for local dev."""
+"""SQLAlchemy database setup — Vercel Neon Postgres in production, SQLite for local dev."""
 import os
+import ssl
 from urllib.parse import quote_plus
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ── Build engine ──────────────────────────────────────────────────
-PG_HOST = os.getenv("PG_HOST")
+# Priority: POSTGRES_URL (Vercel Neon) > PG_HOST (manual) > DATABASE_URL > SQLite
 
-if PG_HOST:
-    # Supabase via individual env vars (handles special chars in password)
-    _user = quote_plus(os.getenv("PG_USER", "postgres"))
-    _password = quote_plus(os.getenv("PG_PASSWORD", ""))
-    _port = os.getenv("PG_PORT", "5432")
-    _db = os.getenv("PG_DB", "postgres")
-    _url = f"postgresql+pg8000://{_user}:{_password}@{PG_HOST}:{_port}/{_db}"
-    import ssl as _ssl
-    _ssl_ctx = _ssl.create_default_context()
-    engine = create_engine(_url, pool_pre_ping=True,
+_pg_url = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
+
+if _pg_url:
+    # Vercel Neon sets POSTGRES_URL as postgres:// — SQLAlchemy needs postgresql://
+    if _pg_url.startswith("postgres://"):
+        _pg_url = "postgresql://" + _pg_url[len("postgres://"):]
+    # Switch to pg8000 driver (pure Python, works on Vercel)
+    _pg_url = _pg_url.replace("postgresql://", "postgresql+pg8000://", 1)
+    _ssl_ctx = ssl.create_default_context()
+    engine = create_engine(_pg_url, pool_pre_ping=True,
                            connect_args={"ssl_context": _ssl_ctx})
 
-elif os.getenv("DATABASE_URL"):
-    engine = create_engine(os.getenv("DATABASE_URL"), pool_pre_ping=True)
+elif os.getenv("PG_HOST"):
+    _user = quote_plus(os.getenv("PG_USER", "postgres"))
+    _password = quote_plus(os.getenv("PG_PASSWORD", ""))
+    _host = os.getenv("PG_HOST")
+    _port = os.getenv("PG_PORT", "5432")
+    _db = os.getenv("PG_DB", "postgres")
+    _url = f"postgresql+pg8000://{_user}:{_password}@{_host}:{_port}/{_db}"
+    _ssl_ctx = ssl.create_default_context()
+    engine = create_engine(_url, pool_pre_ping=True,
+                           connect_args={"ssl_context": _ssl_ctx})
 
 else:
     # Local SQLite fallback — /tmp on Vercel (read-only filesystem)
