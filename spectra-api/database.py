@@ -19,6 +19,8 @@ if _pg_url:
     # Strip sslmode param (pg8000 uses ssl_context instead)
     _pg_url = _pg_url.split("?")[0]
     _ssl_ctx = ssl.create_default_context()
+    _ssl_ctx.check_hostname = False
+    _ssl_ctx.verify_mode = ssl.CERT_NONE
     engine = create_engine(_pg_url, pool_pre_ping=True,
                            connect_args={"ssl_context": _ssl_ctx})
 
