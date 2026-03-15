@@ -70,11 +70,21 @@ class OrgUpdate(BaseModel):
     plan_tier: Optional[str] = None
     max_rsus: Optional[int] = None
     is_demo: Optional[bool] = None
+    ch_host: Optional[str] = None
+    ch_port: Optional[int] = None
+    ch_db: Optional[str] = None
+    ch_user: Optional[str] = None
+    ch_password: Optional[str] = None
+    ch_ssl: Optional[bool] = None
 
 def _org_dict(o: Organization) -> dict:
     return {"id": o.id, "name": o.name, "slug": o.slug,
             "plan_tier": o.plan_tier, "max_rsus": o.max_rsus,
-            "is_demo": bool(o.is_demo)}
+            "is_demo": bool(o.is_demo),
+            "ch_host": o.ch_host, "ch_port": o.ch_port or 8443,
+            "ch_db": o.ch_db or "default", "ch_user": o.ch_user,
+            "ch_ssl": bool(o.ch_ssl) if o.ch_ssl is not None else True,
+            "ch_configured": bool(o.ch_host and o.ch_user and o.ch_password)}
 
 
 # ── Organizations CRUD (SQLite) ────────────────────────────────────
@@ -117,6 +127,12 @@ def update_org(org_id: str, body: OrgUpdate, db: Session = Depends(get_db)):
     if body.plan_tier is not None: o.plan_tier = body.plan_tier
     if body.max_rsus  is not None: o.max_rsus  = body.max_rsus
     if body.is_demo   is not None: o.is_demo   = body.is_demo
+    if body.ch_host     is not None: o.ch_host     = body.ch_host
+    if body.ch_port     is not None: o.ch_port     = body.ch_port
+    if body.ch_db       is not None: o.ch_db       = body.ch_db
+    if body.ch_user     is not None: o.ch_user     = body.ch_user
+    if body.ch_password is not None: o.ch_password = body.ch_password
+    if body.ch_ssl      is not None: o.ch_ssl      = body.ch_ssl
     db.commit()
     db.refresh(o)
     return _org_dict(o)
@@ -130,6 +146,25 @@ def delete_org(org_id: str, db: Session = Depends(get_db)):
     db.delete(o)
     db.commit()
     return {"ok": True, "id": org_id}
+
+
+# ── ClickHouse credentials for browser-side queries ──────────────
+@app.get("/api/organizations/{org_id}/ch-config")
+def get_org_ch_config(org_id: str, db: Session = Depends(get_db)):
+    """Return CH connection details (including password) for browser-side queries."""
+    o = db.query(Organization).filter_by(id=org_id).first()
+    if not o:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    if not o.ch_host or not o.ch_user or not o.ch_password:
+        raise HTTPException(status_code=404, detail="ClickHouse not configured for this organization")
+    return {
+        "ch_host": o.ch_host,
+        "ch_port": o.ch_port or 8443,
+        "ch_db": o.ch_db or "default",
+        "ch_user": o.ch_user,
+        "ch_password": o.ch_password,
+        "ch_ssl": bool(o.ch_ssl) if o.ch_ssl is not None else True,
+    }
 
 
 # ── Health check ──────────────────────────────────────────────────

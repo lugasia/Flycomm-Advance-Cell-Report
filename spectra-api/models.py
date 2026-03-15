@@ -24,6 +24,14 @@ class Organization(Base):
     is_demo      = Column(Boolean, default=False)
     created_at   = Column(DateTime, server_default=func.now())
 
+    # ClickHouse connection (per-org, browser-side queries)
+    ch_host      = Column(String)       # e.g. "xyz.clickhouse.cloud"
+    ch_port      = Column(Integer, default=8443)
+    ch_db        = Column(String, default="default")
+    ch_user      = Column(String)
+    ch_password  = Column(String)       # stored encrypted in production
+    ch_ssl       = Column(Boolean, default=True)
+
 
 class User(Base):
     __tablename__ = "users"

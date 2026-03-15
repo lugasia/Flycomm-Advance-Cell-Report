@@ -1868,7 +1868,8 @@ async function analyzeCoverage() {
   resultsContainer.innerHTML = '<p style="color:var(--cyan);padding:20px;text-align:center;">🧠 Running Random Forest analysis...</p>';
 
   try {
-    const response = await fetch('http://localhost:8000/ml/coverage', {
+    const mlBase = window.location.hostname === 'localhost' ? 'http://localhost:8000' : '';
+    const response = await fetch(mlBase + '/ml/coverage', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cells: lastQueryResults.data })
@@ -2035,7 +2036,7 @@ function buildSelectQueryForMap() {
     max(signal_rsrp) AS max_rsrp,
     tupleElement(${geoCol}, 1) AS longitude,
     tupleElement(${geoCol}, 2) AS latitude,
-    min(timestamp) AS timestamp
+    min(timestamp) AS first_seen
 FROM ${tableName}
 WHERE
     ${conditions.join('\n    AND ')}

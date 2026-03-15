@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Plus, Building2, ChevronLeft, Shield } from "lucide-react";
+import { Plus, Building2, ChevronLeft, Shield, Database } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import OrgUserManagement from "../components/org/OrgUserManagement";
 import OrgSettings from "../components/org/OrgSettings";
@@ -178,12 +178,18 @@ export default function OrganizationManagement() {
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
+                    {org.ch_configured ? (
+                      <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 text-[10px]">
+                        <Database className="w-3 h-3 mr-1" /> CH
+                      </Badge>
+                    ) : (
+                      <Badge className="bg-slate-500/10 text-slate-500 border-slate-500/20 text-[10px]">No DB</Badge>
+                    )}
                     {org.is_demo ? (
                       <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[10px]">Demo</Badge>
                     ) : (
                       <Badge className="bg-green-500/10 text-green-400 border-green-500/20 text-[10px]">Production</Badge>
                     )}
-                    <span className="text-xs text-slate-500">{new Date(org.created_date).toLocaleDateString()}</span>
                   </div>
                 </CardContent>
               </Card>

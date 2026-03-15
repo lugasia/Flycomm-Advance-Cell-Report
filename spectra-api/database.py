@@ -70,4 +70,13 @@ def migrate_add_columns():
         if "manual_status" not in rsu_cols:
             conn.execute(text("ALTER TABLE rsus ADD COLUMN manual_status VARCHAR"))
 
+        # ClickHouse connection fields per organization
+        if "ch_host" not in org_cols:
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN ch_host VARCHAR"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN ch_port INTEGER DEFAULT 8443"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN ch_db VARCHAR DEFAULT 'default'"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN ch_user VARCHAR"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN ch_password VARCHAR"))
+            conn.execute(text("ALTER TABLE organizations ADD COLUMN ch_ssl BOOLEAN DEFAULT true"))
+
         conn.commit()
