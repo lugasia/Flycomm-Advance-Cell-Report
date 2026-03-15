@@ -117,11 +117,20 @@ CLUSTERS = [
 
 CLUSTER_INDEX = {c["id"]: c for c in CLUSTERS}
 
-# ── Super admin user (hardcoded until auth is implemented) ────────
+# ── Auth config ────────────────────────────────────────────────────
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+JWT_SECRET = os.getenv("JWT_SECRET", "spectra-dev-secret-change-me")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRY_HOURS = 24 * 7  # 7 days
+
+# Super admin emails — these users get is_super_admin=True on first login
+SUPER_ADMIN_EMAILS = ["amir@flycomm.co"]
+
+# Seed super admin
 SUPER_ADMIN = {
     "id": "superadmin-001",
-    "email": "admin@spectra.io",
-    "full_name": "Spectra Admin",
+    "email": "amir@flycomm.co",
+    "full_name": "Amir Lugasi",
     "organization_id": "org-spectra",
     "is_super_admin": True,
     "role": "admin",

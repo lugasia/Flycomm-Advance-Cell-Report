@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { AlertProvider, useAlerts } from "./components/AlertContext";
 import { spectra } from "@/api/spectraClient";
+import { useAuth } from "@/lib/AuthContext";
 import PlatformHeader from "./components/PlatformHeader";
 
 const NAV_ITEMS = [
@@ -114,7 +115,7 @@ function Sidebar({ collapsed, setCollapsed, currentPage, currentUser, orgName })
       {/* Spectra — switch to Analysis Suite */}
       <div className="px-2 pb-2">
         <a
-          href="http://localhost:8000"
+          href="/suite/index.html"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] font-medium transition-all duration-150 border border-emerald-500/20 text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-500/[0.06] hover:border-emerald-400/30"
@@ -146,8 +147,8 @@ function Sidebar({ collapsed, setCollapsed, currentPage, currentUser, orgName })
             <div className="flex items-center justify-between gap-2">
               <button
                 onClick={async () => {
-                  await spectra.auth.logout();
-                  spectra.auth.redirectToLogin();
+                  await logout();
+                  window.location.href = '/login';
                 }}
                 className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-red-400 transition-colors font-medium"
               >
@@ -191,22 +192,20 @@ function Sidebar({ collapsed, setCollapsed, currentPage, currentUser, orgName })
 
 export default function Layout({ children, currentPageName }) {
   const [collapsed, setCollapsed] = useState(false);
-  const [currentUser, setCurrentUser] = React.useState(null);
+  const { user: authUser, logout } = useAuth();
+  const [currentUser, setCurrentUser] = React.useState(authUser);
   const [orgName, setOrgName] = React.useState(null);
 
   React.useEffect(() => {
-    const loadUserAndOrg = async () => {
-      try {
-        const user = await spectra.auth.me();
-        setCurrentUser(user);
-        if (user.organization_id) {
-          const orgs = await spectra.entities.Organization.filter({ id: user.organization_id });
-          if (orgs.length > 0) setOrgName(orgs[0].name);
-        }
-      } catch (e) {}
-    };
-    loadUserAndOrg();
-  }, []);
+    if (authUser) {
+      setCurrentUser(authUser);
+      if (authUser.organization_id) {
+        spectra.entities.Organization.filter({ id: authUser.organization_id })
+          .then(orgs => { if (orgs.length > 0) setOrgName(orgs[0].name); })
+          .catch(() => {});
+      }
+    }
+  }, [authUser]);
 
   return (
     <AlertProvider>

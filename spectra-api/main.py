@@ -16,12 +16,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 from sqlalchemy.orm import Session
-from config import SUPER_ADMIN
 from database import get_db
 from models import Organization
 from seed import init_db
 
-from routers import rsus, alerts, clusters, dashboard, timeline
+from routers import rsus, alerts, clusters, dashboard, timeline, auth
 
 app = FastAPI(
     title="Spectra API",
@@ -49,18 +48,7 @@ app.include_router(alerts.router)
 app.include_router(clusters.router)
 app.include_router(dashboard.router)
 app.include_router(timeline.router)
-
-
-# ── Auth endpoints (hardcoded super-admin — Phase 1) ─────────────
-@app.get("/api/auth/me")
-def get_me():
-    """Return the current authenticated user (super admin, Phase 1)."""
-    return SUPER_ADMIN
-
-
-@app.post("/api/auth/logout")
-def logout():
-    return {"ok": True}
+app.include_router(auth.router)
 
 
 # ── Organization models ────────────────────────────────────────────

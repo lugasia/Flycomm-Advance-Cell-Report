@@ -11,17 +11,39 @@
 
 const API_BASE = import.meta.env.VITE_SPECTRA_API || '';
 
+// ── Token management ─────────────────────────────────────────────
+
+const TOKEN_KEY = 'spectra_token';
+
+function getToken() {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+function setToken(token) {
+  localStorage.setItem(TOKEN_KEY, token);
+}
+
+function clearToken() {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 // ── Core HTTP helper ─────────────────────────────────────────────
 
 async function request(method, path, body) {
-  const opts = {
-    method,
-    headers: { 'Content-Type': 'application/json' },
-  };
+  const headers = { 'Content-Type': 'application/json' };
+  const token = getToken();
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
 
   const res = await fetch(`${API_BASE}${path}`, opts);
   if (!res.ok) {
+    if (res.status === 401) {
+      clearToken();
+      window.location.href = '/login';
+      throw Object.assign(new Error('Unauthorized'), { status: 401 });
+    }
     const text = await res.text().catch(() => res.statusText);
     throw Object.assign(new Error(text), { status: res.status });
   }
@@ -152,14 +174,20 @@ const auth = {
   async me() {
     return get('/api/auth/me');
   },
+  async googleLogin(credential) {
+    const res = await post('/api/auth/google', { credential });
+    setToken(res.token);
+    return res.user;
+  },
   async logout() {
     try { await post('/api/auth/logout'); } catch (_) { /* ignore */ }
-    // No redirect — no real auth session in Phase 1
+    clearToken();
   },
   redirectToLogin() {
-    // Phase 1: no login page — always authenticated as super admin
-    console.info('[Spectra] redirectToLogin called — skipped (Phase 1 super-admin mode)');
+    window.location.href = '/login';
   },
+  getToken,
+  clearToken,
 };
 
 // ── Users stub (OrgUserManagement calls base44.users.inviteUser) ──

@@ -1,38 +1,58 @@
 /**
- * AuthContext — Phase 1: super-admin always authenticated.
- * The app renders immediately without waiting for the API.
- * spectra-api connection is only needed for RSU/Alert data, not for gating the UI.
+ * AuthContext — Google OAuth authentication.
+ * Checks for a stored JWT on mount, validates it via /api/auth/me.
+ * If no token or token is invalid, redirects to /login.
  */
 import React, { createContext, useState, useContext, useEffect } from 'react';
+import { spectra } from '@/api/spectraClient';
 
 const AuthContext = createContext();
 
-// Hardcoded super admin — no login required in Phase 1
-const SUPER_ADMIN = {
-  id:              'superadmin-001',
-  email:           'admin@spectra.io',
-  full_name:       'Spectra Admin',
-  organization_id: 'org-spectra',
-  is_super_admin:  true,
-  role:            'admin',
-  custom_role:     'admin',
-};
-
 export const AuthProvider = ({ children }) => {
-  // Always authenticated immediately — no async wait
-  const [user]               = useState(SUPER_ADMIN);
-  const [isAuthenticated]    = useState(true);
-  const [isLoadingAuth]      = useState(false);
-  const [isLoadingPublicSettings] = useState(false);
-  const [authError]          = useState(null);
-  const [appPublicSettings]  = useState({ id: 'spectra', public_settings: {} });
+  const [user, setUser]                           = useState(null);
+  const [isAuthenticated, setIsAuthenticated]      = useState(false);
+  const [isLoadingAuth, setIsLoadingAuth]          = useState(true);
+  const [isLoadingPublicSettings]                  = useState(false);
+  const [authError, setAuthError]                  = useState(null);
+  const [appPublicSettings]                        = useState({ id: 'spectra', public_settings: {} });
 
-  const logout        = () => {};   // Phase 2
-  const navigateToLogin = () => {}; // Phase 2
+  useEffect(() => {
+    const checkAuth = async () => {
+      const token = spectra.auth.getToken();
+      if (!token) {
+        setIsLoadingAuth(false);
+        setAuthError({ type: 'auth_required' });
+        return;
+      }
+      try {
+        const me = await spectra.auth.me();
+        setUser(me);
+        setIsAuthenticated(true);
+      } catch (e) {
+        spectra.auth.clearToken();
+        setAuthError({ type: 'auth_required' });
+      } finally {
+        setIsLoadingAuth(false);
+      }
+    };
+    checkAuth();
+  }, []);
+
+  const logout = async () => {
+    await spectra.auth.logout();
+    setUser(null);
+    setIsAuthenticated(false);
+    setAuthError({ type: 'auth_required' });
+  };
+
+  const navigateToLogin = () => {
+    window.location.href = '/login';
+  };
 
   return (
     <AuthContext.Provider value={{
-      user, isAuthenticated, isLoadingAuth, isLoadingPublicSettings,
+      user, setUser, isAuthenticated, setIsAuthenticated,
+      isLoadingAuth, isLoadingPublicSettings,
       authError, appPublicSettings, logout, navigateToLogin,
       checkAppState: () => {},
     }}>
