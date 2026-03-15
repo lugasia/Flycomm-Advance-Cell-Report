@@ -11,11 +11,13 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 _pg_url = os.getenv("POSTGRES_URL") or os.getenv("DATABASE_URL")
 
 if _pg_url:
-    # Vercel Neon sets POSTGRES_URL as postgres:// — SQLAlchemy needs postgresql://
+    # Vercel/Supabase sets postgres:// — SQLAlchemy needs postgresql://
     if _pg_url.startswith("postgres://"):
         _pg_url = "postgresql://" + _pg_url[len("postgres://"):]
     # Switch to pg8000 driver (pure Python, works on Vercel)
     _pg_url = _pg_url.replace("postgresql://", "postgresql+pg8000://", 1)
+    # Strip sslmode param (pg8000 uses ssl_context instead)
+    _pg_url = _pg_url.split("?")[0]
     _ssl_ctx = ssl.create_default_context()
     engine = create_engine(_pg_url, pool_pre_ping=True,
                            connect_args={"ssl_context": _ssl_ctx})
