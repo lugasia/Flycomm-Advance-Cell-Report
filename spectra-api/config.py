@@ -119,7 +119,8 @@ CLUSTER_INDEX = {c["id"]: c for c in CLUSTERS}
 
 # ── Auth config (Supabase) ─────────────────────────────────────────
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
-JWT_ALGORITHM = "HS256"
+SUPABASE_URL = os.getenv("SUPABASE_URL", "https://oaynuwvfxuvdxseimqff.supabase.co")
+SUPABASE_JWKS_URL = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
 
 # Super admin emails — these users get is_super_admin=True on first login
 SUPER_ADMIN_EMAILS = ["amir@flycomm.co"]

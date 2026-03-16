@@ -2,20 +2,24 @@
 
 Flow:
 1. Frontend authenticates via Supabase (email/password or Google OAuth)
-2. Supabase returns a session with an access_token (HS256 JWT)
+2. Supabase returns a session with an access_token (ES256 JWT)
 3. Frontend sends Authorization: Bearer <access_token> on every API call
-4. Backend verifies the JWT using the Supabase JWT secret
+4. Backend verifies the JWT using Supabase JWKS (public keys) or legacy HS256 secret
 5. On first login, a local User row is created from the token claims
 """
 import jwt
+from jwt import PyJWKClient
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
-from config import SUPABASE_JWT_SECRET, JWT_ALGORITHM, SUPER_ADMIN_EMAILS
+from config import SUPABASE_JWT_SECRET, SUPABASE_JWKS_URL, SUPER_ADMIN_EMAILS
 from database import get_db
 from models import User
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+# JWKS client — caches public keys automatically
+_jwks_client = PyJWKClient(SUPABASE_JWKS_URL) if SUPABASE_JWKS_URL else None
 
 
 def _user_dict(u: User) -> dict:
@@ -30,6 +34,35 @@ def _user_dict(u: User) -> dict:
     }
 
 
+def _verify_token(token: str) -> dict:
+    """Verify a Supabase JWT using JWKS (ES256) with HS256 fallback."""
+    # Try ES256 via JWKS first (new Supabase signing keys)
+    if _jwks_client:
+        try:
+            signing_key = _jwks_client.get_signing_key_from_jwt(token)
+            return jwt.decode(
+                token,
+                signing_key.key,
+                algorithms=["ES256"],
+                audience="authenticated",
+            )
+        except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+            raise
+        except Exception:
+            pass  # Fall through to HS256
+
+    # Fallback: HS256 with legacy secret
+    if SUPABASE_JWT_SECRET:
+        return jwt.decode(
+            token,
+            SUPABASE_JWT_SECRET,
+            algorithms=["HS256"],
+            audience="authenticated",
+        )
+
+    raise jwt.InvalidTokenError("No verification method available")
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     """Verify Supabase JWT and find/create the local User."""
     auth_header = request.headers.get("Authorization", "")
@@ -37,12 +70,7 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
         raise HTTPException(status_code=401, detail="Missing or invalid token")
     token = auth_header[7:]
     try:
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=[JWT_ALGORITHM],
-            audience="authenticated",
-        )
+        payload = _verify_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
     except jwt.InvalidTokenError:

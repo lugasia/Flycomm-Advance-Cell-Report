@@ -37,6 +37,11 @@ export const AuthProvider = ({ children }) => {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY' && session) {
+          // Redirect to login with recovery flag — user sets new password there
+          window.location.href = '/login?recovery=true';
+          return;
+        }
         if (event === 'SIGNED_IN' && session) {
           try {
             const me = await spectra.auth.me();
