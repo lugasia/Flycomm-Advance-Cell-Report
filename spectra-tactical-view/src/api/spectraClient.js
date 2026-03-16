@@ -9,30 +9,20 @@
  *   cd spectra-api && bash start.sh
  */
 
+import { supabase } from '@/lib/supabase';
+
 const API_BASE = import.meta.env.VITE_SPECTRA_API || '';
-
-// ── Token management ─────────────────────────────────────────────
-
-const TOKEN_KEY = 'spectra_token';
-
-function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-function setToken(token) {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
 
 // ── Core HTTP helper ─────────────────────────────────────────────
 
 async function request(method, path, body) {
   const headers = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) headers['Authorization'] = `Bearer ${token}`;
+
+  // Get token from Supabase session (auto-refreshed)
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
 
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
@@ -40,7 +30,7 @@ async function request(method, path, body) {
   const res = await fetch(`${API_BASE}${path}`, opts);
   if (!res.ok) {
     if (res.status === 401) {
-      clearToken();
+      await supabase.auth.signOut();
       window.location.href = '/login';
       throw Object.assign(new Error('Unauthorized'), { status: 401 });
     }
@@ -174,25 +164,9 @@ const auth = {
   async me() {
     return get('/api/auth/me');
   },
-  async googleLogin(credential) {
-    const res = await post('/api/auth/google', { credential });
-    setToken(res.token);
-    return res.user;
-  },
-  async devLogin(email) {
-    const res = await post('/api/auth/dev-login', { email });
-    setToken(res.token);
-    return res.user;
-  },
   async logout() {
-    try { await post('/api/auth/logout'); } catch (_) { /* ignore */ }
-    clearToken();
+    await supabase.auth.signOut();
   },
-  redirectToLogin() {
-    window.location.href = '/login';
-  },
-  getToken,
-  clearToken,
 };
 
 // ── Users stub (OrgUserManagement calls base44.users.inviteUser) ──

@@ -117,12 +117,9 @@ CLUSTERS = [
 
 CLUSTER_INDEX = {c["id"]: c for c in CLUSTERS}
 
-# ── Auth config ────────────────────────────────────────────────────
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
-JWT_SECRET = os.getenv("JWT_SECRET", "spectra-dev-secret-change-me")
-DEV_MODE = os.getenv("DEV_MODE", "false").lower() == "true"
+# ── Auth config (Supabase) ─────────────────────────────────────────
+SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRY_HOURS = 24 * 7  # 7 days
 
 # Super admin emails — these users get is_super_admin=True on first login
 SUPER_ADMIN_EMAILS = ["amir@flycomm.co"]
