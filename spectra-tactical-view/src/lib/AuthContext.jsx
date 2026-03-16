@@ -17,6 +17,43 @@ export const AuthProvider = ({ children }) => {
   const [appPublicSettings] = useState({ id: 'spectra', public_settings: {} });
 
   useEffect(() => {
+    // Detect recovery hash before anything else — don't run normal auth init
+    const hash = window.location.hash;
+    const isRecoveryFlow = hash.includes('type=recovery');
+
+    // Register the listener FIRST so it catches the recovery event
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (event === 'PASSWORD_RECOVERY' && session) {
+          window.location.href = '/login?recovery=true';
+          return;
+        }
+        if (event === 'SIGNED_IN' && session) {
+          try {
+            const me = await spectra.auth.me();
+            setUser(me);
+            setIsAuthenticated(true);
+            setAuthError(null);
+          } catch {
+            setAuthError({ type: 'auth_required' });
+          }
+          setIsLoadingAuth(false);
+        }
+        if (event === 'SIGNED_OUT') {
+          setUser(null);
+          setIsAuthenticated(false);
+          setAuthError({ type: 'auth_required' });
+          setIsLoadingAuth(false);
+        }
+      }
+    );
+
+    // If recovery flow, skip normal init — let onAuthStateChange handle it
+    if (isRecoveryFlow) {
+      // Supabase will process the hash and fire PASSWORD_RECOVERY
+      return () => subscription.unsubscribe();
+    }
+
     const initAuth = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
@@ -34,31 +71,6 @@ export const AuthProvider = ({ children }) => {
       setIsLoadingAuth(false);
     };
     initAuth();
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        if (event === 'PASSWORD_RECOVERY' && session) {
-          // Redirect to login with recovery flag — user sets new password there
-          window.location.href = '/login?recovery=true';
-          return;
-        }
-        if (event === 'SIGNED_IN' && session) {
-          try {
-            const me = await spectra.auth.me();
-            setUser(me);
-            setIsAuthenticated(true);
-            setAuthError(null);
-          } catch {
-            setAuthError({ type: 'auth_required' });
-          }
-        }
-        if (event === 'SIGNED_OUT') {
-          setUser(null);
-          setIsAuthenticated(false);
-          setAuthError({ type: 'auth_required' });
-        }
-      }
-    );
 
     return () => subscription.unsubscribe();
   }, []);
