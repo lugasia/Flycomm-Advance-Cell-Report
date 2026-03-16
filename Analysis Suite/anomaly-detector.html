@@ -213,6 +213,12 @@
             background: rgba(59, 130, 246, 0.08);
         }
 
+        .tool-switcher { display: flex; gap: 2px; padding: 8px 10px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+        .tool-switcher a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 6px; font-size: 10px; font-weight: 500; border-radius: 6px; color: #94a3b8; text-decoration: none; transition: all .15s; cursor: pointer; }
+        .tool-switcher a .material-icons { font-size: 14px; }
+        .tool-switcher a:hover { background: rgba(59,130,246,.08); color: var(--text); }
+        .tool-switcher a.current { background: rgba(59,130,246,.15); color: var(--accent); font-weight: 600; }
+
         /* Main content */
         #main {
             flex: 1;
