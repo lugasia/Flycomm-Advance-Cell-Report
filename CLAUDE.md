@@ -207,7 +207,17 @@ filter: brightness(1.6) contrast(1.1) saturate(1.1);
 Reports are generated from `APP.filtered` data, which respects all active filters (operators, PLMNs, countries, date range). The report opens in a new tab via `window.open()` + `document.write()`.
 
 ### Navigation
-Nav links (SQL Builder, TAC Detector) are always visible in the sidebar, positioned outside `sb-footer` to remain accessible before data upload.
+Two-tier navigation system:
+
+**Bottom nav** (all 6 pages): `SQL Builder | Workbench | Roaming | Dashboard | Spectra`
+- 5 items, always visible at the bottom of every sidebar
+- Spectra link opens in a new tab (external platform)
+
+**Tool switcher** (trio pages only): `SQL Builder | Signal Map | TAC Detector`
+- Appears at the **top** of the sidebar in `sql-builder.html`, `index.html`, `anomaly-detector.html`
+- SQL Builder is the "hub" — Signal Map and TAC Detector are sibling tools accessible via the switcher
+- Signal Map and TAC Detector are NOT in the bottom nav (they live only in the tool switcher)
+- CSS class: `.tool-switcher` in `style.css`, active item uses `.current`
 
 ### Bilingual Support
 All report content uses a `LANG` object with `en`/`he` keys. Hebrew content renders RTL.

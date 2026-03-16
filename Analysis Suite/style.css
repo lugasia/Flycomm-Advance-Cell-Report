@@ -399,6 +399,22 @@ input[type="date"]:focus { border-color: var(--mauve); }
   background: rgba(203,166,247,.18); border-color: var(--lavender); color: var(--lavender);
 }
 
+/* ── TOOL SWITCHER (SQL Builder / Signal Map / TAC Detector trio) ── */
+.tool-switcher {
+  display: flex; gap: 2px; padding: 8px 10px;
+  border-bottom: 1px solid var(--surface0);
+  background: var(--mantle); flex-shrink: 0;
+}
+.tool-switcher a {
+  flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px;
+  padding: 6px 6px; font-size: 10px; font-weight: 500;
+  border-radius: 6px; color: var(--overlay0);
+  text-decoration: none; transition: all .15s; cursor: pointer;
+}
+.tool-switcher a .material-icons { font-size: 14px; }
+.tool-switcher a:hover { background: rgba(137,180,250,.08); color: var(--text); }
+.tool-switcher a.current { background: rgba(137,180,250,.15); color: var(--blue); font-weight: 600; }
+
 #nav-links {
   display: flex; gap: 6px; padding: 10px;
   border-top: 1px solid var(--surface0);
