@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"/>
   <link rel="icon" type="image/png" href="Favicon.png">
-  <title>Advanced Cell Report — SQL Builder</title>
+  <title>Advanced Cell Report — SIGINT Platform</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
@@ -802,15 +802,10 @@
 <aside id="sidebar">
   <div id="sb-header">
     <img src="fcic.png" alt="FCIC" style="height:32px;object-fit:contain;opacity:0.85;display:block;margin-bottom:8px;">
-    <h1><span class="material-icons">polyline</span> SQL Builder</h1>
-    <p>Draw polygons to generate ClickHouse SQL queries</p>
+    <h1><span class="material-icons">radar</span> SIGINT Platform</h1>
+    <p>Signal intelligence & cellular anomaly detection</p>
   </div>
 
-  <div class="tool-switcher">
-    <a href="sql-builder.html" class="current"><span class="material-icons">polyline</span>SQL Builder</a>
-    <a href="index.html"><span class="material-icons">map</span>Signal Map</a>
-    <a href="anomaly-detector.html"><span class="material-icons">radar</span>TAC Detector</a>
-  </div>
 
   <div id="sb-body">
     <!-- Database Connection -->
@@ -841,15 +836,9 @@
     </div>
 
     <!-- Query Settings -->
-    <div class="section">
+    <div class="section" style="border:2px solid var(--accent);box-shadow:0 0 12px rgba(59,130,246,0.15);border-radius:12px;">
       <h3><span class="material-icons">tune</span> Query Settings</h3>
       <div class="section-content">
-        <label class="field">Table Name</label>
-        <input type="text" id="table-name" value="measurements">
-
-        <label class="field">Geo Coordinates Column</label>
-        <input type="text" id="geo-col" value="location_geo_coordinates">
-
         <label class="field">Query Type</label>
         <select id="query-type">
           <option value="select">MCC Anomaly</option>
@@ -1033,9 +1022,6 @@
           <label for="use-timeline">Filter by date range</label>
         </div>
 
-        <label class="field">Timestamp Column</label>
-        <input type="text" id="timestamp-col" value="timestamp">
-
         <label class="field">Date Range</label>
         <div style="display:flex;gap:4px;margin-bottom:8px">
           <button type="button" class="btn-small" onclick="setTimePreset(1)" style="flex:1">24h</button>
@@ -1098,12 +1084,9 @@
           </button>
         </div>
         <div class="btn-row" style="margin-top:8px">
-          <button class="btn" id="view-map-btn" onclick="viewOnMap()" disabled style="background:var(--cyan);color:#fff;flex:1">
-            <span class="material-icons" style="font-size:18px">map</span>
-            <span id="view-btn-text">View on Signal Map</span>
-          </button>
-          <button class="btn" id="grid-heat-btn" onclick="showGridHeatmap()" disabled style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;flex:0;padding:10px 14px" title="50m Grid Heatmap">
+          <button class="btn" id="grid-heat-btn" onclick="showGridHeatmap()" disabled style="background:linear-gradient(135deg,#06b6d4,#0891b2);color:#fff;flex:1;padding:10px 14px" title="50m Grid Heatmap">
             <span class="material-icons" style="font-size:18px">grid_on</span>
+            50m Grid Heatmap
           </button>
         </div>
         <div class="btn-row" id="ml-btn-row" style="margin-top:8px;display:none">
@@ -1116,6 +1099,18 @@
           <button class="btn" id="contributors-report-btn" onclick="generateContributorsInsightReport()" disabled style="background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;flex:1">
             <span class="material-icons" style="font-size:18px">assessment</span>
             Generate Insight Report
+          </button>
+        </div>
+        <div class="btn-row" id="mcc-report-row" style="margin-top:8px;display:none">
+          <button class="btn" id="mcc-report-btn" onclick="generateMccForensicReport()" disabled style="background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff;flex:1">
+            <span class="material-icons" style="font-size:18px">security</span>
+            Generate Forensic Report
+          </button>
+        </div>
+        <div class="btn-row" id="tac-report-row" style="margin-top:8px;display:none">
+          <button class="btn" id="tac-report-btn" onclick="generateTacIntelligenceReport()" disabled style="background:linear-gradient(135deg,#ef4444,#8b5cf6);color:#fff;flex:1">
+            <span class="material-icons" style="font-size:18px">shield</span>
+            Generate Intelligence Report
           </button>
         </div>
 
@@ -1147,7 +1142,7 @@
   </div>
 
   <div id="nav-links">
-    <a href="sql-builder.html" class="current"><span class="material-icons">polyline</span>SQL Builder</a>
+    <a href="sql-builder.html" class="current"><span class="material-icons">radar</span>SIGINT</a>
     <a href="anomaly-workbench.html"><span class="material-icons">biotech</span>Workbench</a>
     <a href="roaming-report.html"><span class="material-icons">flight</span>Roaming</a>
     <a href="db-dashboard.html"><span class="material-icons">dashboard</span>Dashboard</a>
@@ -1171,6 +1166,11 @@
 //  STATE
 // ════════════════════════════════════════════════════════════════
 
+// Hardcoded DB schema constants
+const TABLE_NAME = 'measurements';
+const GEO_COL = 'location_geo_coordinates';
+const TIMESTAMP_COL = 'timestamp';
+
 const polygons = [];
 let map, drawnItems;
 let isConnected = false;
@@ -1180,6 +1180,22 @@ let contributorMapData = null;
 let searchPreviewLayer = null;
 let searchPreviewData = null;
 let placeSearchTimeout = null;
+let mccAnomalyLayer = null;
+let mccAnomalyData = null;
+let tacAnomalyLayer = null;
+let tacAnomalyData = null;
+
+// Intelligence constants
+const JORDAN_BORDER_LON = 35.3;
+const CRITICAL_MCCS = ['432', '417', '418']; // Iran, Syria, Iraq
+const OPERATOR_COUNTRY_HINTS = {
+  'cellcom':'il','pelephone':'il','partner':'il','partner il':'il',
+  'golan':'il','golan t':'il','rami levy':'il','hot mobile':'il',
+  'zain jo':'jo','orange jo':'jo','umniah':'jo',
+  'zain sa':'sa','stc':'sa','mobily':'sa',
+  'egywe':'eg','vodafone eg':'eg','etisalat eg':'eg','orange eg':'eg',
+  'orange':'fr','vodafone':'gb','t-mobile':'de',
+};
 
 // ════════════════════════════════════════════════════════════════
 //  PLACE SEARCH (Nominatim / OpenStreetMap)
@@ -1549,9 +1565,9 @@ async function showGridHeatmap() {
     return;
   }
 
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
+  const timestampCol = TIMESTAMP_COL;
 
   // Build conditions
   let conditions = [];
@@ -2060,31 +2076,38 @@ async function executeSQL() {
     const result = await executeClickHouseQuery(rawSQL);
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
 
-    if (result && result.data) {
+    if (result && result.data && result.data.length > 0) {
       resultsMeta.textContent = `${result.data.length} rows in ${elapsed}s`;
       displayResults(result);
-      // Store results for map viewing
       lastQueryResults = result;
-      document.getElementById('view-map-btn').disabled = false;
+
+      // Clear previous visualization layers
+      clearAllVisualizationLayers();
+
+      // Auto-render on map based on query type
+      if (queryType === 'select') {
+        renderMccAnomalyOnMap(result.data);
+        const btn = document.getElementById('mcc-report-btn');
+        if (btn) btn.disabled = false;
+      } else if (queryType === 'tac') {
+        renderTacAnomalyOnMap(result.data);
+        const btn = document.getElementById('tac-report-btn');
+        if (btn) btn.disabled = false;
+      } else if (queryType === 'contributors') {
+        showContributorsOnMap();
+        const btn = document.getElementById('contributors-report-btn');
+        if (btn) btn.disabled = false;
+      }
+
       // Enable ML analysis button for cell queries
       const mlBtn = document.getElementById('ml-analyze-btn');
       if (mlBtn && queryType === 'cell') {
         mlBtn.disabled = false;
       }
-      // Enable Contributors Report button for contributors queries
-      const contributorsReportBtn = document.getElementById('contributors-report-btn');
-      if (contributorsReportBtn && queryType === 'contributors') {
-        contributorsReportBtn.disabled = false;
-      }
     } else {
       resultsMeta.textContent = `Completed in ${elapsed}s`;
       resultsContainer.innerHTML = '<p style="color:var(--green);padding:20px;text-align:center;">Query executed successfully</p>';
       lastQueryResults = null;
-      document.getElementById('view-map-btn').disabled = true;
-      const mlBtn = document.getElementById('ml-analyze-btn');
-      if (mlBtn) mlBtn.disabled = true;
-      const contributorsReportBtn = document.getElementById('contributors-report-btn');
-      if (contributorsReportBtn) contributorsReportBtn.disabled = true;
     }
   } catch (err) {
     console.error('Query error:', err);
@@ -2095,14 +2118,14 @@ async function executeSQL() {
 
 // Generate raw SQL for Contributors query (no HTML formatting)
 function getRawContributorsSQL() {
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const timestampCol = TIMESTAMP_COL;
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
 
@@ -2230,14 +2253,14 @@ function getRawSQL() {
   if (polygons.length === 0 && queryType !== 'cell') return '';
   if (polygons.length === 0 && queryType === 'cell' && cellUsePolygon) return '';
 
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const timestampCol = TIMESTAMP_COL;
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
 
@@ -2510,105 +2533,7 @@ function escapeHtml(text) {
 // Store last query results for map viewing
 let lastQueryResults = null;
 
-async function viewOnMap() {
-  const queryType = document.getElementById('query-type').value;
-  const cellUsePolygon = document.getElementById('cell-use-polygon')?.checked;
-
-  // Validate that we have either a polygon OR specific cell IDs
-  if (queryType === 'cell') {
-    const enbListRaw = document.getElementById('enb-list')?.value || '';
-    const ciListRaw = document.getElementById('ci-list')?.value || '';
-    const enbList = enbListRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
-    const ciList = ciListRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
-    const hasSpecificIds = enbList.length > 0 || ciList.length > 0;
-    const hasPolygons = polygons.length > 0;
-
-    if (!hasSpecificIds && !hasPolygons) {
-      alert('Please draw a polygon to find all cells in area, or enter specific eNB/Cell IDs.');
-      return;
-    }
-  } else if (polygons.length === 0 && queryType !== 'contributors') {
-    alert('Please draw at least one polygon on the map first.');
-    return;
-  }
-
-  if (!isConnected) {
-    alert('Please connect to the database first.');
-    return;
-  }
-
-  // For Contributors queries, fetch geo data and show on map
-  if (queryType === 'contributors') {
-    await showContributorsOnMap();
-    return;
-  }
-
-  // For TAC queries, use existing results
-  if (queryType === 'tac' && lastQueryResults?.data?.length > 0) {
-    localStorage.setItem('sqlBuilderTacData', JSON.stringify(lastQueryResults.data));
-    localStorage.setItem('sqlBuilderTacTimestamp', Date.now().toString());
-    console.log('[SQL Builder] Stored TAC data, opening TAC Detector...');
-    window.open('anomaly-detector.html?source=sqlbuilder', '_blank');
-    return;
-  }
-
-  // For all other cases, fetch fresh data with SELECT query (including lat/lon)
-  console.log('[SQL Builder] Fetching data for Signal Map...');
-
-  const resultsContainer = document.getElementById('results-container');
-  const resultsMeta = document.getElementById('results-meta');
-  document.getElementById('results-section').classList.add('visible');
-  resultsContainer.innerHTML = '<p style="color:var(--sub);padding:20px;text-align:center;">Fetching data for map...</p>';
-
-  try {
-    // Build a SELECT query that always returns lat/lon data
-    const selectSQL = buildSelectQueryForMap();
-    console.log('[SQL Builder] Executing SELECT query for map:', selectSQL);
-
-    const startTime = performance.now();
-    const result = await executeClickHouseQuery(selectSQL);
-    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
-
-    if (!result || !result.data || result.data.length === 0) {
-      resultsMeta.textContent = `0 rows in ${elapsed}s`;
-      resultsContainer.innerHTML = '<p style="color:var(--orange);padding:20px;text-align:center;">No data found matching your filters.</p>';
-      return;
-    }
-
-    resultsMeta.textContent = `${result.data.length} rows in ${elapsed}s`;
-    displayResults(result);
-
-    const data = result.data;
-    const columns = Object.keys(data[0]);
-    console.log('[SQL Builder] Converting to CSV, columns:', columns);
-
-    // Build CSV string
-    let csv = columns.join(',') + '\n';
-    data.forEach(row => {
-      const values = columns.map(col => {
-        let val = row[col];
-        if (val === null || val === undefined) val = '';
-        if (typeof val === 'object') val = JSON.stringify(val);
-        val = String(val);
-        if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-          val = '"' + val.replace(/"/g, '""') + '"';
-        }
-        return val;
-      });
-      csv += values.join(',') + '\n';
-    });
-
-    // Store in localStorage for Signal Map to pick up
-    localStorage.setItem('sqlBuilderData', csv);
-    localStorage.setItem('sqlBuilderTimestamp', Date.now().toString());
-    console.log('[SQL Builder] Stored CSV data:', { rows: data.length, columns });
-
-    window.open('index.html?source=sqlbuilder', '_blank');
-  } catch (err) {
-    console.error('[SQL Builder] Error fetching data:', err);
-    resultsContainer.innerHTML = `<div class="error-msg">${escapeHtml(err.message)}</div>`;
-  }
-}
+// viewOnMap removed — all visualization now auto-renders inline on execute
 
 // Coverage classification — client-side RSRP threshold analysis
 // Same logic as server.py Random Forest (which uses synthetic RSRP labels anyway)
@@ -2710,14 +2635,14 @@ function flyToCell(lat, lon) {
 // ════════════════════════════════════════════════════════════════
 
 function buildContributorsGeoSQL() {
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const timestampCol = TIMESTAMP_COL;
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
   const operatorFilter = document.getElementById('contrib-operator').value.trim();
@@ -2962,151 +2887,7 @@ async function showContributorsOnMap() {
   }
 }
 
-// Build a SELECT query that returns lat/lon data for the map
-function buildSelectQueryForMap() {
-  const queryType = document.getElementById('query-type').value;
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
-  const excludeMcc = document.getElementById('exclude-mcc').checked;
-  const filterMcc = document.getElementById('filter-mcc').value;
-  const includeMcc = document.getElementById('include-mcc').checked;
-  const includeMccValue = document.getElementById('include-mcc-value').value;
-  const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
-  const dateFrom = document.getElementById('date-from').value;
-  const dateTo = document.getElementById('date-to').value;
-
-  let conditions = [];
-
-  // Add MCC filters
-  if (excludeMcc && filterMcc) {
-    conditions.push(`network_mcc != '${filterMcc}'`);
-  }
-  if (includeMcc && includeMccValue) {
-    conditions.push(`network_mcc = '${includeMccValue}'`);
-  }
-
-  // Add timeline filters
-  if (useTimeline && dateFrom) {
-    conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-  }
-  if (useTimeline && dateTo) {
-    conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
-  }
-  const hourCondMap = getHourRangeCondition(timestampCol, false);
-  if (hourCondMap) conditions.push(hourCondMap);
-
-  // Add source filter
-  const sourceFilterMap = getSourceFilterCondition(false);
-  if (sourceFilterMap) {
-    conditions.push(sourceFilterMap);
-  }
-
-  // For Cell/eNB search
-  if (queryType === 'cell') {
-    const enbListRaw = document.getElementById('enb-list').value;
-    const ciListRaw = document.getElementById('ci-list').value;
-    const cellUsePolygon = document.getElementById('cell-use-polygon').checked;
-
-    const enbList = enbListRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
-    const ciList = ciListRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
-    const hasSpecificIds = enbList.length > 0 || ciList.length > 0;
-    const hasPolygons = polygons.length > 0;
-
-    // Always apply polygon filter when drawn (unless "search globally" is checked)
-    if (hasPolygons && !cellUsePolygon) {
-      polygons.forEach((p, idx) => {
-        const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-        const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-        conditions.push(p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`);
-      });
-    }
-
-    // Cell filters (eNB OR ECI) - combined with OR
-    if (hasSpecificIds) {
-      let cellConditions = [];
-      if (enbList.length > 0) {
-        cellConditions.push(`cell_enb IN (${enbList.join(', ')})`);
-      }
-      if (ciList.length > 0) {
-        cellConditions.push(`cell_eci IN (${ciList.join(', ')})`);
-      }
-      if (cellConditions.length > 0) {
-        conditions.push(`(${cellConditions.join(' OR ')})`);
-      }
-    }
-
-    let sql = `SELECT
-    cell_enb,
-    cell_eci,
-    cell_ci,
-    network_mcc,
-    network_mnc,
-    network_PLMN,
-    network_operator,
-    count() AS counted,
-    avg(signal_rsrp) AS avg_rsrp,
-    min(signal_rsrp) AS min_rsrp,
-    max(signal_rsrp) AS max_rsrp,
-    tupleElement(${geoCol}, 1) AS longitude,
-    tupleElement(${geoCol}, 2) AS latitude,
-    min(timestamp) AS first_seen
-FROM ${tableName}
-WHERE
-    ${conditions.join('\n    AND ')}
-GROUP BY
-    cell_enb,
-    cell_eci,
-    cell_ci,
-    network_mcc,
-    network_mnc,
-    network_PLMN,
-    network_operator,
-    longitude,
-    latitude
-ORDER BY
-    cell_enb,
-    counted DESC
-LIMIT 50000`;
-
-    return sql;
-  }
-
-  // Standard SELECT query with polygon — group by CELL (not UE samples)
-  // Exclude 'Searching' state
-  conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
-
-  const p = polygons[0];
-  const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-  const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-  const condition = p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`;
-  conditions.push(condition);
-
-  let sql = `SELECT
-    cell_eci,
-    cell_enb,
-    network_PLMN,
-    network_operator,
-    network_iso,
-    any(band_name) AS band,
-    count() AS counted,
-    avg(${geoCol}.1) AS longitude,
-    avg(${geoCol}.2) AS latitude,
-    min(timestamp) AS first_seen
-FROM ${tableName}
-WHERE
-    ${conditions.join('\n    AND ')}
-GROUP BY
-    cell_eci,
-    cell_enb,
-    network_PLMN,
-    network_operator,
-    network_iso
-ORDER BY counted DESC
-LIMIT 50000`;
-
-  return sql;
-}
+// buildSelectQueryForMap removed — visualization now uses query results directly
 
 // ════════════════════════════════════════════════════════════════
 //  MAP INITIALIZATION
@@ -3271,14 +3052,14 @@ function clearPolygons() {
 
 // Generate Cell/eNB Search SQL - supports polygon filter or specific IDs
 function generateCellSearchSQL() {
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const timestampCol = TIMESTAMP_COL;
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
   const usePolygon = document.getElementById('cell-use-polygon')?.checked;
@@ -3398,14 +3179,14 @@ function generateCellSearchSQL() {
 
 // Generate User Contributors SQL for regulators/operators
 function generateContributorsSQL() {
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const timestampCol = TIMESTAMP_COL;
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
 
@@ -3545,14 +3326,14 @@ function generateSQL() {
     return;
   }
 
-  const tableName = document.getElementById('table-name').value || 'measurements';
-  const geoCol = document.getElementById('geo-col').value || 'location_geo_coordinates';
+  const tableName = TABLE_NAME;
+  const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
-  const timestampCol = document.getElementById('timestamp-col').value || 'timestamp';
+  const timestampCol = TIMESTAMP_COL;
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
 
@@ -3944,11 +3725,8 @@ document.addEventListener('DOMContentLoaded', () => {
   initPlaceSearch();
   initHourRange();
 
-  // Set initial button text
-  document.getElementById('view-btn-text').textContent = 'View on Signal Map';
-
   // Re-generate SQL when settings change
-  ['table-name', 'geo-col', 'filter-mcc', 'include-mcc-value', 'timestamp-col'].forEach(id => {
+  ['filter-mcc', 'include-mcc-value'].forEach(id => {
     document.getElementById(id).addEventListener('input', generateSQL);
   });
   document.getElementById('query-type').addEventListener('change', generateSQL);
@@ -3963,15 +3741,15 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // Show/hide options based on query type and update button text
+  // Show/hide options based on query type and update report buttons
   document.getElementById('query-type').addEventListener('change', (e) => {
     const tacOptions = document.getElementById('tac-options');
     const cellOptions = document.getElementById('cell-options');
     const contributorsOptions = document.getElementById('contributors-options');
-    const viewBtnText = document.getElementById('view-btn-text');
-    const viewMapBtn = document.getElementById('view-map-btn');
     const mlBtnRow = document.getElementById('ml-btn-row');
     const contributorsReportRow = document.getElementById('contributors-report-row');
+    const mccReportRow = document.getElementById('mcc-report-row');
+    const tacReportRow = document.getElementById('tac-report-row');
     const queryType = e.target.value;
 
     // Show/hide query-specific options
@@ -3979,26 +3757,11 @@ document.addEventListener('DOMContentLoaded', () => {
     cellOptions.style.display = queryType === 'cell' ? 'block' : 'none';
     contributorsOptions.style.display = queryType === 'contributors' ? 'block' : 'none';
 
-    // Show ML button only for cell queries
+    // Show appropriate report/action buttons per query type
     mlBtnRow.style.display = queryType === 'cell' ? 'flex' : 'none';
-
-    // Show Contributors Report button only for contributors queries
     contributorsReportRow.style.display = queryType === 'contributors' ? 'flex' : 'none';
-
-    // Update button text based on query type
-    if (queryType === 'select' || queryType === 'cell') {
-      viewBtnText.textContent = 'View on Signal Map';
-      viewMapBtn.style.display = '';
-      viewMapBtn.style.background = 'var(--cyan)';
-    } else if (queryType === 'tac') {
-      viewBtnText.textContent = 'View on TAC Detector';
-      viewMapBtn.style.display = '';
-      viewMapBtn.style.background = 'var(--cyan)';
-    } else if (queryType === 'contributors') {
-      viewBtnText.textContent = 'Show Contributors on Map';
-      viewMapBtn.style.display = '';
-      viewMapBtn.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
-    }
+    mccReportRow.style.display = queryType === 'select' ? 'flex' : 'none';
+    tacReportRow.style.display = queryType === 'tac' ? 'flex' : 'none';
   });
 
   // Cell search inputs trigger SQL regeneration
@@ -4037,6 +3800,614 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+
+// ════════════════════════════════════════════════════════════════
+//  CLEAR ALL VISUALIZATION LAYERS
+// ════════════════════════════════════════════════════════════════
+
+function clearAllVisualizationLayers() {
+  if (mccAnomalyLayer) { map.removeLayer(mccAnomalyLayer); mccAnomalyLayer = null; }
+  if (tacAnomalyLayer) { map.removeLayer(tacAnomalyLayer); tacAnomalyLayer = null; }
+  if (contributorHeatLayer) { map.removeLayer(contributorHeatLayer); contributorHeatLayer = null; }
+  if (contributorDotsLayer) { map.removeLayer(contributorDotsLayer); contributorDotsLayer = null; }
+  const gridCtrl = document.getElementById('grid-heat-control');
+  if (gridCtrl) gridCtrl.remove();
+  if (typeof gridHeatLayer !== 'undefined' && gridHeatLayer) { map.removeLayer(gridHeatLayer); gridHeatLayer = null; }
+  // Remove legend elements
+  ['mcc-anomaly-legend', 'tac-anomaly-legend', 'contributor-map-legend'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  });
+  mccAnomalyData = null;
+  tacAnomalyData = null;
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MCC ANOMALY — MAP VISUALIZATION
+// ════════════════════════════════════════════════════════════════
+
+const PLMN_COLORS = [
+  '#ef4444','#f59e0b','#06b6d4','#a855f7','#22c55e','#ec4899','#3b82f6',
+  '#14b8a6','#f97316','#8b5cf6','#64748b','#eab308','#e11d48','#0ea5e9',
+  '#84cc16','#d946ef','#fb923c','#2dd4bf','#6366f1','#facc15'
+];
+
+function clearMccAnomalyLayer() {
+  if (mccAnomalyLayer) { map.removeLayer(mccAnomalyLayer); mccAnomalyLayer = null; }
+  const el = document.getElementById('mcc-anomaly-legend');
+  if (el) el.remove();
+}
+
+function renderMccAnomalyOnMap(data) {
+  clearMccAnomalyLayer();
+  if (!data || data.length === 0) return;
+
+  mccAnomalyData = data;
+  mccAnomalyLayer = L.layerGroup();
+
+  // Group by PLMN and assign colors
+  const plmnSet = [...new Set(data.map(d => d.network_PLMN || 'Unknown'))];
+  const plmnColorMap = {};
+  plmnSet.forEach((p, i) => { plmnColorMap[p] = PLMN_COLORS[i % PLMN_COLORS.length]; });
+
+  const maxCount = Math.max(...data.map(d => parseInt(d.counted) || 1));
+  let totalRecords = 0;
+  const plmnStats = {};
+
+  data.forEach(d => {
+    const lat = parseFloat(d.latitude);
+    const lon = parseFloat(d.longitude);
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    const plmn = d.network_PLMN || 'Unknown';
+    const counted = parseInt(d.counted) || 1;
+    const color = plmnColorMap[plmn];
+    totalRecords += counted;
+
+    if (!plmnStats[plmn]) plmnStats[plmn] = { count: 0, records: 0 };
+    plmnStats[plmn].count++;
+    plmnStats[plmn].records += counted;
+
+    const radius = Math.max(4, Math.min(12, 4 + (counted / maxCount) * 8));
+    const mcc = (plmn.replace('-', '') || '').slice(0, 3);
+    const mccInfo = typeof MCC_TABLE !== 'undefined' ? MCC_TABLE[mcc] : null;
+    const countryName = mccInfo ? mccInfo.name : '';
+    const isCritical = CRITICAL_MCCS.includes(mcc);
+    const isForeign = mcc !== '425' && mcc !== '000' && mcc !== '255';
+
+    const marker = L.circleMarker([lat, lon], {
+      radius: radius,
+      fillColor: color,
+      color: isCritical ? '#ef4444' : isForeign ? '#f59e0b' : '#fff',
+      weight: isCritical ? 2 : 1,
+      opacity: 0.9,
+      fillOpacity: 0.75,
+    });
+
+    marker.bindPopup(`
+      <div style="font-family:Inter,sans-serif;font-size:13px;min-width:200px">
+        <div style="font-weight:700;margin-bottom:6px;color:${isCritical ? '#ef4444' : isForeign ? '#f59e0b' : '#3b82f6'}">
+          ${escapeHtml(plmn)} ${countryName ? '— ' + countryName : ''}
+        </div>
+        <div><strong>Operator:</strong> ${escapeHtml(d.network_operator || '—')}</div>
+        <div><strong>ISO:</strong> ${escapeHtml(d.network_iso || '—')}</div>
+        <div><strong>Records:</strong> ${counted.toLocaleString()}</div>
+        <div><strong>Band:</strong> ${escapeHtml(d.band || '—')}</div>
+        <div><strong>Cell:</strong> ${d.cell_eci || '—'} (eNB: ${d.cell_enb || '—'})</div>
+        <div><strong>First Seen:</strong> ${(d.first_seen || '').substring(0, 16)}</div>
+        <div style="color:#94a3b8;font-size:11px;margin-top:4px">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
+      </div>
+    `, { className: 'mcc-popup' });
+
+    mccAnomalyLayer.addLayer(marker);
+  });
+
+  mccAnomalyLayer.addTo(map);
+
+  // Fit bounds
+  const lats = data.map(d => parseFloat(d.latitude)).filter(v => !isNaN(v));
+  const lons = data.map(d => parseFloat(d.longitude)).filter(v => !isNaN(v));
+  if (lats.length > 0) {
+    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [30, 30] });
+  }
+
+  // Add legend
+  addMccAnomalyLegend(plmnSet, plmnColorMap, plmnStats, totalRecords);
+}
+
+function addMccAnomalyLegend(plmnSet, colorMap, stats, totalRecords) {
+  const existing = document.getElementById('mcc-anomaly-legend');
+  if (existing) existing.remove();
+
+  const ctrl = document.createElement('div');
+  ctrl.id = 'mcc-anomaly-legend';
+  ctrl.style.cssText = 'position:absolute;bottom:40px;right:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:12px;padding:12px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:200px;max-height:300px;overflow-y:auto;';
+
+  let html = `<div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+    <span class="material-icons" style="font-size:16px;color:var(--red)">security</span>
+    MCC Anomaly — ${totalRecords.toLocaleString()} records
+  </div>`;
+
+  plmnSet.sort((a, b) => (stats[b]?.records || 0) - (stats[a]?.records || 0));
+  plmnSet.slice(0, 15).forEach(plmn => {
+    const mcc = (plmn.replace('-', '') || '').slice(0, 3);
+    const mccInfo = typeof MCC_TABLE !== 'undefined' ? MCC_TABLE[mcc] : null;
+    const flag = mccInfo ? mccInfo.name : '';
+    html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:3px">
+      <div style="width:10px;height:10px;border-radius:50%;background:${colorMap[plmn]};flex-shrink:0"></div>
+      <span style="flex:1">${escapeHtml(plmn)} ${flag ? '<span style="color:var(--sub)">' + flag + '</span>' : ''}</span>
+      <span style="color:var(--sub)">${(stats[plmn]?.records || 0).toLocaleString()}</span>
+    </div>`;
+  });
+
+  html += `<button onclick="clearMccAnomalyLayer()" style="margin-top:8px;width:100%;padding:5px;border-radius:6px;border:1px solid var(--border);background:var(--red);color:#fff;font-size:11px;cursor:pointer">Clear</button>`;
+  ctrl.innerHTML = html;
+  document.getElementById('map').appendChild(ctrl);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  MCC ANOMALY — FORENSIC REPORT
+// ════════════════════════════════════════════════════════════════
+
+function generateMccForensicReport() {
+  if (!mccAnomalyData || mccAnomalyData.length === 0) {
+    alert('No MCC anomaly data available. Execute a query first.');
+    return;
+  }
+
+  const data = mccAnomalyData;
+  const reportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // Aggregate by PLMN+Operator
+  const plmnDetails = {};
+  let totalRecords = 0;
+
+  data.forEach(d => {
+    const plmn = d.network_PLMN || '';
+    const operator = d.network_operator || 'Unknown';
+    const counted = parseInt(d.counted) || 1;
+    const lat = parseFloat(d.latitude) || 0;
+    const lon = parseFloat(d.longitude) || 0;
+    totalRecords += counted;
+
+    const key = `${plmn}|${operator}`;
+    if (!plmnDetails[key]) {
+      plmnDetails[key] = { plmn, operator, iso: d.network_iso || '', mcc: '', count: 0, lons: [], lats: [] };
+    }
+    plmnDetails[key].count += counted;
+    plmnDetails[key].lons.push(lon);
+    plmnDetails[key].lats.push(lat);
+  });
+
+  // Classify anomalies
+  const anomalies = [];
+  Object.values(plmnDetails).forEach(entry => {
+    const mcc = (entry.plmn.replace('-', '') || '').slice(0, 3);
+    entry.mcc = mcc;
+    const mccInfo = typeof MCC_TABLE !== 'undefined' ? MCC_TABLE[mcc] : null;
+    const avgLon = entry.lons.reduce((a, b) => a + b, 0) / entry.lons.length;
+
+    // Skip test/invalid
+    if (mcc === '000' || mcc === '255') return;
+    // Skip Israel domestic
+    if (mcc === '425') return;
+    // Skip legitimate Jordan spillover (east of border, not phantom)
+    if (mcc === '416' && entry.plmn !== '416-77' && avgLon > JORDAN_BORDER_LON) return;
+
+    let severity = 'medium';
+    let assessment = 'Foreign MCC detected';
+    const opKey = (entry.operator || '').toLowerCase().trim();
+    const opHint = OPERATOR_COUNTRY_HINTS[opKey];
+    const isIsraeliOp = opHint === 'il';
+
+    if (entry.plmn === '416-77') {
+      severity = 'critical'; assessment = 'Phantom/unregistered PLMN — no known operator registered under 416-77';
+    } else if (CRITICAL_MCCS.includes(mcc)) {
+      severity = 'critical'; assessment = `Signal from hostile nation (${mccInfo ? mccInfo.name : mcc}) detected in coverage area`;
+    } else if (mcc === '602' && isIsraeliOp) {
+      severity = 'critical'; assessment = 'Egyptian MCC with Israeli operator — potential IMSI-catcher masquerading as Egyptian network';
+    } else if (isIsraeliOp && mccInfo && mccInfo.country !== 'il') {
+      severity = 'critical'; assessment = `Israeli operator "${entry.operator}" broadcasting foreign MCC ${mcc} (${mccInfo.name}) — equipment spoofing`;
+    } else if (mcc === '416' && avgLon < JORDAN_BORDER_LON) {
+      severity = 'high'; assessment = 'Jordanian PLMN detected deep inside Israeli territory — beyond natural border spillover range';
+    } else if (mccInfo && mccInfo.country !== 'il') {
+      severity = 'high'; assessment = `Foreign MCC ${mcc} (${mccInfo ? mccInfo.name : '?'}) detected in monitored area`;
+    }
+
+    anomalies.push({ ...entry, severity, assessment, countryName: mccInfo ? mccInfo.name : '?' });
+  });
+
+  // Sort: critical first, then high, then medium; within same severity by count DESC
+  const severityOrder = { critical: 0, high: 1, medium: 2 };
+  anomalies.sort((a, b) => (severityOrder[a.severity] - severityOrder[b.severity]) || (b.count - a.count));
+
+  const criticalCount = anomalies.filter(a => a.severity === 'critical').length;
+  const highCount = anomalies.filter(a => a.severity === 'high').length;
+  const uniquePlmns = new Set(data.map(d => d.network_PLMN)).size;
+  const foreignMccs = new Set(anomalies.map(a => a.mcc)).size;
+
+  // Build report HTML
+  let html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">';
+  html += '<link rel="icon" type="image/png" href="Favicon.png">';
+  html += '<title>MCC Anomaly Forensic Report</title>';
+  html += '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
+  html += '<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">';
+  html += '<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"><\/script>';
+  html += '<style>';
+  html += ':root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2e;--text:#e2e8f0;--sub:#64748b;--accent:#3b82f6;--red:#ef4444;--orange:#f59e0b;--cyan:#06b6d4;--green:#22c55e;--purple:#a855f7}';
+  html += '*{margin:0;padding:0;box-sizing:border-box}';
+  html += 'body{font-family:"Inter",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:40px}';
+  html += '.container{max-width:1200px;margin:0 auto}';
+  html += '.header{text-align:center;margin-bottom:40px;padding-bottom:30px;border-bottom:1px solid var(--border)}';
+  html += '.header h1{font-size:2rem;font-weight:700;margin-bottom:8px;background:linear-gradient(135deg,var(--red),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}';
+  html += '.header .subtitle{color:var(--sub);font-size:0.9rem}';
+  html += '.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}';
+  html += '.badge-critical{background:rgba(239,68,68,.15);color:var(--red)}.badge-high{background:rgba(245,158,11,.15);color:var(--orange)}.badge-medium{background:rgba(6,182,212,.15);color:var(--cyan)}';
+  html += '.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:20px;margin-bottom:40px}';
+  html += '.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center}';
+  html += '.kpi-card .icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px}';
+  html += '.kpi-value{font-size:2rem;font-weight:700;margin-bottom:4px}';
+  html += '.kpi-label{color:var(--sub);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px}';
+  html += '.section{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:24px}';
+  html += '.section h2{font-size:1.25rem;font-weight:600;margin-bottom:20px;display:flex;align-items:center;gap:10px}';
+  html += '.section h2 .material-icons{color:var(--red)}';
+  html += 'table{width:100%;border-collapse:collapse;font-size:0.85rem}';
+  html += 'th,td{padding:10px 14px;text-align:left;border-bottom:1px solid var(--border)}';
+  html += 'th{color:var(--sub);font-weight:500;text-transform:uppercase;font-size:0.7rem;letter-spacing:0.5px}';
+  html += '.num{text-align:right;font-family:monospace}';
+  html += '.threat-card{background:var(--bg);border-radius:12px;padding:16px;margin-bottom:12px;border-left:4px solid}';
+  html += '.threat-critical{border-color:var(--red)}.threat-high{border-color:var(--orange)}';
+  html += '.footer{text-align:center;padding-top:30px;margin-top:40px;border-top:1px solid var(--border);color:var(--sub);font-size:0.8rem}';
+  html += '.capture-btn{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,var(--red),#dc2626);color:#fff;border:none;padding:12px 20px;border-radius:12px;font-size:0.9rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(239,68,68,0.3);z-index:1000}';
+  html += '.capture-btn:hover{transform:translateY(-2px)}.capture-btn:disabled{opacity:0.6;cursor:wait}';
+  html += '@media print{.capture-btn{display:none}}';
+  html += '</style></head><body>';
+
+  // Capture button
+  html += '<button class="capture-btn" onclick="captureReport()" id="capture-btn"><span class="material-icons">photo_camera</span>Capture Screenshot</button>';
+
+  html += '<div class="container">';
+  html += '<header class="header">';
+  html += '<div style="margin-bottom:12px"><span class="badge badge-critical">ACTIONABLE INTELLIGENCE</span></div>';
+  html += '<h1>MCC Anomaly Forensic Report</h1>';
+  html += '<p class="subtitle">Generated on ' + reportDate + '</p>';
+  html += '</header>';
+
+  // KPI Cards
+  html += '<div class="kpi-grid">';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(59,130,246,.15);color:var(--accent)"><span class="material-icons">cell_tower</span></div><div class="kpi-value">' + totalRecords.toLocaleString() + '</div><div class="kpi-label">Signal Records</div></div>';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(239,68,68,.15);color:var(--red)"><span class="material-icons">warning</span></div><div class="kpi-value" style="color:var(--red)">' + criticalCount + '</div><div class="kpi-label">Critical Findings</div></div>';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(245,158,11,.15);color:var(--orange)"><span class="material-icons">error</span></div><div class="kpi-value" style="color:var(--orange)">' + highCount + '</div><div class="kpi-label">High Severity</div></div>';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(6,182,212,.15);color:var(--cyan)"><span class="material-icons">sim_card</span></div><div class="kpi-value">' + uniquePlmns + '</div><div class="kpi-label">Unique PLMNs</div></div>';
+  html += '</div>';
+
+  // Threat Cards (critical + high)
+  const threats = anomalies.filter(a => a.severity === 'critical' || a.severity === 'high');
+  if (threats.length > 0) {
+    html += '<div class="section"><h2><span class="material-icons">gpp_bad</span> Threat Landscape</h2>';
+    threats.slice(0, 8).forEach(a => {
+      const cls = a.severity === 'critical' ? 'threat-critical' : 'threat-high';
+      html += '<div class="threat-card ' + cls + '">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">';
+      html += '<strong style="font-size:1rem">' + escapeHtml(a.plmn) + ' — ' + escapeHtml(a.operator) + '</strong>';
+      html += '<span class="badge badge-' + a.severity + '">' + a.severity.toUpperCase() + '</span>';
+      html += '</div>';
+      html += '<div style="color:var(--sub);font-size:0.85rem">' + escapeHtml(a.assessment) + '</div>';
+      html += '<div style="margin-top:6px;font-size:0.8rem;color:var(--sub)">' + a.count.toLocaleString() + ' records · Country: ' + escapeHtml(a.countryName) + '</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+
+  // Anomaly Evidence Table
+  if (anomalies.length > 0) {
+    html += '<div class="section"><h2><span class="material-icons">table_chart</span> Anomaly Evidence (' + anomalies.length + ' entries)</h2>';
+    html += '<table><thead><tr><th>PLMN</th><th>Country</th><th>Operator</th><th>ISO</th><th class="num">Records</th><th>Severity</th><th>Assessment</th></tr></thead><tbody>';
+    anomalies.forEach(a => {
+      html += '<tr><td style="font-family:monospace">' + escapeHtml(a.plmn) + '</td>';
+      html += '<td>' + escapeHtml(a.countryName) + '</td>';
+      html += '<td>' + escapeHtml(a.operator) + '</td>';
+      html += '<td>' + escapeHtml(a.iso || '—') + '</td>';
+      html += '<td class="num">' + a.count.toLocaleString() + '</td>';
+      html += '<td><span class="badge badge-' + a.severity + '">' + a.severity.toUpperCase() + '</span></td>';
+      html += '<td style="font-size:0.8rem;color:var(--sub)">' + escapeHtml(a.assessment) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+  }
+
+  // Footer
+  html += '<div class="footer">SIGINT Platform — MCC Anomaly Forensic Report · ' + reportDate + '</div>';
+  html += '</div>';
+
+  // Capture script
+  html += '<script>function captureReport(){const b=document.getElementById("capture-btn");b.disabled=true;b.innerHTML="<span class=\\"material-icons\\">hourglass_top</span>Capturing...";html2canvas(document.querySelector(".container"),{backgroundColor:"#0a0a0f",scale:2}).then(c=>{const a=document.createElement("a");a.download="mcc-forensic-report.png";a.href=c.toDataURL("image/png");a.click();b.disabled=false;b.innerHTML="<span class=\\"material-icons\\">photo_camera</span>Capture Screenshot"}).catch(e=>{alert("Capture failed: "+e.message);b.disabled=false;b.innerHTML="<span class=\\"material-icons\\">photo_camera</span>Capture Screenshot"})}<\/script>';
+  html += '</body></html>';
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TAC ANOMALY — MAP VISUALIZATION
+// ════════════════════════════════════════════════════════════════
+
+function getTacColor(count) {
+  if (count >= 8) return '#ef4444';
+  if (count >= 5) return '#f97316';
+  return '#eab308';
+}
+
+function getTacRiskLevel(count) {
+  if (count >= 8) return { text: 'High', cls: 'high' };
+  if (count >= 5) return { text: 'Medium', cls: 'medium' };
+  return { text: 'Low', cls: 'low' };
+}
+
+function generateTacIntelAssessment(item) {
+  const areaList = String(item.area_code_list || '');
+  const hasNullTac = areaList.includes('65535') || areaList.includes('65,535') || areaList.includes(',0,');
+  const tacCount = parseInt(item.distinct_area_count) || 0;
+  const samples = parseInt(item.total_samples) || 0;
+  const devices = parseInt(item.unique_devices) || 0;
+  const highJumpsLowSamples = tacCount >= 5 && samples < 500;
+  const fewDevices = devices > 0 && devices <= 5;
+  const highJumpsFewDevices = tacCount >= 5 && fewDevices;
+  const ops = String(item.operator_names || '');
+  const multiOps = ops.includes(',') && ops !== 'Unknown';
+
+  if (highJumpsLowSamples || highJumpsFewDevices) {
+    const deviceNote = devices > 0 ? ' Only ' + devices + ' unique device(s) observed.' : '';
+    return '<b>Suspected active mobile IMSI-catcher (Tactical Stingray).</b><br>High TAC change frequency relative to low sample count (' + samples + ').' + deviceNote + ' Characteristic of attack equipment forcing Location Updates.';
+  }
+  if (hasNullTac) {
+    return '<b>Suspected unidentified/rogue equipment.</b><br>Broadcasting default TAC values (65535 or 0). Legitimate networks do not use these identifiers. Indicates SDR-based pirate equipment or lab leakage.';
+  }
+  if (multiOps) {
+    return '<b>Operator spoofing anomaly detected.</b><br>Multiple operator names at the same site. May indicate equipment fishing customers from different networks by spoofing credentials.';
+  }
+  return '<b>Network distortion or infrastructure instability.</b><br>Multiple TAC changes over extended period. Less typical of targeted attack, more likely unstable regional infrastructure.';
+}
+
+function clearTacAnomalyLayer() {
+  if (tacAnomalyLayer) { map.removeLayer(tacAnomalyLayer); tacAnomalyLayer = null; }
+  const el = document.getElementById('tac-anomaly-legend');
+  if (el) el.remove();
+}
+
+function renderTacAnomalyOnMap(data) {
+  clearTacAnomalyLayer();
+  if (!data || data.length === 0) return;
+
+  tacAnomalyData = data;
+  tacAnomalyLayer = L.layerGroup();
+
+  let criticalCount = 0, highCount = 0, mediumCount = 0;
+
+  data.forEach(d => {
+    const lat = parseFloat(d.avg_lat);
+    const lon = parseFloat(d.avg_lon);
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    const tacCount = parseInt(d.distinct_area_count) || 0;
+    const color = getTacColor(tacCount);
+    const risk = getTacRiskLevel(tacCount);
+    const samples = parseInt(d.total_samples) || 0;
+    const devices = parseInt(d.unique_devices) || 0;
+
+    if (tacCount >= 8) criticalCount++;
+    else if (tacCount >= 5) highCount++;
+    else mediumCount++;
+
+    // Clean operator names
+    let ops = d.operator_names || '';
+    if (Array.isArray(ops)) ops = ops.join(', ');
+    ops = String(ops).replace(/[\[\]']/g, '').trim() || 'Unknown';
+    d.clean_ops = ops;
+
+    // Parse cell list
+    let cells = d.cell_list || '';
+    if (Array.isArray(cells)) cells = cells.join(', ');
+    cells = String(cells).replace(/[\[\]']/g, '').trim() || '—';
+
+    // Parse techs
+    let techs = d.techs || '';
+    if (Array.isArray(techs)) techs = techs.join(', ');
+    techs = String(techs).replace(/[\[\]']/g, '').trim() || '—';
+
+    const marker = L.circleMarker([lat, lon], {
+      radius: tacCount >= 8 ? 10 : 7,
+      fillColor: color,
+      color: color,
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.8,
+    });
+
+    const intelHtml = generateTacIntelAssessment(d);
+    marker.bindPopup(`
+      <div style="font-family:Inter,sans-serif;font-size:12px;min-width:280px;max-width:360px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <strong style="color:${color}">Site: ${escapeHtml(d.site_id || '—')}</strong>
+          <span style="background:${color}22;color:${color};padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600">Risk: ${risk.text}</span>
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;line-height:1.8;margin-bottom:8px">
+          <div><span style="color:#94a3b8">Net:</span> ${escapeHtml(d.network_mcc || '')}/${escapeHtml(d.network_mnc || '')} (${escapeHtml(ops)})</div>
+          <div><span style="color:#94a3b8">RAT:</span> ${escapeHtml(techs)}</div>
+          <div><span style="color:#94a3b8">Cells:</span> ${escapeHtml(cells)}</div>
+          <div><span style="color:#94a3b8">TAC Jumps:</span> <span style="color:#ef4444;font-weight:700">${tacCount}</span></div>
+          <div><span style="color:#94a3b8">Samples:</span> ${samples.toLocaleString()}</div>
+          <div><span style="color:#94a3b8">Devices:</span> ${devices > 0 ? devices.toLocaleString() : '—'}</div>
+          <div><span style="color:#94a3b8">First:</span> ${(d.first_seen || '').substring(0, 10)} <span style="color:#94a3b8">Last:</span> ${(d.last_seen || '').substring(0, 10)}</div>
+        </div>
+        <div style="background:rgba(239,68,68,0.08);border-radius:8px;padding:8px;border:1px solid rgba(239,68,68,0.15)">
+          <div style="font-weight:600;font-size:11px;color:#ef4444;margin-bottom:4px;display:flex;align-items:center;gap:4px">
+            <span class="material-icons" style="font-size:13px">security</span>Intelligence Assessment
+          </div>
+          <div style="font-size:11px;line-height:1.5;color:var(--text)">${intelHtml}</div>
+        </div>
+      </div>
+    `, { maxWidth: 380, className: 'tac-popup' });
+
+    tacAnomalyLayer.addLayer(marker);
+  });
+
+  tacAnomalyLayer.addTo(map);
+
+  // Fit bounds
+  const lats = data.map(d => parseFloat(d.avg_lat)).filter(v => !isNaN(v));
+  const lons = data.map(d => parseFloat(d.avg_lon)).filter(v => !isNaN(v));
+  if (lats.length > 0) {
+    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [30, 30] });
+  }
+
+  // Legend
+  addTacAnomalyLegend(data.length, criticalCount, highCount, mediumCount);
+}
+
+function addTacAnomalyLegend(total, critical, high, medium) {
+  const existing = document.getElementById('tac-anomaly-legend');
+  if (existing) existing.remove();
+
+  const ctrl = document.createElement('div');
+  ctrl.id = 'tac-anomaly-legend';
+  ctrl.style.cssText = 'position:absolute;bottom:40px;right:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid var(--border);border-radius:12px;padding:12px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:200px;';
+
+  ctrl.innerHTML = `
+    <div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px">
+      <span class="material-icons" style="font-size:16px;color:#ef4444">shield</span>
+      TAC Anomaly — ${total} sites
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:12px;height:12px;border-radius:50%;background:#ef4444"></div>High (8+) — ${critical} sites</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:10px;height:10px;border-radius:50%;background:#f97316"></div>Medium (5-7) — ${high} sites</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px"><div style="width:8px;height:8px;border-radius:50%;background:#eab308"></div>Low (2-4) — ${medium} sites</div>
+    <button onclick="clearTacAnomalyLayer()" style="width:100%;padding:5px;border-radius:6px;border:1px solid var(--border);background:var(--red);color:#fff;font-size:11px;cursor:pointer">Clear</button>
+  `;
+  document.getElementById('map').appendChild(ctrl);
+}
+
+// ════════════════════════════════════════════════════════════════
+//  TAC ANOMALY — INTELLIGENCE REPORT
+// ════════════════════════════════════════════════════════════════
+
+function generateTacIntelligenceReport() {
+  if (!tacAnomalyData || tacAnomalyData.length === 0) {
+    alert('No TAC anomaly data available. Execute a query first.');
+    return;
+  }
+
+  const data = tacAnomalyData;
+  const reportDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // Sort by severity
+  const sorted = [...data].sort((a, b) => (parseInt(b.distinct_area_count) || 0) - (parseInt(a.distinct_area_count) || 0));
+  const totalSites = sorted.length;
+  const criticals = sorted.filter(d => {
+    const tc = parseInt(d.distinct_area_count) || 0;
+    const s = parseInt(d.total_samples) || 0;
+    const dev = parseInt(d.unique_devices) || 0;
+    return tc >= 8 || (tc >= 5 && (s < 500 || (dev > 0 && dev <= 5)));
+  });
+  const highs = sorted.filter(d => { const tc = parseInt(d.distinct_area_count) || 0; return tc >= 5 && !criticals.includes(d); });
+  const mediums = sorted.filter(d => !criticals.includes(d) && !highs.includes(d));
+
+  let html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">';
+  html += '<link rel="icon" type="image/png" href="Favicon.png">';
+  html += '<title>TAC Anomaly Intelligence Report</title>';
+  html += '<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
+  html += '<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">';
+  html += '<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"><\/script>';
+  html += '<style>';
+  html += ':root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2e;--text:#e2e8f0;--sub:#64748b;--red:#ef4444;--orange:#f59e0b;--yellow:#eab308;--cyan:#06b6d4;--green:#22c55e;--purple:#a855f7}';
+  html += '*{margin:0;padding:0;box-sizing:border-box}';
+  html += 'body{font-family:"Inter",sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:40px}';
+  html += '.container{max-width:1400px;margin:0 auto}';
+  html += '.header{text-align:center;margin-bottom:40px;padding-bottom:30px;border-bottom:1px solid var(--border)}';
+  html += '.header h1{font-size:2rem;font-weight:700;margin-bottom:8px;background:linear-gradient(135deg,var(--red),var(--purple));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}';
+  html += '.header .subtitle{color:var(--sub);font-size:0.9rem}';
+  html += '.badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}';
+  html += '.badge-critical{background:rgba(239,68,68,.15);color:var(--red)}.badge-high{background:rgba(249,115,22,.15);color:var(--orange)}.badge-medium{background:rgba(234,179,8,.15);color:var(--yellow)}';
+  html += '.kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:20px;margin-bottom:40px}';
+  html += '.kpi-card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:center}';
+  html += '.kpi-card .icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;font-size:24px}';
+  html += '.kpi-value{font-size:2rem;font-weight:700;margin-bottom:4px}';
+  html += '.kpi-label{color:var(--sub);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px}';
+  html += '.section{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;margin-bottom:24px}';
+  html += '.section h2{font-size:1.25rem;font-weight:600;margin-bottom:20px;display:flex;align-items:center;gap:10px}';
+  html += '.section h2 .material-icons{color:var(--red)}';
+  html += 'table{width:100%;border-collapse:collapse;font-size:0.8rem}';
+  html += 'th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--border)}';
+  html += 'th{color:var(--sub);font-weight:500;text-transform:uppercase;font-size:0.65rem;letter-spacing:0.5px}';
+  html += '.num{text-align:right;font-family:monospace}';
+  html += '.footer{text-align:center;padding-top:30px;margin-top:40px;border-top:1px solid var(--border);color:var(--sub);font-size:0.8rem}';
+  html += '.capture-btn{position:fixed;top:20px;right:20px;background:linear-gradient(135deg,var(--red),var(--purple));color:#fff;border:none;padding:12px 20px;border-radius:12px;font-size:0.9rem;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;box-shadow:0 4px 20px rgba(239,68,68,0.3);z-index:1000}';
+  html += '.capture-btn:hover{transform:translateY(-2px)}.capture-btn:disabled{opacity:0.6;cursor:wait}';
+  html += '.intel-box{background:rgba(239,68,68,0.05);border:1px solid rgba(239,68,68,0.15);border-radius:8px;padding:10px;font-size:0.8rem;line-height:1.5}';
+  html += '@media print{.capture-btn{display:none}}';
+  html += '</style></head><body>';
+
+  html += '<button class="capture-btn" onclick="captureReport()" id="capture-btn"><span class="material-icons">photo_camera</span>Capture Screenshot</button>';
+  html += '<div class="container">';
+  html += '<header class="header">';
+  html += '<div style="margin-bottom:12px"><span class="badge badge-critical">SIGINT INTELLIGENCE</span></div>';
+  html += '<h1>TAC Anomaly Intelligence Report</h1>';
+  html += '<p class="subtitle">Generated on ' + reportDate + '</p></header>';
+
+  // KPI Cards
+  html += '<div class="kpi-grid">';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(59,130,246,.15);color:#3b82f6"><span class="material-icons">cell_tower</span></div><div class="kpi-value">' + totalSites + '</div><div class="kpi-label">Suspicious Sites</div></div>';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(239,68,68,.15);color:var(--red)"><span class="material-icons">gpp_bad</span></div><div class="kpi-value" style="color:var(--red)">' + criticals.length + '</div><div class="kpi-label">Critical</div></div>';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(249,115,22,.15);color:var(--orange)"><span class="material-icons">warning</span></div><div class="kpi-value" style="color:var(--orange)">' + highs.length + '</div><div class="kpi-label">High Risk</div></div>';
+  html += '<div class="kpi-card"><div class="icon" style="background:rgba(234,179,8,.15);color:var(--yellow)"><span class="material-icons">info</span></div><div class="kpi-value" style="color:var(--yellow)">' + mediums.length + '</div><div class="kpi-label">Medium / Low</div></div>';
+  html += '</div>';
+
+  // Full table
+  html += '<div class="section"><h2><span class="material-icons">table_chart</span> Anomaly Details (' + totalSites + ' sites)</h2>';
+  html += '<div style="overflow-x:auto"><table><thead><tr><th>Site</th><th>Cells</th><th>MCC/MNC</th><th>Operator</th><th>RAT</th><th class="num">TAC Jumps</th><th class="num">Samples</th><th class="num">Devices</th><th>First Seen</th><th>Last Seen</th><th>Assessment</th></tr></thead><tbody>';
+
+  sorted.forEach(d => {
+    const tc = parseInt(d.distinct_area_count) || 0;
+    const risk = getTacRiskLevel(tc);
+    const color = getTacColor(tc);
+    let ops = d.clean_ops || d.operator_names || '';
+    if (Array.isArray(ops)) ops = ops.join(', ');
+    ops = String(ops).replace(/[\[\]']/g, '').trim() || 'Unknown';
+    let cells = d.cell_list || '';
+    if (Array.isArray(cells)) cells = cells.join(', ');
+    cells = String(cells).replace(/[\[\]']/g, '').trim() || '—';
+    let techs = d.techs || '';
+    if (Array.isArray(techs)) techs = techs.join(', ');
+    techs = String(techs).replace(/[\[\]']/g, '').trim() || '—';
+    const samples = parseInt(d.total_samples) || 0;
+    const devices = parseInt(d.unique_devices) || 0;
+
+    html += '<tr>';
+    html += '<td style="font-family:monospace;font-size:0.75rem">' + escapeHtml(d.site_id || '—') + '</td>';
+    html += '<td style="font-family:monospace;font-size:0.7rem;max-width:120px;overflow:hidden;text-overflow:ellipsis" title="' + escapeHtml(cells) + '">' + escapeHtml(cells.substring(0, 40)) + '</td>';
+    html += '<td>' + escapeHtml((d.network_mcc || '') + '/' + (d.network_mnc || '')) + '</td>';
+    html += '<td>' + escapeHtml(ops) + '</td>';
+    html += '<td>' + escapeHtml(techs) + '</td>';
+    html += '<td class="num"><span class="badge badge-' + (tc >= 8 ? 'critical' : tc >= 5 ? 'high' : 'medium') + '">' + tc + '</span></td>';
+    html += '<td class="num">' + samples.toLocaleString() + '</td>';
+    html += '<td class="num">' + (devices > 0 ? devices.toLocaleString() : '—') + '</td>';
+    html += '<td style="font-size:0.75rem">' + (d.first_seen || '').substring(0, 10) + '</td>';
+    html += '<td style="font-size:0.75rem">' + (d.last_seen || '').substring(0, 10) + '</td>';
+    html += '<td><div class="intel-box">' + generateTacIntelAssessment(d) + '</div></td>';
+    html += '</tr>';
+  });
+
+  html += '</tbody></table></div></div>';
+
+  html += '<div class="footer">SIGINT Platform — TAC Anomaly Intelligence Report · ' + reportDate + '</div>';
+  html += '</div>';
+
+  html += '<script>function captureReport(){const b=document.getElementById("capture-btn");b.disabled=true;b.innerHTML="<span class=\\"material-icons\\">hourglass_top</span>Capturing...";html2canvas(document.querySelector(".container"),{backgroundColor:"#0a0a0f",scale:2}).then(c=>{const a=document.createElement("a");a.download="tac-intelligence-report.png";a.href=c.toDataURL("image/png");a.click();b.disabled=false;b.innerHTML="<span class=\\"material-icons\\">photo_camera</span>Capture Screenshot"}).catch(e=>{alert("Capture failed: "+e.message);b.disabled=false;b.innerHTML="<span class=\\"material-icons\\">photo_camera</span>Capture Screenshot"})}<\/script>';
+  html += '</body></html>';
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+}
 
 // ============================================
 // Contributors Insight Report Generator
