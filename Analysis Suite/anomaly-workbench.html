@@ -531,19 +531,37 @@ const ANOMALY_LIBRARY = [
     params: [{ id: 'min_count', label: 'Min TA=0 Occurrences', unit: '', type: 'range', min: 1, max: 50, step: 1, default: 5 }],
     metricKey: 'ta_zero_count', metricLabel: 'TA=0 Count', metricUnit: '',
     classifyRow(row) {
-      return { severity: 'CRITICAL', color: '#ef4444', label: 'IMSI Catcher Proximity Spoofing', assessment: `TA=0 indicates device appears physically adjacent to base station. Consistent with IMSI-Catcher proximity spoofing or rogue BTS at measurement point.` };
+      const rsrp = parseFloat(row.avg_rsrp);
+      const earfcnNote = (row.earfcn && row.earfcn != 0) ? ` EARFCN ${row.earfcn}.` : '';
+      let label, assessment, extraConf = 0;
+      if (!isNaN(rsrp) && rsrp > -70) {
+        label      = 'IMSI Catcher — TA=0 + Extreme RSRP Confirmed';
+        assessment = `TA=0 + RSRP ${rsrp} dBm — dual indicator. TA=0 places the transmitter within 78 m of the device. RSRP above -70 dBm is physically impossible for a legitimate tower at this distance — consistent with a rogue BTS broadcasting at amplified power as a man-in-the-middle.${earfcnNote}`;
+        extraConf  = 20;
+      } else if (!isNaN(rsrp) && rsrp > -80) {
+        label      = 'IMSI Catcher — TA=0 + High RSRP';
+        assessment = `TA=0 indicates proximity spoofing. RSRP ${rsrp} dBm is abnormally strong and corroborates a rogue BTS operating at elevated power to force device attachment.${earfcnNote}`;
+        extraConf  = 10;
+      } else {
+        label      = 'IMSI Catcher Proximity Spoofing';
+        assessment = `TA=0 indicates device appears physically adjacent to base station. Consistent with IMSI-Catcher proximity spoofing or rogue BTS at measurement point.${earfcnNote}`;
+      }
+      return { severity: 'CRITICAL', color: '#ef4444', label, assessment, extraConf };
     },
     generateSQL(p, extras) {
       const w = buildWhere([`signal_timingAdvance IS NOT NULL`, `cell_eci != 0`], extras);
       return `-- Timing Advance = 0 Detection — ALL results CRITICAL
 -- Only counts the FIRST TA sample per device per cell to avoid
 -- stale TA=0 repeats (UE keeps old TA until network sends update)
+-- RSRP > -80 dBm and EARFCN added as corroborating IMSI-catcher indicators
 SELECT
     ${CELL_SEL},
     network_PLMN, network_operator, network_iso, tech,
     countIf(first_ta = 0) AS ta_zero_count,
-    count() AS counted,
-    uniqExact(device_id) AS unique_devices,
+    sum(dev_samples) AS counted,
+    count() AS unique_devices,
+    round(avg(dev_avg_rsrp), 1) AS avg_rsrp,
+    anyIf(earfcn, earfcn > 0) AS earfcn,
     min(dev_first_seen) AS first_seen,
     max(dev_last_seen) AS last_seen,
     avg(lat) AS lat,
@@ -554,6 +572,9 @@ FROM (
         ${CELL_SEL},
         network_PLMN, network_operator, network_iso, tech,
         argMin(signal_timingAdvance, timestamp) AS first_ta,
+        count() AS dev_samples,
+        avg(signal_rsrp) AS dev_avg_rsrp,
+        anyIf(band_downlinkEarfcn, band_downlinkEarfcn > 0) AS earfcn,
         min(timestamp) AS dev_first_seen,
         max(timestamp) AS dev_last_seen,
         avg(location_geo_coordinates.2) AS lat,
@@ -1054,7 +1075,7 @@ function processResults(data, anomaly) {
     return hasCell;
   }).map(row => {
     const cls  = anom.classifyRow(row);
-    const conf = computeConfidence({ ...row, _severity: cls.severity });
+    const conf = Math.min(100, computeConfidence({ ...row, _severity: cls.severity }) + (cls.extraConf || 0));
     return { ...row, _severity: cls.severity, _color: cls.color, _label: cls.label, _assessment: cls.assessment, _confidence: conf };
   });
 
@@ -1123,6 +1144,8 @@ function renderMarkers() {
       <div class="popup-row"><span class="lbl">${selectedAnomaly.metricLabel}</span><span>${md}</span></div>
       <div class="popup-row"><span class="lbl">Samples</span><span>${row.counted || '—'}</span></div>
       ${row.unique_devices != null ? `<div class="popup-row"><span class="lbl">Unique Devices</span><span>${row.unique_devices}</span></div>` : ''}
+      ${selectedAnomaly.id === 'timing_advance_zero' && row.avg_rsrp != null ? `<div class="popup-row"><span class="lbl">Avg RSRP</span><span style="font-family:monospace;font-size:11px;color:${parseFloat(row.avg_rsrp) > -70 ? '#ef4444' : parseFloat(row.avg_rsrp) > -80 ? '#f59e0b' : 'var(--text)'};font-weight:${parseFloat(row.avg_rsrp) > -80 ? '600' : '400'}">${row.avg_rsrp} dBm${parseFloat(row.avg_rsrp) > -80 ? ' ⚠' : ''}</span></div>` : ''}
+      ${selectedAnomaly.id === 'timing_advance_zero' && row.earfcn && row.earfcn != 0 ? `<div class="popup-row"><span class="lbl">EARFCN</span><span style="font-family:monospace;font-size:11px">${row.earfcn}</span></div>` : ''}
       <div class="popup-row"><span class="lbl">First Seen</span><span style="font-family:monospace;font-size:11px">${row.first_seen ? String(row.first_seen).replace('T',' ').slice(0,16) : '—'}</span></div>
       <div class="popup-row"><span class="lbl">Last Seen</span><span style="font-family:monospace;font-size:11px">${row.last_seen ? String(row.last_seen).replace('T',' ').slice(0,16) : '—'}</span></div>
       <div class="popup-row"><span class="lbl">Coords</span><span style="font-family:monospace;font-size:11px">${lat.toFixed(5)}, ${lon.toFixed(5)}</span></div>
@@ -1183,10 +1206,13 @@ function th(label, col) {
 
 function renderTable() {
   const mk = selectedAnomaly.metricKey, ml = selectedAnomaly.metricLabel, mu = selectedAnomaly.metricUnit || '';
+  const isTA0 = selectedAnomaly.id === 'timing_advance_zero';
   document.getElementById('table-head').innerHTML =
     th('Severity', '_severity') + th('Confidence', '_confidence') +
     `<th>Cell / ECI</th><th>eNB</th><th>PLMN</th><th>Operator</th><th>RAT</th>` +
-    th(ml, 'metric') + th('Samples', 'counted') + th('Devices', 'unique_devices') +
+    th(ml, 'metric') +
+    (isTA0 ? `<th>Avg RSRP</th><th>EARFCN</th>` : '') +
+    th('Samples', 'counted') + th('Devices', 'unique_devices') +
     th('First Seen', 'first_seen') + th('Last Seen', 'last_seen') +
     `<th>Lat / Lon</th>`;
 
@@ -1205,6 +1231,7 @@ function renderTable() {
       <td>${row.network_PLMN || '—'}</td><td>${row.network_operator || '—'}</td>
       <td style="font-size:0.75rem">${row.tech || '—'}</td>
       <td style="font-family:'JetBrains Mono',monospace">${md}</td>
+      ${isTA0 ? `<td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${parseFloat(row.avg_rsrp) > -70 ? '#ef4444' : parseFloat(row.avg_rsrp) > -80 ? '#f59e0b' : 'inherit'};font-weight:${parseFloat(row.avg_rsrp) > -80 ? '600' : '400'}">${row.avg_rsrp != null ? row.avg_rsrp + ' dBm' : '—'}</td><td style="font-family:'JetBrains Mono',monospace;font-size:11px">${row.earfcn && row.earfcn != 0 ? row.earfcn : '—'}</td>` : ''}
       <td>${row.counted || '—'}</td>
       <td>${row.unique_devices != null ? row.unique_devices : '—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap">${fmtTs(row.first_seen)}</td>

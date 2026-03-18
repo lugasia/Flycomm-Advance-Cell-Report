@@ -186,12 +186,14 @@ minutes_lte_to_gsm > 15  →  LOW       (Geographic coverage blind spot)
 
 ## B2 — Timing Advance = 0
 
-Detects cells where the device appeared to be at zero physical distance from the base station.
+Detects cells where the device appeared to be at zero physical distance from the base station. Corroborated by high RSRP and EARFCN for enhanced confidence.
 
 **Raw fields read from `measurements`:**
 | Field | Purpose |
 |-------|---------|
-| `signal_timingAdvance` | Filter: NOT NULL; counted where = 0 |
+| `signal_timingAdvance` | Filter: NOT NULL; first TA per device per cell counted where = 0 |
+| `signal_rsrp` | Corroborating indicator — high RSRP confirms rogue BTS at elevated power |
+| `band_downlinkEarfcn` | Frequency identification — output field |
 | `cell_eci`, `cell_enb`, `cell_ecgi`, `cell_nci`, `cell_lac`, `cell_cid` | Group key |
 | `network_PLMN`, `network_operator`, `network_iso` | Group key |
 | `timestamp` | Output: first_seen / last_seen |
@@ -199,19 +201,42 @@ Detects cells where the device appeared to be at zero physical distance from the
 
 **SQL logic:**
 ```sql
--- Inner subquery: deduplicate to first TA observation per device per cell
-argMin(signal_timingAdvance, timestamp) AS first_ta
-min(timestamp) AS dev_first_seen
-max(timestamp) AS dev_last_seen
+-- Inner subquery: one row per device per cell
+argMin(signal_timingAdvance, timestamp)          AS first_ta
+count()                                          AS dev_samples      -- raw measurements
+avg(signal_rsrp)                                 AS dev_avg_rsrp
+anyIf(band_downlinkEarfcn, band_downlinkEarfcn > 0) AS earfcn
+min(timestamp)                                   AS dev_first_seen
+max(timestamp)                                   AS dev_last_seen
 
--- Outer query:
-countIf(first_ta = 0) AS ta_zero_count
+-- Outer query: aggregate across all devices at this cell
+countIf(first_ta = 0)       AS ta_zero_count
+sum(dev_samples)             AS counted           -- total raw measurements (NOT same as unique_devices)
+count()                      AS unique_devices
+round(avg(dev_avg_rsrp), 1) AS avg_rsrp
+anyIf(earfcn, earfcn > 0)   AS earfcn
+
 HAVING ta_zero_count ≥ [min_count]   -- default: 5
+ORDER BY ta_zero_count DESC
 ```
 
 **Severity:** ALL results → CRITICAL (no tiering)
 
-**Rationale:** TA=0 means the round-trip signal time implies the device is ≤78 meters from the transmitter. For a fixed tower, this is physically impossible for most measurement scenarios. Consistent with an IMSI-catcher physically adjacent to the victim device, or a rogue BTS broadcasting TA=0 to force association.
+**Confidence boost (applied on top of base formula):**
+```
+avg_rsrp > -70 dBm  →  +20 confidence points  (extreme RSRP — dual confirmed)
+avg_rsrp > -80 dBm  →  +10 confidence points  (high RSRP — corroborated)
+avg_rsrp ≤ -80 dBm  →  no boost
+```
+
+**Assessment labels:**
+```
+TA=0 + RSRP > -70 dBm  →  "IMSI Catcher — TA=0 + Extreme RSRP Confirmed"
+TA=0 + RSRP > -80 dBm  →  "IMSI Catcher — TA=0 + High RSRP"
+TA=0 only              →  "IMSI Catcher Proximity Spoofing"
+```
+
+**Rationale:** TA=0 means the round-trip signal time implies the device is ≤78 meters from the transmitter. For a fixed tower this is physically impossible for most scenarios. High RSRP (> -80 dBm, especially > -70 dBm) is a primary indicator of a rogue BTS broadcasting at amplified power to force device attachment as a man-in-the-middle. EARFCN identifies the exact downlink frequency channel being used.
 
 ---
 
@@ -593,7 +618,7 @@ Response limit: 1–500 alerts (default: 100)
 | A3 | Rogue Equipment | TAC Detector | `tac_list` | TAC = 0 or 65535 in list | Always | — | — | Functional |
 | A4 | Operator Spoofing | TAC Detector | `operator_names` | Multiple operator names same cell | — | Always | — | Functional |
 | B1 | Tech Downgrade | Workbench | `tech`, `timestamp`, `cell_eci`, `deviceInfo_imei` | LTE→GSM in ≤ max_minutes | ≤ 2 min | 2–15 min | — | Functional |
-| B2 | Timing Advance = 0 | Workbench | `signal_timingAdvance`, `cell_eci` | ta_zero_count ≥ 5 | Always | — | — | Functional |
+| B2 | Timing Advance = 0 | Workbench | `signal_timingAdvance`, `signal_rsrp`, `band_downlinkEarfcn`, `cell_eci` | ta_zero_count ≥ 5 | Always (+RSRP boost) | — | — | Functional |
 | B3 | Extreme RSRP | Workbench | `signal_rsrp`, `tech`, `cell_eci` | avg_rsrp ≥ -50 dBm | ≥ -50 dBm | < -50 dBm | — | Functional |
 | B4 | Forced Roaming | Workbench | `network_isRoaming`, `network_mcc` | isRoaming=1 AND home MCC | — | Always | — | Functional |
 | B5 | PCI Mismatch | Workbench | `cell_pci`, `cell_eci` | distinct_pci ≥ 3 | ≥ 5 PCIs | < 5 PCIs | — | Functional |
