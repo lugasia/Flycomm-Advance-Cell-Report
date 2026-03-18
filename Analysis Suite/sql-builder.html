@@ -774,6 +774,56 @@
     }
     .grid-tooltip .leaflet-tooltip-arrow { display: none; }
 
+    /* Dark theme for all Leaflet popups */
+    .leaflet-popup-content-wrapper {
+      background: rgba(10,22,40,0.96) !important;
+      color: var(--text) !important;
+      border: 1px solid var(--border) !important;
+      border-radius: 10px !important;
+      box-shadow: 0 6px 24px rgba(0,0,0,0.5) !important;
+    }
+    .leaflet-popup-tip { background: rgba(10,22,40,0.96) !important; }
+    .leaflet-popup-close-button { color: var(--sub) !important; font-size: 18px !important; top: 6px !important; right: 8px !important; }
+    .leaflet-popup-content { margin: 10px 12px !important; }
+
+    /* Floating data table panel over the map */
+    #map-data-panel {
+      display: none;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: rgba(10,22,40,0.96);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid var(--border);
+      max-height: 40vh;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+    }
+    #map-data-panel.visible { display: flex; flex-direction: column; }
+    #map-data-panel .panel-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 8px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    #map-data-panel .panel-header h4 { font-size: 13px; font-weight: 600; color: var(--text); margin: 0; display: flex; align-items: center; gap: 6px; }
+    #map-data-panel .panel-header .meta { font-size: 11px; color: var(--sub); }
+    #map-data-panel .panel-body { overflow-y: auto; flex: 1; }
+    #map-data-panel table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    #map-data-panel th { background: rgba(15,29,50,0.9); padding: 7px 10px; text-align: left; font-weight: 600; color: var(--sub); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+    #map-data-panel td { padding: 6px 10px; border-bottom: 1px solid rgba(30,45,74,0.5); font-family: 'JetBrains Mono', monospace; font-size: 11px; white-space: nowrap; }
+    #map-data-panel tr { cursor: pointer; }
+    #map-data-panel tr:hover td { background: rgba(59,130,246,0.1); }
+    #map-data-panel .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+    #map-data-panel .badge-critical { background: rgba(239,68,68,.15); color: #ef4444; }
+    #map-data-panel .badge-high { background: rgba(249,115,22,.15); color: #f97316; }
+    #map-data-panel .badge-medium { background: rgba(234,179,8,.15); color: #eab308; }
+    #map-data-panel .badge-ok { background: rgba(59,130,246,.1); color: #3b82f6; }
+    #map-data-panel .panel-close { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--sub); cursor: pointer; padding: 2px 8px; font-size: 11px; }
+    #map-data-panel .panel-close:hover { background: var(--red); color: #fff; border-color: var(--red); }
+    #map-data-panel .panel-toggle { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--sub); cursor: pointer; padding: 2px 8px; font-size: 11px; margin-right: 6px; }
+    #map-data-panel .panel-toggle:hover { background: rgba(59,130,246,0.1); color: var(--accent); }
+
     /* Leaflet overrides - white icons on dark background */
     .leaflet-draw-toolbar a {
       background-color: var(--card) !important;
@@ -1156,6 +1206,17 @@
     Use the polygon tool (left side) to draw areas on the map
   </div>
   <div id="map"></div>
+  <div id="map-data-panel">
+    <div class="panel-header">
+      <h4><span class="material-icons" style="font-size:16px">table_chart</span> <span id="panel-title">Results</span></h4>
+      <div>
+        <span class="meta" id="panel-meta"></span>
+        <button class="panel-toggle" id="panel-minimize-btn" onclick="toggleDataPanel()">_</button>
+        <button class="panel-close" onclick="closeDataPanel()">✕</button>
+      </div>
+    </div>
+    <div class="panel-body" id="panel-body"></div>
+  </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -3805,7 +3866,121 @@ document.addEventListener('DOMContentLoaded', () => {
 //  CLEAR ALL VISUALIZATION LAYERS
 // ════════════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════════════
+//  FLOATING DATA TABLE PANEL
+// ════════════════════════════════════════════════════════════════
+
+function closeDataPanel() {
+  document.getElementById('map-data-panel').classList.remove('visible');
+}
+
+function toggleDataPanel() {
+  const panel = document.getElementById('map-data-panel');
+  const body = document.getElementById('panel-body');
+  const btn = document.getElementById('panel-minimize-btn');
+  if (body.style.display === 'none') {
+    body.style.display = '';
+    btn.textContent = '_';
+  } else {
+    body.style.display = 'none';
+    btn.textContent = '□';
+  }
+}
+
+function showMccDataPanel(data) {
+  const panel = document.getElementById('map-data-panel');
+  const body = document.getElementById('panel-body');
+  document.getElementById('panel-title').textContent = 'MCC Anomaly — Findings';
+  document.getElementById('panel-meta').textContent = data.length + ' rows';
+  body.style.display = '';
+  document.getElementById('panel-minimize-btn').textContent = '_';
+
+  let html = '<table><thead><tr><th>PLMN</th><th>Operator</th><th>ISO</th><th>Band</th><th>Cell ECI</th><th>eNB</th><th>Records</th><th>First Seen</th><th>Lon</th><th>Lat</th></tr></thead><tbody>';
+  data.forEach((d, i) => {
+    const mcc = ((d.network_PLMN || '').replace('-', '') || '').slice(0, 3);
+    const isForeign = mcc !== '425' && mcc !== '000' && mcc !== '255';
+    const isCritical = CRITICAL_MCCS.includes(mcc);
+    const cls = isCritical ? 'badge-critical' : isForeign ? 'badge-high' : 'badge-ok';
+    const lat = parseFloat(d.latitude) || 0;
+    const lon = parseFloat(d.longitude) || 0;
+    html += `<tr onclick="flyToPoint(${lat},${lon},16)" title="Click to fly to location">`;
+    html += `<td><span class="badge ${cls}">${escapeHtml(d.network_PLMN || '')}</span></td>`;
+    html += `<td>${escapeHtml(d.network_operator || '')}</td>`;
+    html += `<td>${escapeHtml(d.network_iso || '')}</td>`;
+    html += `<td>${escapeHtml(d.band || '')}</td>`;
+    html += `<td>${d.cell_eci || ''}</td>`;
+    html += `<td>${d.cell_enb || ''}</td>`;
+    html += `<td style="text-align:right">${(parseInt(d.counted) || 0).toLocaleString()}</td>`;
+    html += `<td>${(d.first_seen || '').substring(0, 16)}</td>`;
+    html += `<td>${lon.toFixed(5)}</td><td>${lat.toFixed(5)}</td>`;
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  body.innerHTML = html;
+  panel.classList.add('visible');
+}
+
+function showTacDataPanel(data) {
+  const panel = document.getElementById('map-data-panel');
+  const body = document.getElementById('panel-body');
+  document.getElementById('panel-title').textContent = 'TAC Anomaly — Findings';
+  document.getElementById('panel-meta').textContent = data.length + ' sites';
+  body.style.display = '';
+  document.getElementById('panel-minimize-btn').textContent = '_';
+
+  let html = '<table><thead><tr><th>Site</th><th>MCC/MNC</th><th>Operator</th><th>RAT</th><th>Cells</th><th>TAC Jumps</th><th>Samples</th><th>Devices</th><th>First Seen</th><th>Last Seen</th><th>Assessment</th></tr></thead><tbody>';
+  data.forEach(d => {
+    const tc = parseInt(d.distinct_area_count) || 0;
+    const cls = tc >= 8 ? 'badge-critical' : tc >= 5 ? 'badge-high' : 'badge-medium';
+    const lat = parseFloat(d.avg_lat) || 0;
+    const lon = parseFloat(d.avg_lon) || 0;
+    let ops = d.clean_ops || d.operator_names || '';
+    if (Array.isArray(ops)) ops = ops.join(', ');
+    ops = String(ops).replace(/[\[\]']/g, '').trim() || '—';
+    let cells = d.cell_list || '';
+    if (Array.isArray(cells)) cells = cells.join(', ');
+    cells = String(cells).replace(/[\[\]']/g, '').trim() || '—';
+    let techs = d.techs || '';
+    if (Array.isArray(techs)) techs = techs.join(', ');
+    techs = String(techs).replace(/[\[\]']/g, '').trim() || '—';
+    const samples = parseInt(d.total_samples) || 0;
+    const devices = parseInt(d.unique_devices) || 0;
+
+    // Short assessment
+    const areaList = String(d.area_code_list || '');
+    const hasNullTac = areaList.includes('65535') || areaList.includes(',0,');
+    const highJumps = tc >= 5 && (samples < 500 || (devices > 0 && devices <= 5));
+    const multiOps = ops.includes(',') && ops !== '—';
+    let shortAssess = 'Infrastructure instability';
+    if (highJumps) shortAssess = 'Suspected Stingray';
+    else if (hasNullTac) shortAssess = 'Rogue equipment';
+    else if (multiOps) shortAssess = 'Operator spoofing';
+
+    html += `<tr onclick="flyToPoint(${lat},${lon},16)" title="Click to fly to location">`;
+    html += `<td>${escapeHtml(d.site_id || '—')}</td>`;
+    html += `<td>${escapeHtml((d.network_mcc || '') + '/' + (d.network_mnc || ''))}</td>`;
+    html += `<td>${escapeHtml(ops)}</td>`;
+    html += `<td>${escapeHtml(techs)}</td>`;
+    html += `<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(cells)}">${escapeHtml(cells.substring(0, 30))}</td>`;
+    html += `<td style="text-align:center"><span class="badge ${cls}">${tc}</span></td>`;
+    html += `<td style="text-align:right">${samples.toLocaleString()}</td>`;
+    html += `<td style="text-align:right">${devices > 0 ? devices.toLocaleString() : '—'}</td>`;
+    html += `<td>${(d.first_seen || '').substring(0, 10)}</td>`;
+    html += `<td>${(d.last_seen || '').substring(0, 10)}</td>`;
+    html += `<td style="font-size:10px;color:${highJumps || hasNullTac ? '#ef4444' : multiOps ? '#f97316' : '#94a3b8'}">${shortAssess}</td>`;
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  body.innerHTML = html;
+  panel.classList.add('visible');
+}
+
+function flyToPoint(lat, lon, zoom) {
+  map.flyTo([lat, lon], zoom || 16, { duration: 0.8 });
+}
+
 function clearAllVisualizationLayers() {
+  closeDataPanel();
   if (mccAnomalyLayer) { map.removeLayer(mccAnomalyLayer); mccAnomalyLayer = null; }
   if (tacAnomalyLayer) { map.removeLayer(tacAnomalyLayer); tacAnomalyLayer = null; }
   if (contributorHeatLayer) { map.removeLayer(contributorHeatLayer); contributorHeatLayer = null; }
@@ -3911,8 +4086,9 @@ function renderMccAnomalyOnMap(data) {
     map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [30, 30] });
   }
 
-  // Add legend
+  // Add legend + data table
   addMccAnomalyLegend(plmnSet, plmnColorMap, plmnStats, totalRecords);
+  showMccDataPanel(data);
 }
 
 function addMccAnomalyLegend(plmnSet, colorMap, stats, totalRecords) {
@@ -4261,8 +4437,9 @@ function renderTacAnomalyOnMap(data) {
     map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [30, 30] });
   }
 
-  // Legend
+  // Legend + data table
   addTacAnomalyLegend(data.length, criticalCount, highCount, mediumCount);
+  showTacDataPanel(data);
 }
 
 function addTacAnomalyLegend(total, critical, high, medium) {
