@@ -999,6 +999,8 @@ function selectAnomaly(id) {
       document.getElementById('table-wrap').style.display = 'block';
       document.getElementById('ai-response-wrap').style.display = 'none';
       sortCol = null; sortDir = 1;
+      activeIsoFilter = new Set();
+      renderCountryFilter();
       renderMarkers();
       renderTable();
     } else {
@@ -1559,6 +1561,14 @@ function showCorrelationView() {
   corrMode = true;
   document.getElementById('ai-corr-btn').style.display = 'block';
   document.getElementById('ai-analyze-btn').style.display = 'none';
+
+  // Merge all session results into currentResults so country filter works in corr mode
+  const merged = [];
+  for (const rows of Object.values(sessionStore)) rows.forEach(r => merged.push(r));
+  currentResults = merged;
+  activeIsoFilter = new Set();
+  renderCountryFilter();
+
   const corrs = computeCorrelations();
 
   // Update banner
