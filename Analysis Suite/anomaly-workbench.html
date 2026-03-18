@@ -506,6 +506,42 @@ function fmtCell(row) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// EARFCN → BAND + FREQUENCY LABEL  (3GPP TS 36.101)
+// ══════════════════════════════════════════════════════════════
+function earfcnLabel(earfcn) {
+  const e = parseInt(earfcn);
+  if (isNaN(e) || e <= 0) return null;
+  // [dl_low, dl_high, band_number, display_freq]
+  const MAP = [
+    [0,     599,   1,  '2100 MHz'], [600,   1199,  2,  '1900 MHz'],
+    [1200,  1949,  3,  '1800 MHz'], [1950,  2399,  4,  '1700/2100 MHz'],
+    [2400,  2649,  5,  '850 MHz'],  [2650,  2749,  6,  '800 MHz'],
+    [2750,  3449,  7,  '2600 MHz'], [3450,  3799,  8,  '900 MHz'],
+    [3800,  4149,  9,  '1800 MHz'], [4150,  4749,  10, '1700/2100 MHz'],
+    [4750,  4999,  11, '1500 MHz'], [5000,  5179,  12, '700 MHz'],
+    [5180,  5279,  13, '700 MHz'],  [5280,  5379,  14, '700 MHz'],
+    [5730,  5849,  17, '700 MHz'],  [5850,  5999,  18, '850 MHz'],
+    [6000,  6149,  19, '850 MHz'],  [6150,  6449,  20, '800 MHz'],
+    [6450,  6599,  21, '1500 MHz'], [6600,  7399,  22, '3500 MHz'],
+    [7500,  7699,  23, '2000 MHz'], [7700,  8039,  24, '1500 MHz'],
+    [8040,  8689,  25, '1900 MHz'], [8690,  9039,  26, '850 MHz'],
+    [9040,  9209,  27, '800 MHz'],  [9210,  9659,  28, '700 MHz'],
+    [9660,  9769,  29, '700 MHz'],  [9770,  9869,  30, '2300 MHz'],
+    [9870,  9919,  31, '450 MHz'],  [9920,  10359, 32, '1500 MHz'],
+    [36000, 36199, 33, '1900 MHz TDD'], [36200, 36349, 34, '2000 MHz TDD'],
+    [36350, 36949, 35, '1850 MHz TDD'], [36950, 37549, 36, '1930 MHz TDD'],
+    [37550, 37749, 37, '1910 MHz TDD'], [37750, 38249, 38, '2600 MHz TDD'],
+    [38250, 38649, 39, '1900 MHz TDD'], [38650, 39649, 40, '2300 MHz TDD'],
+    [39650, 41589, 41, '2500 MHz TDD'], [41590, 43589, 42, '3400 MHz TDD'],
+    [43590, 45589, 43, '3600 MHz TDD'], [45590, 46589, 44, '700 MHz TDD'],
+  ];
+  for (const [lo, hi, band, freq] of MAP) {
+    if (e >= lo && e <= hi) return `B${band} — ${freq}`;
+  }
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════════
 // ANOMALY LIBRARY
 // ══════════════════════════════════════════════════════════════
 const ANOMALY_LIBRARY = [
@@ -532,7 +568,8 @@ const ANOMALY_LIBRARY = [
     metricKey: 'ta_zero_count', metricLabel: 'TA=0 Count', metricUnit: '',
     classifyRow(row) {
       const rsrp = parseFloat(row.avg_rsrp);
-      const earfcnNote = (row.earfcn && row.earfcn != 0) ? ` EARFCN ${row.earfcn}.` : '';
+      const earfcnStr  = (row.earfcn && row.earfcn != 0) ? `${row.earfcn}${earfcnLabel(row.earfcn) ? ' (' + earfcnLabel(row.earfcn) + ')' : ''}` : null;
+      const earfcnNote = earfcnStr ? ` EARFCN ${earfcnStr}.` : '';
       let label, assessment, extraConf = 0;
       if (!isNaN(rsrp) && rsrp > -70) {
         label      = 'IMSI Catcher — TA=0 + Extreme RSRP Confirmed';
@@ -929,10 +966,15 @@ function selectAnomaly(id) {
       const high     = rows.filter(r => r._severity === 'HIGH').length;
       const statsEl  = document.getElementById('data-stats');
       statsEl.style.display = 'block';
+      const scanCount = Object.keys(sessionStore).length;
+      const backBtn = scanCount > 1
+        ? `<button class="btn-sm btn-secondary" onclick="showCorrelationView()" style="margin-left:8px;padding:3px 8px;font-size:10px;display:inline-flex;align-items:center;gap:3px;border-radius:5px;border-color:rgba(139,92,246,0.4);color:#a78bfa">
+             <span class="material-icons" style="font-size:12px">hub</span>View All Scan
+           </button>` : '';
       statsEl.innerHTML = `<strong>${rows.length}</strong> results &nbsp;·&nbsp; <span style="color:var(--red)">${critical} CRITICAL</span> &nbsp;·&nbsp; <span style="color:var(--orange)">${high} HIGH</span>
         <button class="btn-sm btn-secondary" onclick="exportCSV()" style="margin-left:10px;padding:3px 8px;font-size:10px;display:inline-flex;align-items:center;gap:3px;border-radius:5px">
           <span class="material-icons" style="font-size:12px">download</span>CSV
-        </button>`;
+        </button>${backBtn}`;
       document.getElementById('legend-section').style.display = 'block';
       document.getElementById('report-section').style.display = 'block';
       document.getElementById('ai-section').style.display = 'block';
@@ -1145,7 +1187,7 @@ function renderMarkers() {
       <div class="popup-row"><span class="lbl">Samples</span><span>${row.counted || '—'}</span></div>
       ${row.unique_devices != null ? `<div class="popup-row"><span class="lbl">Unique Devices</span><span>${row.unique_devices}</span></div>` : ''}
       ${selectedAnomaly.id === 'timing_advance_zero' && row.avg_rsrp != null ? `<div class="popup-row"><span class="lbl">Avg RSRP</span><span style="font-family:monospace;font-size:11px;color:${parseFloat(row.avg_rsrp) > -70 ? '#ef4444' : parseFloat(row.avg_rsrp) > -80 ? '#f59e0b' : 'var(--text)'};font-weight:${parseFloat(row.avg_rsrp) > -80 ? '600' : '400'}">${row.avg_rsrp} dBm${parseFloat(row.avg_rsrp) > -80 ? ' ⚠' : ''}</span></div>` : ''}
-      ${selectedAnomaly.id === 'timing_advance_zero' && row.earfcn && row.earfcn != 0 ? `<div class="popup-row"><span class="lbl">EARFCN</span><span style="font-family:monospace;font-size:11px">${row.earfcn}</span></div>` : ''}
+      ${selectedAnomaly.id === 'timing_advance_zero' && row.earfcn && row.earfcn != 0 ? `<div class="popup-row"><span class="lbl">EARFCN</span><span style="font-family:monospace;font-size:11px">${row.earfcn}${earfcnLabel(row.earfcn) ? `<span style="color:var(--text-muted);margin-left:5px">(${earfcnLabel(row.earfcn)})</span>` : ''}</span></div>` : ''}
       <div class="popup-row"><span class="lbl">First Seen</span><span style="font-family:monospace;font-size:11px">${row.first_seen ? String(row.first_seen).replace('T',' ').slice(0,16) : '—'}</span></div>
       <div class="popup-row"><span class="lbl">Last Seen</span><span style="font-family:monospace;font-size:11px">${row.last_seen ? String(row.last_seen).replace('T',' ').slice(0,16) : '—'}</span></div>
       <div class="popup-row"><span class="lbl">Coords</span><span style="font-family:monospace;font-size:11px">${lat.toFixed(5)}, ${lon.toFixed(5)}</span></div>
@@ -1231,7 +1273,7 @@ function renderTable() {
       <td>${row.network_PLMN || '—'}</td><td>${row.network_operator || '—'}</td>
       <td style="font-size:0.75rem">${row.tech || '—'}</td>
       <td style="font-family:'JetBrains Mono',monospace">${md}</td>
-      ${isTA0 ? `<td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${parseFloat(row.avg_rsrp) > -70 ? '#ef4444' : parseFloat(row.avg_rsrp) > -80 ? '#f59e0b' : 'inherit'};font-weight:${parseFloat(row.avg_rsrp) > -80 ? '600' : '400'}">${row.avg_rsrp != null ? row.avg_rsrp + ' dBm' : '—'}</td><td style="font-family:'JetBrains Mono',monospace;font-size:11px">${row.earfcn && row.earfcn != 0 ? row.earfcn : '—'}</td>` : ''}
+      ${isTA0 ? `<td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:${parseFloat(row.avg_rsrp) > -70 ? '#ef4444' : parseFloat(row.avg_rsrp) > -80 ? '#f59e0b' : 'inherit'};font-weight:${parseFloat(row.avg_rsrp) > -80 ? '600' : '400'}">${row.avg_rsrp != null ? row.avg_rsrp + ' dBm' : '—'}</td><td style="font-family:'JetBrains Mono',monospace;font-size:11px">${row.earfcn && row.earfcn != 0 ? row.earfcn + (earfcnLabel(row.earfcn) ? '<span style="color:var(--text-muted);margin-left:4px;font-size:10px">(' + earfcnLabel(row.earfcn) + ')</span>' : '') : '—'}</td>` : ''}
       <td>${row.counted || '—'}</td>
       <td>${row.unique_devices != null ? row.unique_devices : '—'}</td>
       <td style="font-family:'JetBrains Mono',monospace;font-size:11px;white-space:nowrap">${fmtTs(row.first_seen)}</td>
@@ -1636,8 +1678,26 @@ function generateCorrelationReport() {
 
   const totalEvents = Object.values(sessionStore).reduce((s, r) => s + r.length, 0);
   const scannedTypes = Object.keys(sessionStore).length;
+  const sevOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-  const rowsHTML = corrs.slice(0, 100).map((c, i) => {
+  // Section 1: multi-type hotspots sorted by overlap count desc, then severity
+  const sortedCorrs = [...corrs].sort((a, b) =>
+    b.anomalyCount - a.anomalyCount || (sevOrder[a.maxSeverity] ?? 3) - (sevOrder[b.maxSeverity] ?? 3)
+  );
+
+  // Section 2: single-type findings — cells NOT in corrs, sorted by severity
+  const corrKeys = new Set(sortedCorrs.map(c => c.cellId));
+  const singleRows = [];
+  for (const [aId, rows] of Object.entries(sessionStore)) {
+    const anom = ANOMALY_LIBRARY.find(a => a.id === aId);
+    rows.forEach(row => {
+      const k = cellKey(row);
+      if (k && !corrKeys.has(k)) singleRows.push({ ...row, _anomalyName: anom?.name || aId });
+    });
+  }
+  singleRows.sort((a, b) => (sevOrder[a._severity] ?? 3) - (sevOrder[b._severity] ?? 3));
+
+  const corrHTML = sortedCorrs.slice(0, 100).map((c, i) => {
     const color = c.maxColor;
     const assessList = c.hits.map(h =>
       `<div style="margin-bottom:6px;padding:8px;background:rgba(255,255,255,0.03);border-radius:6px">
@@ -1659,12 +1719,31 @@ function generateCorrelationReport() {
         ${cellBadge}
         <span style="margin-left:auto;font-size:11px;color:#475569;font-family:monospace">${parseFloat(c.lat).toFixed(5)}, ${parseFloat(c.lon).toFixed(5)}</span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:10px;font-size:12px">
-        <div><span style="color:#94a3b8">Anomaly Types:</span> <strong style="color:${color}">${c.anomalyNames.join(', ')}</strong></div>
-      </div>
+      <div style="font-size:12px;margin-bottom:10px"><span style="color:#94a3b8">Anomaly Types:</span> <strong style="color:${color}">${c.anomalyNames.join(', ')}</strong></div>
       <div style="font-size:12px;border-top:1px solid rgba(255,255,255,0.06);padding-top:10px">${assessList}</div>
     </div>`;
   }).join('');
+
+  const singleHTML = singleRows.slice(0, 200).map(row => {
+    const color = row._color || '#94a3b8';
+    const lat = parseFloat(row.lat), lon = parseFloat(row.lon);
+    return `<div style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.07);border-radius:8px;padding:12px 16px;margin-bottom:8px;display:flex;align-items:flex-start;gap:12px">
+      <span style="background:${color}22;color:${color};border:1px solid ${color}44;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700;white-space:nowrap">${row._severity}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600;color:${color};margin-bottom:2px">${row._anomalyName}</div>
+        <div style="font-size:11px;font-family:monospace;color:#38bdf8;margin-bottom:4px">${fmtCell(row)} &nbsp;·&nbsp; ${row.network_PLMN || '—'} ${row.network_operator || ''}</div>
+        <div style="font-size:11px;color:#94a3b8">${row._assessment}</div>
+      </div>
+      <span style="font-size:10px;color:#475569;font-family:monospace;white-space:nowrap">${isNaN(lat) ? '' : lat.toFixed(4) + ', ' + lon.toFixed(4)}</span>
+    </div>`;
+  }).join('');
+
+  const rowsHTML = (sortedCorrs.length > 0
+    ? `<div style="margin-bottom:24px"><div class="sl">Multi-Type Hotspots (${sortedCorrs.length}) — highest threat priority</div>${corrHTML}</div>` : '')
+    + (singleRows.length > 0
+    ? `<div><div class="sl">Single-Type Findings (${Math.min(singleRows.length, 200)}) — sorted by severity</div>${singleHTML}</div>` : '')
+    + (sortedCorrs.length === 0 && singleRows.length === 0
+    ? `<div style="color:#64748b;text-align:center;padding:32px">No findings to report.</div>` : '');
 
   const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <link rel="icon" type="image/png" href="Favicon.png">
@@ -1683,10 +1762,10 @@ function generateCorrelationReport() {
 <div style="margin-bottom:24px"><div class="sl">Scan Summary</div><div class="sg">
 <div class="sc"><div class="num">${scannedTypes}</div><div class="lbl">Types Scanned</div></div>
 <div class="sc"><div class="num">${totalEvents}</div><div class="lbl">Total Events</div></div>
-<div class="sc"><div class="num" style="color:#ef4444">${corrs.length}</div><div class="lbl">Hotspots</div></div>
-<div class="sc"><div class="num" style="color:#f59e0b">${corrs.filter(c=>c.anomalyCount>=3).length}</div><div class="lbl">3+ Type Overlap</div></div>
+<div class="sc"><div class="num" style="color:#ef4444">${sortedCorrs.length}</div><div class="lbl">Multi-Type Hotspots</div></div>
+<div class="sc"><div class="num" style="color:#f59e0b">${singleRows.length}</div><div class="lbl">Single-Type Findings</div></div>
 </div></div>
-<div><div class="sl">Threat Hotspots (by severity × overlap count)</div>${rowsHTML}</div>
+${rowsHTML}
 <div class="ft"><p>FCIC — Advanced Cell Report Platform &nbsp;|&nbsp; Multi-Anomaly Correlation &nbsp;|&nbsp; ${dateStr}</p>
 <p style="margin-top:4px">Sensitive intelligence data. Handle per classification protocols.</p></div>
 </div></body></html>`;
