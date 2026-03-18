@@ -1245,6 +1245,10 @@ let mccAnomalyLayer = null;
 let mccAnomalyData = null;
 let tacAnomalyLayer = null;
 let tacAnomalyData = null;
+let sitesLayer = null;
+let sitesSectorLayer = null;
+let sitesData = null;
+let cellSearchLayer = null;
 
 // Intelligence constants
 const JORDAN_BORDER_LON = 35.3;
@@ -2150,6 +2154,7 @@ async function executeSQL() {
         renderMccAnomalyOnMap(result.data);
         const btn = document.getElementById('mcc-report-btn');
         if (btn) btn.disabled = false;
+        fetchAndOverlaySites(result.data);
       } else if (queryType === 'tac') {
         renderTacAnomalyOnMap(result.data);
         const btn = document.getElementById('tac-report-btn');
@@ -2158,6 +2163,9 @@ async function executeSQL() {
         showContributorsOnMap();
         const btn = document.getElementById('contributors-report-btn');
         if (btn) btn.disabled = false;
+      } else if (queryType === 'cell') {
+        renderCellSearchOnMap(result.data);
+        fetchAndOverlaySites(result.data);
       }
 
       // Enable ML analysis button for cell queries
@@ -3996,9 +4004,11 @@ function clearAllVisualizationLayers() {
   if (tacAnomalyLayer) { map.removeLayer(tacAnomalyLayer); tacAnomalyLayer = null; }
   if (contributorHeatLayer) { map.removeLayer(contributorHeatLayer); contributorHeatLayer = null; }
   if (contributorDotsLayer) { map.removeLayer(contributorDotsLayer); contributorDotsLayer = null; }
+  if (cellSearchLayer) { map.removeLayer(cellSearchLayer); cellSearchLayer = null; }
   const gridCtrl = document.getElementById('grid-heat-control');
   if (gridCtrl) gridCtrl.remove();
   if (typeof gridHeatLayer !== 'undefined' && gridHeatLayer) { map.removeLayer(gridHeatLayer); gridHeatLayer = null; }
+  clearSitesLayer();
   // Remove legend elements
   ['mcc-anomaly-legend', 'tac-anomaly-legend', 'contributor-map-legend'].forEach(id => {
     const el = document.getElementById(id);
@@ -4203,7 +4213,7 @@ function addMccAnomalyLegend(plmnSet, colorMap, stats, totalRecords) {
         return `<label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:2px 4px;border-radius:4px" onmouseover="this.style.background='rgba(59,130,246,0.08)'" onmouseout="this.style.background='transparent'">
           <input type="checkbox" checked value="${escapeHtml(p)}" onchange="applyPlmnFilter()" style="accent-color:${colorMap[p]};cursor:pointer;width:12px;height:12px">
           <div style="width:8px;height:8px;border-radius:50%;background:${colorMap[p]};flex-shrink:0"></div>
-          <span style="flex:1;font-size:11px">${escapeHtml(p)}${label ? ' <span style=\\'color:var(--sub)\\'>' + label + '</span>' : ''}</span>
+          <span style="flex:1;font-size:11px">${escapeHtml(p)}${label ? ' <span style="color:var(--sub)">' + label + '</span>' : ''}</span>
           <span style="color:var(--sub);font-size:10px">${(stats[p]?.records||0).toLocaleString()}</span>
         </label>`;
       }).join('')}
