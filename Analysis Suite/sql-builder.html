@@ -1588,7 +1588,7 @@ LIMIT 100000`;
     resultsMeta.textContent = `${result.data.length} grid cells in ${elapsed}s`;
     renderGridHeatmap(result.data);
 
-    const totalSamples = result.data.reduce((s, d) => s + d.samples, 0);
+    const totalSamples = result.data.reduce((s, d) => s + parseInt(d.samples || 0), 0);
     resultsContainer.innerHTML = `
       <div style="padding:12px;text-align:center;background:var(--dark);border-radius:8px;margin:12px">
         <span class="material-icons" style="color:var(--cyan);font-size:28px;vertical-align:middle">grid_on</span>
@@ -1605,6 +1605,9 @@ LIMIT 100000`;
 
 function renderGridHeatmap(data) {
   clearGridHeat();
+
+  // Parse numeric fields (ClickHouse JSON returns strings)
+  data.forEach(d => { d.samples = parseInt(d.samples) || 0; d.devices = parseInt(d.devices) || 0; });
 
   const maxSamples = Math.max(...data.map(d => d.samples));
   const logMax = Math.log10(maxSamples + 1);
@@ -2737,6 +2740,9 @@ function renderContributorsOnMap(data) {
   clearContributorLayers();
   if (!data || data.length === 0) return;
 
+  // Parse numeric fields (ClickHouse JSON returns strings)
+  data.forEach(d => { d.unique_users = parseInt(d.unique_users) || 0; d.samples = parseInt(d.samples) || 0; });
+
   contributorMapData = data;
 
   // Find max values for scaling
@@ -2908,7 +2914,7 @@ async function showContributorsOnMap() {
     // Render on map
     renderContributorsOnMap(result.data);
 
-    const totalUsers = result.data.reduce((s, d) => s + d.unique_users, 0);
+    const totalUsers = result.data.reduce((s, d) => s + (parseInt(d.unique_users) || 0), 0);
     resultsContainer.innerHTML += `
       <div style="padding:12px;text-align:center;background:var(--dark);border-radius:8px;margin:12px">
         <span class="material-icons" style="color:#f59e0b;font-size:28px;vertical-align:middle">map</span>
