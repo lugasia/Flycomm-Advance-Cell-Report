@@ -1390,8 +1390,74 @@ function showCorrelationView() {
   markers = [];
 
   if (corrs.length === 0) {
-    document.getElementById('data-stats').style.display = 'block';
-    document.getElementById('data-stats').innerHTML = 'No correlated hotspots found. All anomaly types fired at different locations.';
+    // No multi-type overlaps — fall back to showing all individual findings
+    const allRows = [];
+    for (const [aId, rows] of Object.entries(sessionStore)) {
+      const anom = ANOMALY_LIBRARY.find(a => a.id === aId);
+      rows.forEach(r => allRows.push({ ...r, _anomalyName: anom?.name || aId }));
+    }
+
+    const totalAll = allRows.length;
+    document.getElementById('corr-banner-sub').textContent =
+      totalAll > 0
+        ? `— No overlaps found · showing all ${totalAll} individual findings`
+        : '— No overlapping locations found across scanned anomaly types';
+
+    if (totalAll === 0) {
+      document.getElementById('data-stats').style.display = 'block';
+      document.getElementById('data-stats').innerHTML = 'No results found across any anomaly type.';
+      return;
+    }
+
+    // Render individual markers
+    const lats = [], lons = [];
+    allRows.forEach((row, i) => {
+      const lat = parseFloat(row.lat), lon = parseFloat(row.lon);
+      if (isNaN(lat) || isNaN(lon)) return;
+      lats.push(lat); lons.push(lon);
+      const color = row._color || '#06b6d4';
+      const icon = L.divIcon({
+        className: '',
+        html: `<div style="width:10px;height:10px;background:${color};border-radius:50%;border:2px solid ${color}88;box-shadow:0 0 6px ${color}66"></div>`,
+        iconSize: [10, 10], iconAnchor: [5, 5]
+      });
+      const m = L.marker([lat, lon], { icon });
+      m.bindPopup(`
+        <div class="popup-title" style="color:${color}">${row._anomalyName}</div>
+        <div class="popup-row"><span class="lbl">Severity</span><span class="sev-badge ${row._severity}">${row._severity}</span></div>
+        <div class="popup-row"><span class="lbl">Cell</span><span style="font-family:monospace;font-size:11px">${fmtCell(row)}</span></div>
+        <div class="popup-row"><span class="lbl">PLMN</span><span>${row.network_PLMN || '—'}</span></div>
+        <div class="popup-row"><span class="lbl">Operator</span><span>${row.network_operator || '—'}</span></div>
+        <div class="popup-row"><span class="lbl">Samples</span><span>${row.counted || '—'}</span></div>
+        <div class="popup-row"><span class="lbl">Coords</span><span style="font-family:monospace;font-size:11px">${lat.toFixed(5)}, ${lon.toFixed(5)}</span></div>
+        <div class="popup-assessment">${row._assessment}</div>`);
+      m.addTo(map);
+      markers.push(m);
+    });
+
+    if (lats.length > 0) {
+      map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [40, 40] });
+    }
+
+    const critCount = allRows.filter(r => r._severity === 'CRITICAL').length;
+    const statsEl = document.getElementById('data-stats');
+    statsEl.style.display = 'block';
+    statsEl.innerHTML = `<strong>${totalAll}</strong> individual findings &nbsp;·&nbsp; <span style="color:var(--red)">${critCount} CRITICAL</span> &nbsp;·&nbsp; No multi-type overlaps detected`;
+
+    document.getElementById('table-wrap').style.display = 'block';
+    document.getElementById('empty-state').style.display = 'none';
+    document.getElementById('table-head').innerHTML = `<th>Severity</th><th>Anomaly Type</th><th>Cell / ECI</th><th>PLMN</th><th>Samples</th><th>Lat / Lon</th>`;
+    document.getElementById('table-body').innerHTML = allRows.map((row, i) => {
+      const lat = parseFloat(row.lat), lon = parseFloat(row.lon);
+      return `<tr onclick="if(markers[${i}]){map.setView([${lat},${lon}],14);markers[${i}].openPopup();}" style="cursor:pointer">
+        <td><span class="sev-badge ${row._severity}">${row._severity}</span></td>
+        <td style="font-size:11px;color:${row._color}">${row._anomalyName}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${fmtCell(row)}</td>
+        <td>${row.network_PLMN || '—'}</td>
+        <td>${row.counted || '—'}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:11px">${lat.toFixed(5)}, ${lon.toFixed(5)}</td>
+      </tr>`;
+    }).join('');
     return;
   }
 
