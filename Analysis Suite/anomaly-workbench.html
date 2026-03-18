@@ -535,8 +535,8 @@ SELECT
     countIf(first_ta = 0) AS ta_zero_count,
     count() AS counted,
     uniqExact(device_id) AS unique_devices,
-    min(first_seen) AS first_seen,
-    max(first_seen) AS last_seen,
+    min(dev_first_seen) AS first_seen,
+    max(dev_last_seen) AS last_seen,
     avg(lat) AS lat,
     avg(lon) AS lon
 FROM (
@@ -545,7 +545,8 @@ FROM (
         ${CELL_SEL},
         network_PLMN, network_operator, network_iso, tech,
         argMin(signal_timingAdvance, timestamp) AS first_ta,
-        min(timestamp) AS first_seen,
+        min(timestamp) AS dev_first_seen,
+        max(timestamp) AS dev_last_seen,
         avg(location_geo_coordinates.2) AS lat,
         avg(location_geo_coordinates.1) AS lon
     FROM measurements
