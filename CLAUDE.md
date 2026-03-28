@@ -209,9 +209,8 @@ Reports are generated from `APP.filtered` data, which respects all active filter
 ### Navigation
 Two-tier navigation system:
 
-**Bottom nav** (all 6 pages): `SQL Builder | Workbench | Roaming | Dashboard | Spectra`
-- 5 items, always visible at the bottom of every sidebar
-- Spectra link opens in a new tab (external platform)
+**Bottom nav** (all pages): `SIGINT | Workbench | Roaming | Dashboard`
+- 4 items, always visible at the bottom of every sidebar
 
 **Tool switcher** (trio pages only): `SQL Builder | Signal Map | TAC Detector`
 - Appears at the **top** of the sidebar in `sql-builder.html`, `index.html`, `anomaly-detector.html`

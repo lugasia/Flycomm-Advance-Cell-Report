@@ -437,12 +437,6 @@ input[type="date"]:focus { border-color: var(--mauve); }
 .nav-link.current {
   background: rgba(137,180,250,.12); border-color: var(--blue); color: var(--blue);
 }
-.nav-link.intraai-link {
-  background: rgba(166,227,161,.06); border-color: rgba(166,227,161,.3); color: #a6e3a1;
-}
-.nav-link.intraai-link:hover {
-  background: rgba(166,227,161,.14); border-color: #a6e3a1; color: #cdd6f4;
-}
 
 /* ── COVERAGE TOOLTIP ────────────────────────────────────────── */
 .coverage-tooltip {

@@ -1,11 +1,9 @@
 # Secrets — never commit
 .env
 bd.env
-spectra-api/.env
 *.env
 
 # SQLite databases
-spectra-api/spectra.db
 *.db
 
 # Python
@@ -17,7 +15,6 @@ __pycache__/
 
 # Python virtualenv
 .venv/
-spectra-api/.venv/
 
 # Data files
 *.csv
