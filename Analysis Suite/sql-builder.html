@@ -2168,6 +2168,12 @@ async function executeSQL() {
   try {
     // Get raw SQL without HTML formatting
     const rawSQL = getRawSQL();
+    if (!rawSQL || !rawSQL.trim()) {
+      alert('No SQL generated. Please check that at least one table is selected.');
+      resultsContainer.innerHTML = '';
+      resultsSection.classList.remove('visible');
+      return;
+    }
     const startTime = performance.now();
     const result = await executeClickHouseQuery(rawSQL);
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
