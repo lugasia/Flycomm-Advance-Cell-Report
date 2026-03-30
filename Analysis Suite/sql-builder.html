@@ -2590,6 +2590,56 @@ function getRawSQL() {
     sql += `    distinct_area_count DESC,\n`;
     sql += `    total_samples DESC\n`;
     sql += `LIMIT ${tacLimit}`;
+  } else if (queryType === 'bands') {
+    sql += `SELECT\n`;
+    sql += `    band_name,\n`;
+    sql += `    band_number,\n`;
+    sql += `    band_downlinkEarfcn AS earfcn,\n`;
+    sql += `    band_channelNumber,\n`;
+    sql += `    band_bandwidth,\n`;
+    sql += `    band_duplexMode,\n`;
+    sql += `    tech,\n`;
+    sql += `    network_PLMN,\n`;
+    sql += `    network_operator,\n`;
+    sql += `    count() AS sample_count,\n`;
+    sql += `    round(avg(signal_rsrp), 1) AS avg_rsrp,\n`;
+    sql += `    min(signal_rsrp) AS min_rsrp,\n`;
+    sql += `    max(signal_rsrp) AS max_rsrp,\n`;
+    sql += `    min(${timestampCol}) AS first_seen,\n`;
+    sql += `    max(${timestampCol}) AS last_seen\n`;
+    sql += `FROM ${tableName}\n`;
+    sql += `WHERE\n`;
+
+    let conditions = [];
+    conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+    conditions.push(`signal_rsrp != 0`);
+    if (excludeMcc && filterMcc) {
+      conditions.push(`network_mcc != ${filterMcc}`);
+    }
+    if (includeMcc && includeMccValue) {
+      conditions.push(`network_mcc = ${includeMccValue}`);
+    }
+    if (useTimeline && dateFrom) {
+      conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
+    }
+    if (useTimeline && dateTo) {
+      conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
+    }
+    const hourCondBand = getHourRangeCondition(timestampCol, false);
+    if (hourCondBand) conditions.push(hourCondBand);
+    const sourceFilterBand = getSourceFilterCondition(false);
+    if (sourceFilterBand) conditions.push(sourceFilterBand);
+    conditions.push(bboxLat);
+    conditions.push(bboxLon);
+    conditions.push(condition);
+
+    sql += `    ${conditions.join('\n    AND ')}\n`;
+    sql += `GROUP BY\n`;
+    sql += `    band_name, band_number, earfcn, band_channelNumber,\n`;
+    sql += `    band_bandwidth, band_duplexMode, tech,\n`;
+    sql += `    network_PLMN, network_operator\n`;
+    sql += `ORDER BY\n`;
+    sql += `    network_operator, band_number, sample_count DESC`;
   }
 
   return sql;
