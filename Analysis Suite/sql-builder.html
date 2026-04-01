@@ -902,6 +902,7 @@
         <select id="query-type">
           <option value="select">MCC Anomaly</option>
           <option value="cell">Cell/eNB Search</option>
+          <option value="cell-rsrp">Cell/eNB RSRP Coverage</option>
           <option value="tac">TAC Anomaly Detection</option>
           <option value="bands">Band / EARFCN Survey</option>
           <option value="contributors">User Contributors (Regulator/Operator)</option>
@@ -942,6 +943,28 @@
             <input type="checkbox" id="cell-use-polygon">
             <label for="cell-use-polygon">Search globally (ignore polygon area)</label>
           </div>
+        </div>
+
+        <!-- Cell/eNB RSRP Coverage options -->
+        <div id="cell-rsrp-options" style="display:none;margin-top:12px;padding:12px;background:var(--dark);border-radius:8px;">
+          <p style="font-size:12px;color:var(--sub);margin-bottom:12px;line-height:1.5;">
+            <span class="material-icons" style="font-size:14px;vertical-align:middle;color:var(--green)">signal_cellular_alt</span>
+            Search <strong style="color:var(--text)">measurements</strong> by eNB/ECI with RSRP coverage aggregation (avg/min/max)
+          </p>
+
+          <label class="field">eNB / Site ID (comma-separated)</label>
+          <textarea id="rsrp-enb-list" placeholder="e.g. 12345, 67890" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
+
+          <label class="field">ECI (comma-separated)</label>
+          <textarea id="rsrp-eci-list" placeholder="e.g. 111, 222, 333" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
+
+          <div class="checkbox-row">
+            <input type="checkbox" id="rsrp-use-polygon">
+            <label for="rsrp-use-polygon">Search globally (ignore polygon area)</label>
+          </div>
+
+          <label class="field" style="margin-top:12px;">Result Limit</label>
+          <input type="number" id="rsrp-limit" value="50000" min="10" max="100000" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;">
         </div>
 
         <!-- TAC-specific options -->
@@ -1195,6 +1218,12 @@
           <button class="btn" id="tac-report-btn" onclick="generateTacIntelligenceReport()" disabled style="background:linear-gradient(135deg,#f59e0b,#f97316);color:#fff;flex:1">
             <span class="material-icons" style="font-size:18px">shield</span>
             Generate Intelligence Report
+          </button>
+        </div>
+        <div class="btn-row" id="rsrp-coverage-row" style="margin-top:8px;display:none">
+          <button class="btn" id="rsrp-coverage-btn" onclick="analyzeCoverage()" disabled style="background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff;flex:1">
+            <span class="material-icons" style="font-size:18px">signal_cellular_alt</span>
+            Analyze RSRP Coverage (Random Forest)
           </button>
         </div>
 
@@ -2212,6 +2241,10 @@ async function executeSQL() {
         if (btn) btn.disabled = false;
       } else if (queryType === 'cell') {
         renderCellSearchOnMap(result.data);
+      } else if (queryType === 'cell-rsrp') {
+        renderCellSearchOnMap(result.data);
+        const btn = document.getElementById('rsrp-coverage-btn');
+        if (btn) btn.disabled = false;
       }
 
       // Enable ML analysis button for cell queries
@@ -2432,6 +2465,94 @@ function getRawCellSearchSQL() {
   return sql;
 }
 
+function getRawCellRsrpSQL() {
+  const usePolygon = document.getElementById('rsrp-use-polygon')?.checked;
+  const enbRaw = document.getElementById('rsrp-enb-list').value;
+  const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const eciRaw = document.getElementById('rsrp-eci-list').value;
+  const eciList = eciRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const resultLimit = document.getElementById('rsrp-limit').value || '50000';
+
+  const hasPolygons = polygons.length > 0;
+  const hasEnb = enbList.length > 0;
+  const hasEci = eciList.length > 0;
+  if (!hasEnb && !hasEci && !hasPolygons) return '';
+
+  const excludeMcc = document.getElementById('exclude-mcc').checked;
+  const filterMcc = document.getElementById('filter-mcc').value;
+  const includeMcc = document.getElementById('include-mcc').checked;
+  const includeMccValue = document.getElementById('include-mcc-value').value;
+  const useTimeline = document.getElementById('use-timeline').checked;
+  const timestampCol = TIMESTAMP_COL;
+  const dateFrom = document.getElementById('date-from').value;
+  const dateTo = document.getElementById('date-to').value;
+  const geoCol = GEO_COL;
+  const tableName = TABLE_NAME;
+
+  let sql = '';
+  sql += `SELECT\n`;
+  sql += `    cell_enb,\n`;
+  sql += `    cell_eci,\n`;
+  sql += `    cell_ci,\n`;
+  sql += `    network_mcc,\n`;
+  sql += `    network_mnc,\n`;
+  sql += `    network_PLMN,\n`;
+  sql += `    network_operator,\n`;
+  sql += `    count() AS samples,\n`;
+  sql += `    round(avg(signal_rsrp), 1) AS avg_rsrp,\n`;
+  sql += `    min(signal_rsrp) AS min_rsrp,\n`;
+  sql += `    max(signal_rsrp) AS max_rsrp,\n`;
+  sql += `    min(${timestampCol}) AS first_seen,\n`;
+  sql += `    max(${timestampCol}) AS last_seen,\n`;
+  sql += `    round(avg(${geoCol}.1), 6) AS longitude,\n`;
+  sql += `    round(avg(${geoCol}.2), 6) AS latitude\n`;
+  sql += `FROM ${tableName}\n`;
+  sql += `WHERE\n`;
+
+  let conditions = [];
+  conditions.push(`signal_rsrp != 0`);
+  conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+
+  if (hasEnb && hasEci) {
+    conditions.push(`(cell_enb IN (${enbList.join(', ')}) OR cell_eci IN (${eciList.join(', ')}))`);
+  } else if (hasEnb) {
+    conditions.push(`cell_enb IN (${enbList.join(', ')})`);
+  } else if (hasEci) {
+    conditions.push(`cell_eci IN (${eciList.join(', ')})`);
+  }
+
+  if (hasPolygons && !usePolygon) {
+    polygons.forEach(p => {
+      const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
+      const bboxPad = 0.01;
+      conditions.push(`bin_lat BETWEEN ${(Math.min(...lats) - bboxPad).toFixed(4)} AND ${(Math.max(...lats) + bboxPad).toFixed(4)}`);
+      conditions.push(`bin_lon BETWEEN ${(Math.min(...lons) - bboxPad).toFixed(4)} AND ${(Math.max(...lons) + bboxPad).toFixed(4)}`);
+      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
+      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
+      conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
+    });
+  }
+
+  if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
+  if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
+  if (useTimeline && dateFrom) conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
+  if (useTimeline && dateTo) conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
+  const hourCond = getHourRangeCondition(timestampCol, false);
+  if (hourCond) conditions.push(hourCond);
+  const sourceFilt = getSourceFilterCondition(false);
+  if (sourceFilt) conditions.push(sourceFilt);
+
+  sql += `    ${conditions.join('\n    AND ')}\n`;
+  sql += `GROUP BY\n`;
+  sql += `    cell_enb, cell_eci, cell_ci,\n`;
+  sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
+  sql += `ORDER BY\n`;
+  sql += `    cell_enb, samples DESC\n`;
+  sql += `LIMIT ${resultLimit}`;
+
+  return sql;
+}
+
 function getRawSQL() {
   // Generate raw SQL without HTML formatting
   const queryType = document.getElementById('query-type').value;
@@ -2445,6 +2566,11 @@ function getRawSQL() {
   // Cell queries use sites + site_samples (no polygon required)
   if (queryType === 'cell') {
     return getRawCellSearchSQL();
+  }
+
+  // Cell RSRP Coverage uses measurements table
+  if (queryType === 'cell-rsrp') {
+    return getRawCellRsrpSQL();
   }
 
   if (polygons.length === 0) return '';
@@ -3305,6 +3431,112 @@ function generateCellSearchSQL() {
   document.getElementById('sql-output').innerHTML = sql;
 }
 
+// Generate Cell/eNB RSRP Coverage SQL (measurements table)
+function generateCellRsrpSQL() {
+  const usePolygon = document.getElementById('rsrp-use-polygon')?.checked;
+  const enbRaw = document.getElementById('rsrp-enb-list').value;
+  const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const eciRaw = document.getElementById('rsrp-eci-list').value;
+  const eciList = eciRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const resultLimit = document.getElementById('rsrp-limit').value || '50000';
+
+  const hasPolygons = polygons.length > 0;
+  const hasEnb = enbList.length > 0;
+  const hasEci = eciList.length > 0;
+
+  const excludeMcc = document.getElementById('exclude-mcc').checked;
+  const filterMcc = document.getElementById('filter-mcc').value;
+  const includeMcc = document.getElementById('include-mcc').checked;
+  const includeMccValue = document.getElementById('include-mcc-value').value;
+  const useTimeline = document.getElementById('use-timeline').checked;
+  const timestampCol = TIMESTAMP_COL;
+  const dateFrom = document.getElementById('date-from').value;
+  const dateTo = document.getElementById('date-to').value;
+  const geoCol = GEO_COL;
+  const tableName = TABLE_NAME;
+
+  // Need at least one filter or polygon
+  if (!hasEnb && !hasEci && !hasPolygons) {
+    let sql = '<span class="comment">-- Cell/eNB RSRP Coverage (measurements table)</span>\n';
+    sql += '<span class="comment">-- Enter eNB IDs, ECI values, or draw a polygon</span>\n';
+    document.getElementById('sql-output').innerHTML = sql;
+    return;
+  }
+
+  let sql = '<span class="comment">-- Cell/eNB Search with RSRP Coverage</span>\n';
+  sql += `<span class="keyword">SELECT</span>\n`;
+  sql += `    cell_enb,\n`;
+  sql += `    cell_eci,\n`;
+  sql += `    cell_ci,\n`;
+  sql += `    network_mcc,\n`;
+  sql += `    network_mnc,\n`;
+  sql += `    network_PLMN,\n`;
+  sql += `    network_operator,\n`;
+  sql += `    <span class="function">count</span>() <span class="keyword">AS</span> samples,\n`;
+  sql += `    <span class="function">round</span>(<span class="function">avg</span>(signal_rsrp), <span class="number">1</span>) <span class="keyword">AS</span> avg_rsrp,\n`;
+  sql += `    <span class="function">min</span>(signal_rsrp) <span class="keyword">AS</span> min_rsrp,\n`;
+  sql += `    <span class="function">max</span>(signal_rsrp) <span class="keyword">AS</span> max_rsrp,\n`;
+  sql += `    <span class="function">min</span>(${timestampCol}) <span class="keyword">AS</span> first_seen,\n`;
+  sql += `    <span class="function">max</span>(${timestampCol}) <span class="keyword">AS</span> last_seen,\n`;
+  sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">1</span>), <span class="number">6</span>) <span class="keyword">AS</span> longitude,\n`;
+  sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">2</span>), <span class="number">6</span>) <span class="keyword">AS</span> latitude\n`;
+  sql += `<span class="keyword">FROM</span> ${tableName}\n`;
+  sql += `<span class="keyword">WHERE</span>\n`;
+
+  let conditions = [];
+  conditions.push(`signal_rsrp != <span class="number">0</span>`);
+  conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+
+  // eNB / ECI filter
+  if (hasEnb && hasEci) {
+    conditions.push(`(cell_enb <span class="keyword">IN</span> (${enbList.join(', ')}) <span class="keyword">OR</span> cell_eci <span class="keyword">IN</span> (${eciList.join(', ')}))`);
+  } else if (hasEnb) {
+    conditions.push(`cell_enb <span class="keyword">IN</span> (${enbList.join(', ')})`);
+  } else if (hasEci) {
+    conditions.push(`cell_eci <span class="keyword">IN</span> (${eciList.join(', ')})`);
+  }
+
+  // Polygon filter
+  if (hasPolygons && !usePolygon) {
+    polygons.forEach(p => {
+      const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
+      const bboxPad = 0.01;
+      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...lats) - bboxPad).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...lats) + bboxPad).toFixed(4)}</span>`);
+      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...lons) - bboxPad).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...lons) + bboxPad).toFixed(4)}</span>`);
+      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
+      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
+      conditions.push(`<span class="function">${p.operation === 'inside' ? pip : 'NOT ' + pip}</span>`);
+    });
+  }
+
+  if (excludeMcc && filterMcc) {
+    conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+  }
+  if (includeMcc && includeMccValue) {
+    conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
+  }
+  if (useTimeline && dateFrom) {
+    conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
+  }
+  if (useTimeline && dateTo) {
+    conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
+  }
+  const hourCond = getHourRangeCondition(timestampCol, true);
+  if (hourCond) conditions.push(hourCond);
+  const sourceFilt = getSourceFilterCondition(true);
+  if (sourceFilt) conditions.push(sourceFilt);
+
+  sql += `    ${conditions.join('\n    <span class="keyword">AND</span> ')}\n`;
+  sql += `<span class="keyword">GROUP BY</span>\n`;
+  sql += `    cell_enb, cell_eci, cell_ci,\n`;
+  sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
+  sql += `<span class="keyword">ORDER BY</span>\n`;
+  sql += `    cell_enb, samples <span class="keyword">DESC</span>\n`;
+  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>;`;
+
+  document.getElementById('sql-output').innerHTML = sql;
+}
+
 // Generate User Contributors SQL for regulators/operators
 function generateContributorsSQL() {
   const tableName = TABLE_NAME;
@@ -3439,6 +3671,12 @@ function generateSQL() {
   // Cell queries always use generateCellSearchSQL (sites + site_samples)
   if (queryType === 'cell') {
     generateCellSearchSQL();
+    return;
+  }
+
+  // Cell RSRP Coverage uses measurements table
+  if (queryType === 'cell-rsrp') {
+    generateCellRsrpSQL();
     return;
   }
 
@@ -4022,15 +4260,17 @@ document.addEventListener('DOMContentLoaded', () => {
     // Show/hide query-specific options
     tacOptions.style.display = queryType === 'tac' ? 'block' : 'none';
     cellOptions.style.display = queryType === 'cell' ? 'block' : 'none';
+    document.getElementById('cell-rsrp-options').style.display = queryType === 'cell-rsrp' ? 'block' : 'none';
     contributorsOptions.style.display = queryType === 'contributors' ? 'block' : 'none';
     document.getElementById('table-source-options').style.display = (queryType === 'select' || queryType === 'bands') ? 'block' : 'none';
 
     // Show appropriate report/action buttons per query type
-    mlBtnRow.style.display = 'none';
+    mlBtnRow.style.display = queryType === 'cell' ? 'flex' : 'none';
     contributorsReportRow.style.display = queryType === 'contributors' ? 'flex' : 'none';
     mccReportRow.style.display = queryType === 'select' ? 'flex' : 'none';
     tacReportRow.style.display = queryType === 'tac' ? 'flex' : 'none';
     document.getElementById('bands-report-row').style.display = queryType === 'bands' ? 'flex' : 'none';
+    document.getElementById('rsrp-coverage-row').style.display = queryType === 'cell-rsrp' ? 'flex' : 'none';
   });
 
   // Table source checkboxes trigger SQL regeneration
@@ -4043,6 +4283,12 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById(id).addEventListener('input', generateSQL);
   });
   document.getElementById('cell-use-polygon').addEventListener('change', generateSQL);
+
+  // Cell RSRP Coverage inputs trigger SQL regeneration
+  ['rsrp-enb-list', 'rsrp-eci-list', 'rsrp-limit'].forEach(id => {
+    document.getElementById(id).addEventListener('input', generateSQL);
+  });
+  document.getElementById('rsrp-use-polygon').addEventListener('change', generateSQL);
 
   // TAC-specific inputs
   ['min-tac-changes', 'tac-limit'].forEach(id => {
@@ -4080,6 +4326,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('ml-btn-row').style.display = initQueryType === 'cell' ? 'flex' : 'none';
   document.getElementById('contributors-report-row').style.display = initQueryType === 'contributors' ? 'flex' : 'none';
   document.getElementById('bands-report-row').style.display = initQueryType === 'bands' ? 'flex' : 'none';
+  document.getElementById('rsrp-coverage-row').style.display = initQueryType === 'cell-rsrp' ? 'flex' : 'none';
 });
 
 
