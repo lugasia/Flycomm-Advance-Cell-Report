@@ -2187,8 +2187,8 @@ async function executeSQL() {
 
   const queryType = document.getElementById('query-type').value;
 
-  // Contributors query doesn't need polygons
-  if (polygons.length === 0 && queryType !== 'contributors') {
+  // Cell, cell-rsrp, and contributors queries don't always need polygons
+  if (polygons.length === 0 && !['contributors', 'cell', 'cell-rsrp'].includes(queryType)) {
     alert('Please draw at least one polygon on the map');
     return;
   }
@@ -2242,7 +2242,7 @@ async function executeSQL() {
       } else if (queryType === 'cell') {
         renderCellSearchOnMap(result.data);
       } else if (queryType === 'cell-rsrp') {
-        renderCellSearchOnMap(result.data);
+        renderCellRsrpOnMap(result.data);
         const btn = document.getElementById('rsrp-coverage-btn');
         if (btn) btn.disabled = false;
       }
@@ -2849,14 +2849,17 @@ function classifyCoverage(cell) {
   return {
     lat: cell.latitude || cell.lat, lon: cell.longitude || cell.lon,
     enb: cell.cell_enb, eci: cell.cell_eci, mcc: cell.network_mcc, mnc: cell.network_mnc,
+    operator: cell.network_operator || '',
     samples, avg_rsrp: rsrp || null,
+    min_rsrp: parseFloat(cell.min_rsrp) || null,
+    max_rsrp: parseFloat(cell.max_rsrp) || null,
     coverage_level: level, coverage_color: _COVERAGE_COLORS[level], coverage_score: _COVERAGE_SCORES[level],
   };
 }
 
 async function analyzeCoverage() {
   if (!lastQueryResults?.data?.length) {
-    alert('Please execute a Cell/eNB Search query first.');
+    alert('Please execute a query first.');
     return;
   }
 
@@ -2898,9 +2901,10 @@ async function analyzeCoverage() {
     const columns = ['latitude', 'longitude', 'cell_enb', 'cell_eci', 'network_mcc', 'network_mnc', 'counted', 'avg_rsrp', 'coverage_level', 'coverage_color', 'coverage_score', 'network_operator'];
     let csv = columns.join(',') + '\n';
     results.forEach(cell => {
+      const op = (cell.operator || cell.coverage_level || '').replace(/,/g, ' ');
       csv += [cell.lat, cell.lon, cell.enb || '', cell.eci || '', cell.mcc || '', cell.mnc || '',
-              cell.samples || 1, cell.avg_rsrp || '', cell.coverage_level, cell.coverage_color,
-              cell.coverage_score, cell.coverage_level.toUpperCase()].join(',') + '\n';
+              cell.samples || 1, cell.avg_rsrp || '', cell.coverage_level, '"' + cell.coverage_color + '"',
+              cell.coverage_score, '"' + op + '"'].join(',') + '\n';
     });
 
     localStorage.setItem('sqlBuilderData', csv);
@@ -5966,6 +5970,128 @@ function showCellSearchDataPanel(data, plmnColorMap) {
       <td>${d.height || '—'}</td>
       <td>${(parseInt(d.cell_count) || 0).toLocaleString()}</td>
       <td style="color:var(--sub)">${lat.toFixed(4)},${lon.toFixed(4)}</td>
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  body.innerHTML = html;
+  panel.classList.add('visible');
+}
+
+// ════════════════════════════════════════════════════════════════
+//  CELL/eNB RSRP COVERAGE — MAP + DATA PANEL
+// ════════════════════════════════════════════════════════════════
+
+function renderCellRsrpOnMap(data) {
+  if (cellSearchLayer) { map.removeLayer(cellSearchLayer); cellSearchLayer = null; }
+  if (!data || data.length === 0) return;
+
+  cellSearchLayer = L.layerGroup();
+
+  // Assign colors by PLMN
+  const plmnSet = [...new Set(data.map(d => d.network_PLMN || 'Unknown'))];
+  const plmnColorMap = {};
+  plmnSet.forEach((p, i) => { plmnColorMap[p] = PLMN_COLORS[i % PLMN_COLORS.length]; });
+
+  const maxSamples = Math.max(...data.map(d => parseInt(d.samples) || 1));
+
+  data.forEach(d => {
+    const lat = parseFloat(d.latitude), lon = parseFloat(d.longitude);
+    if (isNaN(lat) || isNaN(lon)) return;
+    const plmn = d.network_PLMN || 'Unknown';
+    const samples = parseInt(d.samples) || 0;
+    const avgRsrp = parseFloat(d.avg_rsrp);
+    const color = plmnColorMap[plmn];
+    const radius = Math.max(4, Math.min(14, 4 + (samples / maxSamples) * 10));
+    const mcc = d.network_mcc || '';
+    const mccInfo = typeof MCC_TABLE !== 'undefined' ? MCC_TABLE[mcc] : null;
+    const isForeign = mcc !== '425' && mcc !== '000';
+    const isCritical = CRITICAL_MCCS.includes(mcc);
+
+    // RSRP-based border color
+    let borderColor = '#3b82f6';
+    if (isCritical) borderColor = '#ef4444';
+    else if (isForeign) borderColor = '#f59e0b';
+    else if (!isNaN(avgRsrp)) {
+      if (avgRsrp > -80) borderColor = '#22c55e';
+      else if (avgRsrp > -90) borderColor = '#84cc16';
+      else if (avgRsrp > -100) borderColor = '#eab308';
+      else if (avgRsrp > -110) borderColor = '#f97316';
+      else borderColor = '#dc2626';
+    }
+
+    const marker = L.circleMarker([lat, lon], {
+      radius, fillColor: color,
+      color: borderColor,
+      weight: 2, opacity: 0.9, fillOpacity: 0.75,
+    });
+    marker.bindPopup(`
+      <div style="font-family:Inter,sans-serif;font-size:13px;min-width:220px">
+        <div style="font-weight:700;margin-bottom:6px;color:${borderColor}">
+          eNB ${d.cell_enb || '—'} / ECI ${d.cell_eci || '—'}
+        </div>
+        <div><strong>PLMN:</strong> ${escapeHtml(plmn)}${mccInfo ? ' (' + mccInfo.name + ')' : ''}</div>
+        <div><strong>Operator:</strong> ${escapeHtml(d.network_operator || '—')}</div>
+        <div><strong>Samples:</strong> ${samples.toLocaleString()}</div>
+        <div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.1)">
+          <strong>Avg RSRP:</strong> <span style="color:${borderColor}">${!isNaN(avgRsrp) ? avgRsrp + ' dBm' : '—'}</span>
+        </div>
+        <div><strong>Min/Max:</strong> ${d.min_rsrp || '—'} / ${d.max_rsrp || '—'} dBm</div>
+        <div><strong>First:</strong> ${d.first_seen || '—'}</div>
+        <div><strong>Last:</strong> ${d.last_seen || '—'}</div>
+        <div style="color:#94a3b8;font-size:11px;margin-top:4px">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
+      </div>
+    `, { className: 'mcc-popup' });
+    marker.on('click', () => flyToPoint(lat, lon, 16));
+    cellSearchLayer.addLayer(marker);
+  });
+
+  cellSearchLayer.addTo(map);
+
+  const lats = data.map(d => parseFloat(d.latitude)).filter(v => !isNaN(v));
+  const lons = data.map(d => parseFloat(d.longitude)).filter(v => !isNaN(v));
+  if (lats.length > 0) {
+    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [30, 30] });
+  }
+
+  showCellRsrpDataPanel(data, plmnColorMap);
+}
+
+function showCellRsrpDataPanel(data, plmnColorMap) {
+  const panel = document.getElementById('map-data-panel');
+  const body = document.getElementById('panel-body');
+  document.getElementById('panel-title').textContent = 'Cell/eNB RSRP Coverage — Results';
+  document.getElementById('panel-meta').textContent = data.length + ' cells';
+  body.style.display = '';
+  document.getElementById('panel-minimize-btn').textContent = '_';
+
+  let html = '<table><thead><tr><th>eNB</th><th>ECI</th><th>PLMN</th><th>Operator</th><th>Samples</th><th>Avg RSRP</th><th>Min</th><th>Max</th><th>First Seen</th><th>Last Seen</th></tr></thead><tbody>';
+  data.forEach(d => {
+    const lat = parseFloat(d.latitude) || 0, lon = parseFloat(d.longitude) || 0;
+    const plmn = d.network_PLMN || '';
+    const mcc = d.network_mcc || '';
+    const isCritical = CRITICAL_MCCS.includes(mcc);
+    const isForeign = mcc !== '425' && mcc !== '000';
+    const cls = isCritical ? 'badge-critical' : isForeign ? 'badge-high' : 'badge-ok';
+    const avgRsrp = parseFloat(d.avg_rsrp);
+    let rsrpColor = 'var(--sub)';
+    if (!isNaN(avgRsrp)) {
+      if (avgRsrp > -80) rsrpColor = '#22c55e';
+      else if (avgRsrp > -90) rsrpColor = '#84cc16';
+      else if (avgRsrp > -100) rsrpColor = '#eab308';
+      else if (avgRsrp > -110) rsrpColor = '#f97316';
+      else rsrpColor = '#dc2626';
+    }
+    html += `<tr onclick="flyToPoint(${lat},${lon},16)" title="Click to fly">
+      <td>${d.cell_enb || '—'}</td>
+      <td>${d.cell_eci || '—'}</td>
+      <td><span class="badge ${cls}">${escapeHtml(plmn)}</span></td>
+      <td>${escapeHtml(d.network_operator || '—')}</td>
+      <td>${(parseInt(d.samples) || 0).toLocaleString()}</td>
+      <td style="color:${rsrpColor};font-weight:600">${!isNaN(avgRsrp) ? avgRsrp : '—'}</td>
+      <td>${d.min_rsrp || '—'}</td>
+      <td>${d.max_rsrp || '—'}</td>
+      <td style="font-size:11px">${d.first_seen || '—'}</td>
+      <td style="font-size:11px">${d.last_seen || '—'}</td>
     </tr>`;
   });
   html += '</tbody></table>';
