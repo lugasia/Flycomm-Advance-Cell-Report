@@ -2917,122 +2917,161 @@ function renderCoverageOnMap(results) {
   const oldLegend = document.getElementById('coverage-legend'); if (oldLegend) oldLegend.remove();
   if (!results || results.length === 0) return;
 
-  // ── 1. HEATMAP LAYER (coverage intensity) ──
-  const heatData = results.map(r => {
+  // ── 1. HEATMAP LAYER — explode aggregated rows by sample count ──
+  const heatData = [];
+  results.forEach(r => {
     const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
-    if (isNaN(lat) || isNaN(lon)) return null;
-    // Normalize coverage score (0-100) to heat intensity
-    const intensity = (r.coverage_score || 50) / 100 * 10;
-    return [lat, lon, intensity];
-  }).filter(Boolean);
+    if (isNaN(lat) || isNaN(lon)) return;
+    // Weight = samples * coverage quality — more samples + better signal = hotter
+    const samples = r.samples || 1;
+    const intensity = Math.log10(Math.max(1, samples)) * ((r.coverage_score || 50) / 50);
+    heatData.push([lat, lon, intensity]);
+  });
+
+  // Find max for normalization
+  const maxIntensity = Math.max(...heatData.map(d => d[2]), 1);
 
   coverageHeatLayer = L.heatLayer(heatData, {
-    radius: 16, blur: 20, maxZoom: 17, max: 10, minOpacity: 0.35,
+    radius: 28, blur: 22, maxZoom: 17, max: maxIntensity * 0.6, minOpacity: 0.4,
     gradient: {
-      0.15: '#313bac',  // No/low coverage — dark blue
-      0.35: '#06b6d4',  // Cyan
-      0.55: '#84cc16',  // Yellow-green
-      0.75: '#facc15',  // Yellow
-      1.00: '#ef4444',  // Hot — strong signal
+      0.20: '#313bac',
+      0.40: '#06b6d4',
+      0.55: '#84cc16',
+      0.75: '#facc15',
+      1.00: '#ef4444',
     }
   }).addTo(map);
 
-  // ── 2. TOWER MARKERS (grouped by eNB) ──
-  coverageTowerLayer = L.layerGroup();
-
-  const towerSvg = `<svg viewBox="0 0 32 32" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M10 4C12 2 14.5 1 16 1C17.5 1 20 2 22 4" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-    <path d="M11.5 6C13 4.5 14.5 4 16 4C17.5 4 19 4.5 20.5 6" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-    <path d="M13 8C14 7 15 6.5 16 6.5C17 6.5 18 7 19 8" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-    <line x1="16" y1="8" x2="16" y2="12" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
-    <path d="M16 12L10 30" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
-    <path d="M16 12L22 30" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
-    <line x1="11.5" y1="18" x2="20.5" y2="18" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="10.5" y1="24" x2="21.5" y2="24" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
-    <line x1="8" y1="30" x2="24" y2="30" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
-  </svg>`;
-
-  // Group results by eNB
+  // ── 2. GROUP by eNB — collect all ECIs per site ──
   const enbSites = {};
   results.forEach(r => {
     const enb = r.enb;
     if (!enb) return;
     if (!enbSites[enb]) {
-      enbSites[enb] = { lats: [], lons: [], sectors: {}, samples: 0, operator: r.operator || '' };
+      enbSites[enb] = { lats: [], lons: [], eciList: [], sectors: {}, samples: 0, operator: r.operator || '', rsrpAll: [] };
     }
     const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
     if (isNaN(lat) || isNaN(lon)) return;
     enbSites[enb].lats.push(lat);
     enbSites[enb].lons.push(lon);
     enbSites[enb].samples += (r.samples || 0);
+    if (r.eci) enbSites[enb].eciList.push(String(r.eci));
+    if (r.avg_rsrp != null) enbSites[enb].rsrpAll.push(r.avg_rsrp);
 
-    // Track sectors by ECI mod 256 mod 3
+    // Sector grouping
     const ci = r.eci ? (parseInt(r.eci) % 256) : 0;
     const sectorId = ci % 3;
     if (!enbSites[enb].sectors[sectorId]) {
-      enbSites[enb].sectors[sectorId] = { eci: r.eci, rsrp: [], count: 0 };
+      enbSites[enb].sectors[sectorId] = { eciSet: new Set(), rsrp: [], count: 0 };
     }
-    enbSites[enb].sectors[sectorId].count++;
+    enbSites[enb].sectors[sectorId].count += (r.samples || 1);
+    if (r.eci) enbSites[enb].sectors[sectorId].eciSet.add(String(r.eci));
     if (r.avg_rsrp != null) enbSites[enb].sectors[sectorId].rsrp.push(r.avg_rsrp);
   });
 
-  const sectorAngles = [270, 30, 150]; // N, NE, SE
+  // ── 3. TOWER MARKERS ──
+  coverageTowerLayer = L.layerGroup();
+  const sectorAngles = [270, 30, 150];
 
   Object.entries(enbSites).forEach(([enbId, site]) => {
     const centerLat = site.lats.reduce((a, b) => a + b, 0) / site.lats.length;
     const centerLon = site.lons.reduce((a, b) => a + b, 0) / site.lons.length;
 
-    // Tower icon marker
+    // Average RSRP for color
+    const siteAvgRsrp = site.rsrpAll.length ? site.rsrpAll.reduce((a, b) => a + b, 0) / site.rsrpAll.length : -100;
+    let ringColor = '#eab308';
+    if (siteAvgRsrp > -80) ringColor = '#22c55e';
+    else if (siteAvgRsrp > -90) ringColor = '#84cc16';
+    else if (siteAvgRsrp > -100) ringColor = '#eab308';
+    else if (siteAvgRsrp > -110) ringColor = '#f97316';
+    else ringColor = '#dc2626';
+
+    // Unique ECIs for this eNB
+    const uniqueEcis = [...new Set(site.eciList)];
+    const sectorCount = Object.keys(site.sectors).length;
+
+    // Clean circular marker — color ring = RSRP level
     const siteMarker = L.marker([centerLat, centerLon], {
       icon: L.divIcon({
-        className: 'enb-site-marker',
-        html: `<div style="background:rgba(15,23,42,0.9);border:2px solid #3b82f6;border-radius:8px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.6)">${towerSvg}</div>`,
-        iconSize: [40, 40], iconAnchor: [20, 20]
+        className: '',
+        html: `<div style="
+          width:32px;height:32px;border-radius:50%;
+          background:radial-gradient(circle at 40% 35%, #1e293b 60%, ${ringColor} 100%);
+          border:3px solid ${ringColor};
+          box-shadow:0 0 12px ${ringColor}88, 0 2px 8px rgba(0,0,0,0.5);
+          display:flex;align-items:center;justify-content:center;
+          font-size:11px;font-weight:800;color:#fff;font-family:JetBrains Mono,monospace;
+        ">${sectorCount}</div>`,
+        iconSize: [32, 32], iconAnchor: [16, 16]
       }),
       zIndexOffset: 1000
     });
 
-    // Tooltip with sector info
+    // ECI list for tooltip
+    const eciListHtml = uniqueEcis.length > 0
+      ? uniqueEcis.map(e => `<span style="color:#06b6d4">${e}</span>`).join(', ')
+      : '<span style="color:#64748b">—</span>';
+
+    // Sector breakdown
     const sectorInfo = Object.entries(site.sectors).map(([sId, sec]) => {
       const avgRsrp = sec.rsrp.length ? (sec.rsrp.reduce((a, b) => a + b, 0) / sec.rsrp.length).toFixed(0) : 'N/A';
+      const ecis = [...sec.eciSet].join(', ') || '—';
       const arrows = ['↑ N', '↗ NE', '↘ SE'];
-      return `${arrows[sId] || sId}: ${avgRsrp} dBm (${sec.count} pts)`;
-    }).join('<br>');
+      let rsrpColor = '#94a3b8';
+      const rv = parseFloat(avgRsrp);
+      if (!isNaN(rv)) {
+        if (rv > -80) rsrpColor = '#22c55e';
+        else if (rv > -90) rsrpColor = '#84cc16';
+        else if (rv > -100) rsrpColor = '#eab308';
+        else if (rv > -110) rsrpColor = '#f97316';
+        else rsrpColor = '#dc2626';
+      }
+      return `<div style="margin:2px 0"><b>${arrows[sId] || 'S' + sId}:</b> <span style="color:${rsrpColor}">${avgRsrp} dBm</span> · ${sec.count.toLocaleString()} pts<br><span style="color:#64748b;font-size:10px">ECI: ${ecis}</span></div>`;
+    }).join('');
 
     siteMarker.bindTooltip(`
-      <div style="font-family:monospace;font-size:11px">
-        <b>🗼 Site eNB: ${enbId}</b><br>
-        <b>📍</b> ${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}<br>
-        <b>📊 Samples:</b> ${site.samples.toLocaleString()}<br>
-        <b>👤</b> ${escapeHtml(site.operator)}<br>
-        <hr style="margin:4px 0;border-color:#334155">
-        <b>Sectors:</b><br>${sectorInfo}
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;max-width:320px">
+        <div style="font-size:13px;font-weight:700;color:${ringColor};margin-bottom:4px">eNB ${enbId}</div>
+        <div style="color:#94a3b8;margin-bottom:6px">${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}</div>
+        <div><b>Operator:</b> ${escapeHtml(site.operator)}</div>
+        <div><b>Samples:</b> ${site.samples.toLocaleString()}</div>
+        <div><b>Avg RSRP:</b> <span style="color:${ringColor}">${siteAvgRsrp.toFixed(0)} dBm</span></div>
+        <div style="margin-top:4px"><b>ECI (${uniqueEcis.length}):</b> ${eciListHtml}</div>
+        <hr style="margin:6px 0;border-color:#334155">
+        <div style="font-weight:700;margin-bottom:2px">Sectors:</div>
+        ${sectorInfo}
       </div>
-    `, { permanent: false, direction: 'top' });
+    `, { permanent: false, direction: 'top', maxWidth: 350 });
 
-    // Draw sector arrows
-    Object.keys(site.sectors).forEach(sId => {
+    // Sector arrows — color by RSRP
+    Object.entries(site.sectors).forEach(([sId, sec]) => {
       const angle = sectorAngles[sId] || 0;
-      const radius = 0.002; // ~200m
+      const radius = 0.0015;
       const angleRad = angle * Math.PI / 180;
       const endLat = centerLat + radius * Math.sin(angleRad);
       const endLon = centerLon + radius * Math.cos(angleRad);
 
-      // Arrow head
-      const arrowSize = radius * 0.4;
-      const a1 = (angle + 160) * Math.PI / 180;
-      const a2 = (angle - 160) * Math.PI / 180;
+      const arrowSize = radius * 0.35;
+      const a1 = (angle + 155) * Math.PI / 180;
+      const a2 = (angle - 155) * Math.PI / 180;
 
-      // Shaft
+      // Color arrow by sector avg RSRP
+      const secAvg = sec.rsrp.length ? sec.rsrp.reduce((a, b) => a + b, 0) / sec.rsrp.length : -100;
+      let arrowColor = '#eab308';
+      if (secAvg > -80) arrowColor = '#22c55e';
+      else if (secAvg > -90) arrowColor = '#84cc16';
+      else if (secAvg > -100) arrowColor = '#eab308';
+      else if (secAvg > -110) arrowColor = '#f97316';
+      else arrowColor = '#dc2626';
+
       coverageTowerLayer.addLayer(L.polyline([[centerLat, centerLon], [endLat, endLon]], {
-        color: '#e2e8f0', weight: 5, opacity: 1
+        color: arrowColor, weight: 4, opacity: 0.85
       }));
-      // Arrow head
       coverageTowerLayer.addLayer(L.polygon([
         [endLat + arrowSize * Math.sin(a1), endLon + arrowSize * Math.cos(a1)],
         [endLat, endLon],
         [endLat + arrowSize * Math.sin(a2), endLon + arrowSize * Math.cos(a2)]
-      ], { color: '#e2e8f0', fillColor: '#e2e8f0', fillOpacity: 1, weight: 2, opacity: 1 }));
+      ], { color: arrowColor, fillColor: arrowColor, fillOpacity: 0.9, weight: 1.5, opacity: 0.85 }));
     });
 
     siteMarker.on('click', () => flyToPoint(centerLat, centerLon, 16));
@@ -3041,7 +3080,7 @@ function renderCoverageOnMap(results) {
 
   coverageTowerLayer.addTo(map);
 
-  // ── 3. COVERAGE LEGEND ──
+  // ── 4. COVERAGE LEGEND ──
   const legend = document.createElement('div');
   legend.id = 'coverage-legend';
   legend.style.cssText = 'position:fixed;bottom:60px;right:16px;z-index:1000;background:rgba(10,22,40,0.92);border:1px solid #334155;border-radius:10px;padding:12px 16px;font-size:12px;color:#e2e8f0;box-shadow:0 4px 16px rgba(0,0,0,0.4)';
