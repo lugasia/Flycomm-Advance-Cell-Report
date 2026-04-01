@@ -3029,19 +3029,20 @@ function renderCoverageOnMap(results) {
       return `<div style="margin:3px 0"><b>${arrows[sId] || 'S' + sId}:</b> <span style="color:${rsrpColor}">${avgRsrp} dBm</span> · ${sec.count.toLocaleString()} pts<br><span style="color:#64748b;font-size:10px;word-wrap:break-word;overflow-wrap:break-word;display:block">ECI: ${ecis}</span></div>`;
     }).join('');
 
-    siteMarker.bindTooltip(`
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;width:280px">
+    siteMarker.bindPopup(`
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px">
         <div style="font-size:13px;font-weight:700;color:${ringColor};margin-bottom:4px">eNB ${enbId}</div>
         <div style="color:#94a3b8;margin-bottom:6px">${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}</div>
         <div><b>Operator:</b> ${escapeHtml(site.operator)}</div>
         <div><b>Samples:</b> ${site.samples.toLocaleString()}</div>
         <div><b>Avg RSRP:</b> <span style="color:${ringColor}">${siteAvgRsrp.toFixed(0)} dBm</span></div>
-        <div style="margin-top:4px;word-wrap:break-word;overflow-wrap:break-word"><b>ECI (${uniqueEcis.length}):</b><br><span style="line-height:1.6">${eciListHtml}</span></div>
+        <div style="margin-top:4px"><b>ECI (${uniqueEcis.length}):</b></div>
+        <div style="line-height:1.6">${eciListHtml}</div>
         <hr style="margin:6px 0;border-color:#334155">
         <div style="font-weight:700;margin-bottom:2px">Sectors:</div>
         ${sectorInfo}
       </div>
-    `, { permanent: false, direction: 'top' });
+    `, { maxWidth: 300, minWidth: 240, className: 'mcc-popup' });
 
     // Sector arrows — color by RSRP
     Object.entries(site.sectors).forEach(([sId, sec]) => {
