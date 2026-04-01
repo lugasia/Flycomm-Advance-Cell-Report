@@ -1311,6 +1311,8 @@ let sitesLayer = null;
 let sitesSectorLayer = null;
 let sitesData = null;
 let cellSearchLayer = null;
+let coverageHeatLayer = null;
+let coverageTowerLayer = null;
 
 // Intelligence constants
 const JORDAN_BORDER_LON = 35.3;
@@ -2906,47 +2908,157 @@ function analyzeCoverage() {
   }
 }
 
-// Render coverage classification results directly on the current map
+// Render coverage classification results with heatmap + tower markers
 function renderCoverageOnMap(results) {
+  // Clear previous layers
   if (cellSearchLayer) { map.removeLayer(cellSearchLayer); cellSearchLayer = null; }
+  if (coverageHeatLayer) { map.removeLayer(coverageHeatLayer); coverageHeatLayer = null; }
+  if (coverageTowerLayer) { map.removeLayer(coverageTowerLayer); coverageTowerLayer = null; }
+  const oldLegend = document.getElementById('coverage-legend'); if (oldLegend) oldLegend.remove();
   if (!results || results.length === 0) return;
 
-  cellSearchLayer = L.layerGroup();
+  // ── 1. HEATMAP LAYER (coverage intensity) ──
+  const heatData = results.map(r => {
+    const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+    if (isNaN(lat) || isNaN(lon)) return null;
+    // Normalize coverage score (0-100) to heat intensity
+    const intensity = (r.coverage_score || 50) / 100 * 10;
+    return [lat, lon, intensity];
+  }).filter(Boolean);
 
+  coverageHeatLayer = L.heatLayer(heatData, {
+    radius: 16, blur: 20, maxZoom: 17, max: 10, minOpacity: 0.35,
+    gradient: {
+      0.15: '#313bac',  // No/low coverage — dark blue
+      0.35: '#06b6d4',  // Cyan
+      0.55: '#84cc16',  // Yellow-green
+      0.75: '#facc15',  // Yellow
+      1.00: '#ef4444',  // Hot — strong signal
+    }
+  }).addTo(map);
+
+  // ── 2. TOWER MARKERS (grouped by eNB) ──
+  coverageTowerLayer = L.layerGroup();
+
+  const towerSvg = `<svg viewBox="0 0 32 32" width="28" height="28" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M10 4C12 2 14.5 1 16 1C17.5 1 20 2 22 4" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <path d="M11.5 6C13 4.5 14.5 4 16 4C17.5 4 19 4.5 20.5 6" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <path d="M13 8C14 7 15 6.5 16 6.5C17 6.5 18 7 19 8" stroke="#3b82f6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+    <line x1="16" y1="8" x2="16" y2="12" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
+    <path d="M16 12L10 30" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
+    <path d="M16 12L22 30" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
+    <line x1="11.5" y1="18" x2="20.5" y2="18" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="10.5" y1="24" x2="21.5" y2="24" stroke="#94a3b8" stroke-width="1.5" stroke-linecap="round"/>
+    <line x1="8" y1="30" x2="24" y2="30" stroke="#e2e8f0" stroke-width="2" stroke-linecap="round"/>
+  </svg>`;
+
+  // Group results by eNB
+  const enbSites = {};
   results.forEach(r => {
+    const enb = r.enb;
+    if (!enb) return;
+    if (!enbSites[enb]) {
+      enbSites[enb] = { lats: [], lons: [], sectors: {}, samples: 0, operator: r.operator || '' };
+    }
     const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
     if (isNaN(lat) || isNaN(lon)) return;
+    enbSites[enb].lats.push(lat);
+    enbSites[enb].lons.push(lon);
+    enbSites[enb].samples += (r.samples || 0);
 
-    const color = r.coverage_color || '#94a3b8';
-    const samples = r.samples || 1;
-    const radius = Math.max(5, Math.min(14, 5 + Math.log10(samples) * 3));
-
-    const marker = L.circleMarker([lat, lon], {
-      radius, fillColor: color, color: color,
-      weight: 2, opacity: 0.9, fillOpacity: 0.7,
-    });
-    marker.bindPopup(`
-      <div style="font-family:Inter,sans-serif;font-size:13px;min-width:200px">
-        <div style="font-weight:700;margin-bottom:6px;color:${color}">
-          ${(r.coverage_level || '').toUpperCase()} Coverage
-        </div>
-        <div><strong>eNB:</strong> ${r.enb || '—'} &nbsp; <strong>ECI:</strong> ${r.eci || '—'}</div>
-        <div><strong>Operator:</strong> ${escapeHtml(r.operator || '—')}</div>
-        <div><strong>Samples:</strong> ${samples.toLocaleString()}</div>
-        <div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.1)">
-          <strong>Avg RSRP:</strong> <span style="color:${color}">${r.avg_rsrp != null ? r.avg_rsrp + ' dBm' : '—'}</span>
-        </div>
-        <div><strong>Min/Max:</strong> ${r.min_rsrp || '—'} / ${r.max_rsrp || '—'} dBm</div>
-        <div><strong>Score:</strong> ${r.coverage_score}/100</div>
-        <div style="color:#94a3b8;font-size:11px;margin-top:4px">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
-      </div>
-    `, { className: 'mcc-popup' });
-    marker.on('click', () => flyToPoint(lat, lon, 16));
-    cellSearchLayer.addLayer(marker);
+    // Track sectors by ECI mod 256 mod 3
+    const ci = r.eci ? (parseInt(r.eci) % 256) : 0;
+    const sectorId = ci % 3;
+    if (!enbSites[enb].sectors[sectorId]) {
+      enbSites[enb].sectors[sectorId] = { eci: r.eci, rsrp: [], count: 0 };
+    }
+    enbSites[enb].sectors[sectorId].count++;
+    if (r.avg_rsrp != null) enbSites[enb].sectors[sectorId].rsrp.push(r.avg_rsrp);
   });
 
-  cellSearchLayer.addTo(map);
+  const sectorAngles = [270, 30, 150]; // N, NE, SE
 
+  Object.entries(enbSites).forEach(([enbId, site]) => {
+    const centerLat = site.lats.reduce((a, b) => a + b, 0) / site.lats.length;
+    const centerLon = site.lons.reduce((a, b) => a + b, 0) / site.lons.length;
+
+    // Tower icon marker
+    const siteMarker = L.marker([centerLat, centerLon], {
+      icon: L.divIcon({
+        className: 'enb-site-marker',
+        html: `<div style="background:rgba(15,23,42,0.9);border:2px solid #3b82f6;border-radius:8px;width:40px;height:40px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 12px rgba(0,0,0,0.6)">${towerSvg}</div>`,
+        iconSize: [40, 40], iconAnchor: [20, 20]
+      }),
+      zIndexOffset: 1000
+    });
+
+    // Tooltip with sector info
+    const sectorInfo = Object.entries(site.sectors).map(([sId, sec]) => {
+      const avgRsrp = sec.rsrp.length ? (sec.rsrp.reduce((a, b) => a + b, 0) / sec.rsrp.length).toFixed(0) : 'N/A';
+      const arrows = ['↑ N', '↗ NE', '↘ SE'];
+      return `${arrows[sId] || sId}: ${avgRsrp} dBm (${sec.count} pts)`;
+    }).join('<br>');
+
+    siteMarker.bindTooltip(`
+      <div style="font-family:monospace;font-size:11px">
+        <b>🗼 Site eNB: ${enbId}</b><br>
+        <b>📍</b> ${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}<br>
+        <b>📊 Samples:</b> ${site.samples.toLocaleString()}<br>
+        <b>👤</b> ${escapeHtml(site.operator)}<br>
+        <hr style="margin:4px 0;border-color:#334155">
+        <b>Sectors:</b><br>${sectorInfo}
+      </div>
+    `, { permanent: false, direction: 'top' });
+
+    // Draw sector arrows
+    Object.keys(site.sectors).forEach(sId => {
+      const angle = sectorAngles[sId] || 0;
+      const radius = 0.002; // ~200m
+      const angleRad = angle * Math.PI / 180;
+      const endLat = centerLat + radius * Math.sin(angleRad);
+      const endLon = centerLon + radius * Math.cos(angleRad);
+
+      // Arrow head
+      const arrowSize = radius * 0.4;
+      const a1 = (angle + 160) * Math.PI / 180;
+      const a2 = (angle - 160) * Math.PI / 180;
+
+      // Shaft
+      coverageTowerLayer.addLayer(L.polyline([[centerLat, centerLon], [endLat, endLon]], {
+        color: '#e2e8f0', weight: 5, opacity: 1
+      }));
+      // Arrow head
+      coverageTowerLayer.addLayer(L.polygon([
+        [endLat + arrowSize * Math.sin(a1), endLon + arrowSize * Math.cos(a1)],
+        [endLat, endLon],
+        [endLat + arrowSize * Math.sin(a2), endLon + arrowSize * Math.cos(a2)]
+      ], { color: '#e2e8f0', fillColor: '#e2e8f0', fillOpacity: 1, weight: 2, opacity: 1 }));
+    });
+
+    siteMarker.on('click', () => flyToPoint(centerLat, centerLon, 16));
+    coverageTowerLayer.addLayer(siteMarker);
+  });
+
+  coverageTowerLayer.addTo(map);
+
+  // ── 3. COVERAGE LEGEND ──
+  const legend = document.createElement('div');
+  legend.id = 'coverage-legend';
+  legend.style.cssText = 'position:fixed;bottom:60px;right:16px;z-index:1000;background:rgba(10,22,40,0.92);border:1px solid #334155;border-radius:10px;padding:12px 16px;font-size:12px;color:#e2e8f0;box-shadow:0 4px 16px rgba(0,0,0,0.4)';
+  legend.innerHTML = `
+    <div style="font-weight:700;margin-bottom:8px;color:#3b82f6">RSRP Coverage</div>
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#22c55e;margin-right:6px"></span>Excellent (> -80 dBm)</div>
+      <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#84cc16;margin-right:6px"></span>Good (-80 to -90)</div>
+      <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#eab308;margin-right:6px"></span>Fair (-90 to -100)</div>
+      <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f97316;margin-right:6px"></span>Poor (-100 to -110)</div>
+      <div><span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#dc2626;margin-right:6px"></span>Bad (< -110 dBm)</div>
+    </div>
+    <div style="margin-top:8px;font-size:11px;color:#94a3b8">${Object.keys(enbSites).length} towers · ${results.length} cells</div>
+  `;
+  document.body.appendChild(legend);
+
+  // Fit map to data
   const lats = results.map(r => parseFloat(r.lat)).filter(v => !isNaN(v));
   const lons = results.map(r => parseFloat(r.lon)).filter(v => !isNaN(v));
   if (lats.length > 0) {
@@ -4495,6 +4607,9 @@ function clearAllVisualizationLayers() {
   if (contributorHeatLayer) { map.removeLayer(contributorHeatLayer); contributorHeatLayer = null; }
   if (contributorDotsLayer) { map.removeLayer(contributorDotsLayer); contributorDotsLayer = null; }
   if (cellSearchLayer) { map.removeLayer(cellSearchLayer); cellSearchLayer = null; }
+  if (coverageHeatLayer) { map.removeLayer(coverageHeatLayer); coverageHeatLayer = null; }
+  if (coverageTowerLayer) { map.removeLayer(coverageTowerLayer); coverageTowerLayer = null; }
+  const covLegend = document.getElementById('coverage-legend'); if (covLegend) covLegend.remove();
   const gridCtrl = document.getElementById('grid-heat-control');
   if (gridCtrl) gridCtrl.remove();
   if (typeof gridHeatLayer !== 'undefined' && gridHeatLayer) { map.removeLayer(gridHeatLayer); gridHeatLayer = null; }
