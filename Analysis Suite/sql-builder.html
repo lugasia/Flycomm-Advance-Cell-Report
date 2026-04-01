@@ -2857,7 +2857,7 @@ function classifyCoverage(cell) {
   };
 }
 
-async function analyzeCoverage() {
+function analyzeCoverage() {
   if (!lastQueryResults?.data?.length) {
     alert('Please execute a query first.');
     return;
@@ -2880,6 +2880,9 @@ async function analyzeCoverage() {
 
     resultsMeta.textContent = `${results.length} cells analyzed - Coverage: ${goodCount} good, ${stats.fair || 0} fair, ${poorCount} poor`;
 
+    // Also re-render on map with coverage colors
+    renderCoverageOnMap(results);
+
     resultsContainer.innerHTML = `
       <div style="padding:20px;text-align:center;">
         <div style="margin-bottom:16px;padding:16px;background:var(--dark);border-radius:12px;">
@@ -2893,29 +2896,61 @@ async function analyzeCoverage() {
           </div>
           <div style="margin-top:12px;color:var(--accent);font-size:13px">Model: <strong>RSRP Coverage Classifier</strong> ${hasRsrp ? '(RSRP data available)' : '(No RSRP - using sample density)'}</div>
         </div>
-        <p style="color:var(--green);font-size:14px;">✓ Opening coverage map with color-coded predictions...</p>
+        <p style="color:var(--green);font-size:14px;">✓ Coverage analysis complete — map updated with color-coded results</p>
       </div>
     `;
-
-    // Build CSV with coverage data for Signal Map
-    const columns = ['latitude', 'longitude', 'cell_enb', 'cell_eci', 'network_mcc', 'network_mnc', 'counted', 'avg_rsrp', 'coverage_level', 'coverage_color', 'coverage_score', 'network_operator'];
-    let csv = columns.join(',') + '\n';
-    results.forEach(cell => {
-      const op = (cell.operator || cell.coverage_level || '').replace(/,/g, ' ');
-      csv += [cell.lat, cell.lon, cell.enb || '', cell.eci || '', cell.mcc || '', cell.mnc || '',
-              cell.samples || 1, cell.avg_rsrp || '', cell.coverage_level, '"' + cell.coverage_color + '"',
-              cell.coverage_score, '"' + op + '"'].join(',') + '\n';
-    });
-
-    localStorage.setItem('sqlBuilderData', csv);
-    localStorage.setItem('sqlBuilderTimestamp', Date.now().toString());
-    localStorage.setItem('mlCoverageMode', 'true');
-
-    setTimeout(() => { window.open('index.html?source=sqlbuilder&ml=coverage', '_blank'); }, 500);
 
   } catch (err) {
     console.error('[Coverage Analysis] Error:', err);
     resultsContainer.innerHTML = `<div class="error-msg">Coverage analysis failed: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+// Render coverage classification results directly on the current map
+function renderCoverageOnMap(results) {
+  if (cellSearchLayer) { map.removeLayer(cellSearchLayer); cellSearchLayer = null; }
+  if (!results || results.length === 0) return;
+
+  cellSearchLayer = L.layerGroup();
+
+  results.forEach(r => {
+    const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    const color = r.coverage_color || '#94a3b8';
+    const samples = r.samples || 1;
+    const radius = Math.max(5, Math.min(14, 5 + Math.log10(samples) * 3));
+
+    const marker = L.circleMarker([lat, lon], {
+      radius, fillColor: color, color: color,
+      weight: 2, opacity: 0.9, fillOpacity: 0.7,
+    });
+    marker.bindPopup(`
+      <div style="font-family:Inter,sans-serif;font-size:13px;min-width:200px">
+        <div style="font-weight:700;margin-bottom:6px;color:${color}">
+          ${(r.coverage_level || '').toUpperCase()} Coverage
+        </div>
+        <div><strong>eNB:</strong> ${r.enb || '—'} &nbsp; <strong>ECI:</strong> ${r.eci || '—'}</div>
+        <div><strong>Operator:</strong> ${escapeHtml(r.operator || '—')}</div>
+        <div><strong>Samples:</strong> ${samples.toLocaleString()}</div>
+        <div style="margin-top:4px;padding-top:4px;border-top:1px solid rgba(255,255,255,0.1)">
+          <strong>Avg RSRP:</strong> <span style="color:${color}">${r.avg_rsrp != null ? r.avg_rsrp + ' dBm' : '—'}</span>
+        </div>
+        <div><strong>Min/Max:</strong> ${r.min_rsrp || '—'} / ${r.max_rsrp || '—'} dBm</div>
+        <div><strong>Score:</strong> ${r.coverage_score}/100</div>
+        <div style="color:#94a3b8;font-size:11px;margin-top:4px">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
+      </div>
+    `, { className: 'mcc-popup' });
+    marker.on('click', () => flyToPoint(lat, lon, 16));
+    cellSearchLayer.addLayer(marker);
+  });
+
+  cellSearchLayer.addTo(map);
+
+  const lats = results.map(r => parseFloat(r.lat)).filter(v => !isNaN(v));
+  const lons = results.map(r => parseFloat(r.lon)).filter(v => !isNaN(v));
+  if (lats.length > 0) {
+    map.fitBounds([[Math.min(...lats), Math.min(...lons)], [Math.max(...lats), Math.max(...lons)]], { padding: [30, 30] });
   }
 }
 
