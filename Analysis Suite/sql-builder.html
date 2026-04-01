@@ -949,14 +949,17 @@
         <div id="cell-rsrp-options" style="display:none;margin-top:12px;padding:12px;background:var(--dark);border-radius:8px;">
           <p style="font-size:12px;color:var(--sub);margin-bottom:12px;line-height:1.5;">
             <span class="material-icons" style="font-size:14px;vertical-align:middle;color:var(--green)">signal_cellular_alt</span>
-            Search <strong style="color:var(--text)">measurements</strong> by eNB/ECI with RSRP coverage aggregation (avg/min/max)
+            Search <strong style="color:var(--text)">measurements</strong> by cell identifiers with RSRP coverage (all RATs: 2G/3G/4G/5G)
           </p>
 
-          <label class="field">eNB / Site ID (comma-separated)</label>
+          <label class="field">eNB / gNB / Site ID <span style="color:var(--sub);font-weight:400">(4G eNodeB, 5G gNodeB)</span></label>
           <textarea id="rsrp-enb-list" placeholder="e.g. 12345, 67890" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
 
-          <label class="field">ECI (comma-separated)</label>
+          <label class="field">ECI / NCI <span style="color:var(--sub);font-weight:400">(4G E-UTRAN Cell ID, 5G NR Cell ID)</span></label>
           <textarea id="rsrp-eci-list" placeholder="e.g. 111, 222, 333" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
+
+          <label class="field">ECGI / CGI <span style="color:var(--sub);font-weight:400">(full global ID, e.g. 42501...)</span></label>
+          <textarea id="rsrp-ecgi-list" placeholder="e.g. 425010001174785, 425020001234567" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
 
           <div class="checkbox-row">
             <input type="checkbox" id="rsrp-use-polygon">
@@ -2473,12 +2476,15 @@ function getRawCellRsrpSQL() {
   const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
   const eciRaw = document.getElementById('rsrp-eci-list').value;
   const eciList = eciRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const ecgiRaw = document.getElementById('rsrp-ecgi-list').value;
+  const ecgiList = ecgiRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
   const resultLimit = document.getElementById('rsrp-limit').value || '50000';
 
   const hasPolygons = polygons.length > 0;
   const hasEnb = enbList.length > 0;
   const hasEci = eciList.length > 0;
-  if (!hasEnb && !hasEci && !hasPolygons) return '';
+  const hasEcgi = ecgiList.length > 0;
+  if (!hasEnb && !hasEci && !hasEcgi && !hasPolygons) return '';
 
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
@@ -2493,9 +2499,16 @@ function getRawCellRsrpSQL() {
 
   let sql = '';
   sql += `SELECT\n`;
+  sql += `    tech,\n`;
   sql += `    cell_enb,\n`;
   sql += `    cell_eci,\n`;
   sql += `    cell_ci,\n`;
+  sql += `    cell_ecgi,\n`;
+  sql += `    cell_cgi,\n`;
+  sql += `    cell_nci,\n`;
+  sql += `    cell_lac,\n`;
+  sql += `    cell_tac,\n`;
+  sql += `    cell_pci,\n`;
   sql += `    network_mcc,\n`;
   sql += `    network_mnc,\n`;
   sql += `    network_PLMN,\n`;
@@ -2515,12 +2528,13 @@ function getRawCellRsrpSQL() {
   conditions.push(`signal_rsrp != 0`);
   conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
 
-  if (hasEnb && hasEci) {
-    conditions.push(`(cell_enb IN (${enbList.join(', ')}) OR cell_eci IN (${eciList.join(', ')}))`);
-  } else if (hasEnb) {
-    conditions.push(`cell_enb IN (${enbList.join(', ')})`);
-  } else if (hasEci) {
-    conditions.push(`cell_eci IN (${eciList.join(', ')})`);
+  // Cell identity filters — combined with OR when multiple types given
+  const cellFilters = [];
+  if (hasEnb) cellFilters.push(`cell_enb IN (${enbList.join(', ')})`);
+  if (hasEci) cellFilters.push(`cell_eci IN (${eciList.join(', ')}) OR cell_nci IN (${eciList.join(', ')})`);
+  if (hasEcgi) cellFilters.push(`cell_ecgi IN (${ecgiList.map(e => `'${e}'`).join(', ')}) OR cell_cgi IN (${ecgiList.map(e => `'${e}'`).join(', ')})`);
+  if (cellFilters.length > 0) {
+    conditions.push(`(${cellFilters.join(' OR ')})`);
   }
 
   if (hasPolygons && !usePolygon) {
@@ -2546,7 +2560,8 @@ function getRawCellRsrpSQL() {
 
   sql += `    ${conditions.join('\n    AND ')}\n`;
   sql += `GROUP BY\n`;
-  sql += `    cell_enb, cell_eci, cell_ci,\n`;
+  sql += `    tech, cell_enb, cell_eci, cell_ci, cell_ecgi, cell_cgi, cell_nci,\n`;
+  sql += `    cell_lac, cell_tac, cell_pci,\n`;
   sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
   sql += `ORDER BY\n`;
   sql += `    cell_enb, samples DESC\n`;
@@ -2850,7 +2865,11 @@ function classifyCoverage(cell) {
   }
   return {
     lat: cell.latitude || cell.lat, lon: cell.longitude || cell.lon,
-    enb: cell.cell_enb, eci: cell.cell_eci, mcc: cell.network_mcc, mnc: cell.network_mnc,
+    tech: cell.tech || '',
+    enb: cell.cell_enb, eci: cell.cell_eci, ci: cell.cell_ci,
+    ecgi: cell.cell_ecgi || '', cgi: cell.cell_cgi || '', nci: cell.cell_nci || '',
+    lac: cell.cell_lac || '', tac: cell.cell_tac || '', pci: cell.cell_pci || '',
+    mcc: cell.network_mcc, mnc: cell.network_mnc, plmn: cell.network_PLMN || '',
     operator: cell.network_operator || '',
     samples, avg_rsrp: rsrp || null,
     min_rsrp: parseFloat(cell.min_rsrp) || null,
@@ -2942,30 +2961,44 @@ function renderCoverageOnMap(results) {
     }
   }).addTo(map);
 
-  // ── 2. GROUP by eNB — collect all ECIs per site ──
+  // ── 2. GROUP by eNB — collect all cell identifiers per site ──
   const enbSites = {};
   results.forEach(r => {
     const enb = r.enb;
     if (!enb) return;
     if (!enbSites[enb]) {
-      enbSites[enb] = { lats: [], lons: [], eciList: [], sectors: {}, samples: 0, operator: r.operator || '', rsrpAll: [] };
+      enbSites[enb] = {
+        lats: [], lons: [], sectors: {}, samples: 0, operator: r.operator || '', rsrpAll: [],
+        techs: new Set(), eciSet: new Set(), ecgiSet: new Set(), cgiSet: new Set(),
+        nciSet: new Set(), lacSet: new Set(), tacSet: new Set(), pciSet: new Set(),
+      };
     }
     const lat = parseFloat(r.lat), lon = parseFloat(r.lon);
     if (isNaN(lat) || isNaN(lon)) return;
     enbSites[enb].lats.push(lat);
     enbSites[enb].lons.push(lon);
     enbSites[enb].samples += (r.samples || 0);
-    if (r.eci) enbSites[enb].eciList.push(String(r.eci));
     if (r.avg_rsrp != null) enbSites[enb].rsrpAll.push(r.avg_rsrp);
 
+    // Collect all identifiers
+    if (r.tech) enbSites[enb].techs.add(r.tech);
+    if (r.eci) enbSites[enb].eciSet.add(String(r.eci));
+    if (r.ecgi) enbSites[enb].ecgiSet.add(String(r.ecgi));
+    if (r.cgi) enbSites[enb].cgiSet.add(String(r.cgi));
+    if (r.nci) enbSites[enb].nciSet.add(String(r.nci));
+    if (r.lac) enbSites[enb].lacSet.add(String(r.lac));
+    if (r.tac) enbSites[enb].tacSet.add(String(r.tac));
+    if (r.pci) enbSites[enb].pciSet.add(String(r.pci));
+
     // Sector grouping
-    const ci = r.eci ? (parseInt(r.eci) % 256) : 0;
+    const ci = r.eci ? (parseInt(r.eci) % 256) : (r.ci ? parseInt(r.ci) : 0);
     const sectorId = ci % 3;
     if (!enbSites[enb].sectors[sectorId]) {
       enbSites[enb].sectors[sectorId] = { eciSet: new Set(), rsrp: [], count: 0 };
     }
     enbSites[enb].sectors[sectorId].count += (r.samples || 1);
     if (r.eci) enbSites[enb].sectors[sectorId].eciSet.add(String(r.eci));
+    if (r.nci) enbSites[enb].sectors[sectorId].eciSet.add('NCI:' + r.nci);
     if (r.avg_rsrp != null) enbSites[enb].sectors[sectorId].rsrp.push(r.avg_rsrp);
   });
 
@@ -2986,9 +3019,15 @@ function renderCoverageOnMap(results) {
     else if (siteAvgRsrp > -110) ringColor = '#f97316';
     else ringColor = '#dc2626';
 
-    // Unique ECIs for this eNB
-    const uniqueEcis = [...new Set(site.eciList)];
     const sectorCount = Object.keys(site.sectors).length;
+    const techs = [...site.techs];
+    const ecis = [...site.eciSet];
+    const ecgis = [...site.ecgiSet];
+    const cgis = [...site.cgiSet];
+    const ncis = [...site.nciSet];
+    const lacs = [...site.lacSet];
+    const tacs = [...site.tacSet];
+    const pcis = [...site.pciSet];
 
     // Clean circular marker — color ring = RSRP level
     const siteMarker = L.marker([centerLat, centerLon], {
@@ -3007,10 +3046,11 @@ function renderCoverageOnMap(results) {
       zIndexOffset: 1000
     });
 
-    // ECI list for tooltip — wrap in a scrollable block
-    const eciListHtml = uniqueEcis.length > 0
-      ? uniqueEcis.map(e => `<span style="color:#06b6d4;white-space:nowrap">${e}</span>`).join(', ')
-      : '<span style="color:#64748b">—</span>';
+    // Build identity rows — only show non-empty sets
+    function idRow(label, items, color) {
+      if (!items.length) return '';
+      return `<div style="margin:2px 0"><b>${label} (${items.length}):</b><br><span style="color:${color};line-height:1.6">${items.join(', ')}</span></div>`;
+    }
 
     // Sector breakdown
     const sectorInfo = Object.entries(site.sectors).map(([sId, sec]) => {
@@ -3029,20 +3069,29 @@ function renderCoverageOnMap(results) {
       return `<div style="margin:3px 0"><b>${arrows[sId] || 'S' + sId}:</b> <span style="color:${rsrpColor}">${avgRsrp} dBm</span> · ${sec.count.toLocaleString()} pts<br><span style="color:#64748b;font-size:10px;word-wrap:break-word;overflow-wrap:break-word;display:block">ECI: ${ecis}</span></div>`;
     }).join('');
 
+    const identityHtml = [
+      idRow('ECI', ecis, '#06b6d4'),
+      idRow('ECGI', ecgis, '#818cf8'),
+      idRow('CGI', cgis, '#a78bfa'),
+      idRow('NCI', ncis, '#f472b6'),
+      idRow('PCI', pcis, '#94a3b8'),
+      idRow('TAC', tacs, '#94a3b8'),
+      idRow('LAC', lacs, '#94a3b8'),
+    ].filter(Boolean).join('');
+
     siteMarker.bindPopup(`
       <div style="font-family:'JetBrains Mono',monospace;font-size:11px">
-        <div style="font-size:13px;font-weight:700;color:${ringColor};margin-bottom:4px">eNB ${enbId}</div>
-        <div style="color:#94a3b8;margin-bottom:6px">${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}</div>
-        <div><b>Operator:</b> ${escapeHtml(site.operator)}</div>
-        <div><b>Samples:</b> ${site.samples.toLocaleString()}</div>
-        <div><b>Avg RSRP:</b> <span style="color:${ringColor}">${siteAvgRsrp.toFixed(0)} dBm</span></div>
-        <div style="margin-top:4px"><b>ECI (${uniqueEcis.length}):</b></div>
-        <div style="line-height:1.6">${eciListHtml}</div>
-        <hr style="margin:6px 0;border-color:#334155">
+        <div style="font-size:13px;font-weight:700;color:${ringColor};margin-bottom:2px">eNB ${enbId}</div>
+        <div style="color:#94a3b8;margin-bottom:4px">${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}</div>
+        <div><b>Tech:</b> ${techs.join(', ') || '—'} &nbsp; <b>Operator:</b> ${escapeHtml(site.operator)}</div>
+        <div><b>Samples:</b> ${site.samples.toLocaleString()} &nbsp; <b>Avg RSRP:</b> <span style="color:${ringColor}">${siteAvgRsrp.toFixed(0)} dBm</span></div>
+        <hr style="margin:5px 0;border-color:#334155">
+        ${identityHtml}
+        <hr style="margin:5px 0;border-color:#334155">
         <div style="font-weight:700;margin-bottom:2px">Sectors:</div>
         ${sectorInfo}
       </div>
-    `, { maxWidth: 300, minWidth: 240, className: 'mcc-popup' });
+    `, { maxWidth: 320, minWidth: 260, className: 'mcc-popup' });
 
     // Sector arrows — color by RSRP
     Object.entries(site.sectors).forEach(([sId, sec]) => {
@@ -3629,11 +3678,14 @@ function generateCellRsrpSQL() {
   const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
   const eciRaw = document.getElementById('rsrp-eci-list').value;
   const eciList = eciRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const ecgiRaw = document.getElementById('rsrp-ecgi-list').value;
+  const ecgiList = ecgiRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
   const resultLimit = document.getElementById('rsrp-limit').value || '50000';
 
   const hasPolygons = polygons.length > 0;
   const hasEnb = enbList.length > 0;
   const hasEci = eciList.length > 0;
+  const hasEcgi = ecgiList.length > 0;
 
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
@@ -3646,19 +3698,25 @@ function generateCellRsrpSQL() {
   const geoCol = GEO_COL;
   const tableName = TABLE_NAME;
 
-  // Need at least one filter or polygon
-  if (!hasEnb && !hasEci && !hasPolygons) {
-    let sql = '<span class="comment">-- Cell/eNB RSRP Coverage (measurements table)</span>\n';
-    sql += '<span class="comment">-- Enter eNB IDs, ECI values, or draw a polygon</span>\n';
+  if (!hasEnb && !hasEci && !hasEcgi && !hasPolygons) {
+    let sql = '<span class="comment">-- Cell RSRP Coverage (all RATs: 2G/3G/4G/5G)</span>\n';
+    sql += '<span class="comment">-- Enter eNB/gNB, ECI/NCI, ECGI/CGI, or draw a polygon</span>\n';
     document.getElementById('sql-output').innerHTML = sql;
     return;
   }
 
-  let sql = '<span class="comment">-- Cell/eNB Search with RSRP Coverage</span>\n';
+  let sql = '<span class="comment">-- Cell RSRP Coverage (2G CGI · 3G CGI · 4G ECGI · 5G NCGI)</span>\n';
   sql += `<span class="keyword">SELECT</span>\n`;
+  sql += `    tech,\n`;
   sql += `    cell_enb,\n`;
   sql += `    cell_eci,\n`;
   sql += `    cell_ci,\n`;
+  sql += `    cell_ecgi,\n`;
+  sql += `    cell_cgi,\n`;
+  sql += `    cell_nci,\n`;
+  sql += `    cell_lac,\n`;
+  sql += `    cell_tac,\n`;
+  sql += `    cell_pci,\n`;
   sql += `    network_mcc,\n`;
   sql += `    network_mnc,\n`;
   sql += `    network_PLMN,\n`;
@@ -3678,13 +3736,16 @@ function generateCellRsrpSQL() {
   conditions.push(`signal_rsrp != <span class="number">0</span>`);
   conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
 
-  // eNB / ECI filter
-  if (hasEnb && hasEci) {
-    conditions.push(`(cell_enb <span class="keyword">IN</span> (${enbList.join(', ')}) <span class="keyword">OR</span> cell_eci <span class="keyword">IN</span> (${eciList.join(', ')}))`);
-  } else if (hasEnb) {
-    conditions.push(`cell_enb <span class="keyword">IN</span> (${enbList.join(', ')})`);
-  } else if (hasEci) {
-    conditions.push(`cell_eci <span class="keyword">IN</span> (${eciList.join(', ')})`);
+  // Cell identity filters
+  const cellFilters = [];
+  if (hasEnb) cellFilters.push(`cell_enb <span class="keyword">IN</span> (${enbList.join(', ')})`);
+  if (hasEci) cellFilters.push(`cell_eci <span class="keyword">IN</span> (${eciList.join(', ')}) <span class="keyword">OR</span> cell_nci <span class="keyword">IN</span> (${eciList.join(', ')})`);
+  if (hasEcgi) {
+    const ecgiStrs = ecgiList.map(e => `<span class="string">'${e}'</span>`).join(', ');
+    cellFilters.push(`cell_ecgi <span class="keyword">IN</span> (${ecgiStrs}) <span class="keyword">OR</span> cell_cgi <span class="keyword">IN</span> (${ecgiStrs})`);
+  }
+  if (cellFilters.length > 0) {
+    conditions.push(`(${cellFilters.join(' <span class="keyword">OR</span> ')})`);
   }
 
   // Polygon filter
@@ -3700,18 +3761,10 @@ function generateCellRsrpSQL() {
     });
   }
 
-  if (excludeMcc && filterMcc) {
-    conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
-  }
-  if (includeMcc && includeMccValue) {
-    conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-  }
-  if (useTimeline && dateFrom) {
-    conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
-  }
-  if (useTimeline && dateTo) {
-    conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
-  }
+  if (excludeMcc && filterMcc) conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+  if (includeMcc && includeMccValue) conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
+  if (useTimeline && dateFrom) conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
+  if (useTimeline && dateTo) conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
   const hourCond = getHourRangeCondition(timestampCol, true);
   if (hourCond) conditions.push(hourCond);
   const sourceFilt = getSourceFilterCondition(true);
@@ -3719,7 +3772,8 @@ function generateCellRsrpSQL() {
 
   sql += `    ${conditions.join('\n    <span class="keyword">AND</span> ')}\n`;
   sql += `<span class="keyword">GROUP BY</span>\n`;
-  sql += `    cell_enb, cell_eci, cell_ci,\n`;
+  sql += `    tech, cell_enb, cell_eci, cell_ci, cell_ecgi, cell_cgi, cell_nci,\n`;
+  sql += `    cell_lac, cell_tac, cell_pci,\n`;
   sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
   sql += `<span class="keyword">ORDER BY</span>\n`;
   sql += `    cell_enb, samples <span class="keyword">DESC</span>\n`;
@@ -4476,7 +4530,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('cell-use-polygon').addEventListener('change', generateSQL);
 
   // Cell RSRP Coverage inputs trigger SQL regeneration
-  ['rsrp-enb-list', 'rsrp-eci-list', 'rsrp-limit'].forEach(id => {
+  ['rsrp-enb-list', 'rsrp-eci-list', 'rsrp-ecgi-list', 'rsrp-limit'].forEach(id => {
     document.getElementById(id).addEventListener('input', generateSQL);
   });
   document.getElementById('rsrp-use-polygon').addEventListener('change', generateSQL);
@@ -6254,7 +6308,7 @@ function showCellRsrpDataPanel(data, plmnColorMap) {
   body.style.display = '';
   document.getElementById('panel-minimize-btn').textContent = '_';
 
-  let html = '<table><thead><tr><th>eNB</th><th>ECI</th><th>PLMN</th><th>Operator</th><th>Samples</th><th>Avg RSRP</th><th>Min</th><th>Max</th><th>First Seen</th><th>Last Seen</th></tr></thead><tbody>';
+  let html = '<table><thead><tr><th>Tech</th><th>eNB</th><th>ECI</th><th>ECGI/CGI</th><th>PLMN</th><th>Operator</th><th>Samples</th><th>Avg RSRP</th><th>Min</th><th>Max</th><th>TAC/LAC</th><th>PCI</th></tr></thead><tbody>';
   data.forEach(d => {
     const lat = parseFloat(d.latitude) || 0, lon = parseFloat(d.longitude) || 0;
     const plmn = d.network_PLMN || '';
@@ -6271,17 +6325,23 @@ function showCellRsrpDataPanel(data, plmnColorMap) {
       else if (avgRsrp > -110) rsrpColor = '#f97316';
       else rsrpColor = '#dc2626';
     }
+    // Show the best global ID available
+    const globalId = d.cell_ecgi || d.cell_cgi || d.cell_nci || '—';
+    const cellId = d.cell_eci || d.cell_nci || d.cell_ci || '—';
+    const areaCode = d.cell_tac || d.cell_lac || '—';
     html += `<tr onclick="flyToPoint(${lat},${lon},16)" title="Click to fly">
+      <td>${d.tech || '—'}</td>
       <td>${d.cell_enb || '—'}</td>
-      <td>${d.cell_eci || '—'}</td>
+      <td>${cellId}</td>
+      <td style="font-size:10px">${globalId}</td>
       <td><span class="badge ${cls}">${escapeHtml(plmn)}</span></td>
       <td>${escapeHtml(d.network_operator || '—')}</td>
       <td>${(parseInt(d.samples) || 0).toLocaleString()}</td>
       <td style="color:${rsrpColor};font-weight:600">${!isNaN(avgRsrp) ? avgRsrp : '—'}</td>
       <td>${d.min_rsrp || '—'}</td>
       <td>${d.max_rsrp || '—'}</td>
-      <td style="font-size:11px">${d.first_seen || '—'}</td>
-      <td style="font-size:11px">${d.last_seen || '—'}</td>
+      <td>${areaCode}</td>
+      <td>${d.cell_pci || '—'}</td>
     </tr>`;
   });
   html += '</tbody></table>';
