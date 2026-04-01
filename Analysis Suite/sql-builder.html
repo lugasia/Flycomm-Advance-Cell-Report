@@ -2932,7 +2932,7 @@ function renderCoverageOnMap(results) {
   const maxIntensity = Math.max(...heatData.map(d => d[2]), 1);
 
   coverageHeatLayer = L.heatLayer(heatData, {
-    radius: 28, blur: 22, maxZoom: 17, max: maxIntensity * 0.6, minOpacity: 0.4,
+    radius: 28, blur: 22, maxZoom: 22, max: maxIntensity * 0.6, minOpacity: 0.4,
     gradient: {
       0.20: '#313bac',
       0.40: '#06b6d4',
@@ -3007,9 +3007,9 @@ function renderCoverageOnMap(results) {
       zIndexOffset: 1000
     });
 
-    // ECI list for tooltip
+    // ECI list for tooltip — wrap in a scrollable block
     const eciListHtml = uniqueEcis.length > 0
-      ? uniqueEcis.map(e => `<span style="color:#06b6d4">${e}</span>`).join(', ')
+      ? uniqueEcis.map(e => `<span style="color:#06b6d4;white-space:nowrap">${e}</span>`).join(', ')
       : '<span style="color:#64748b">—</span>';
 
     // Sector breakdown
@@ -3026,22 +3026,22 @@ function renderCoverageOnMap(results) {
         else if (rv > -110) rsrpColor = '#f97316';
         else rsrpColor = '#dc2626';
       }
-      return `<div style="margin:2px 0"><b>${arrows[sId] || 'S' + sId}:</b> <span style="color:${rsrpColor}">${avgRsrp} dBm</span> · ${sec.count.toLocaleString()} pts<br><span style="color:#64748b;font-size:10px">ECI: ${ecis}</span></div>`;
+      return `<div style="margin:3px 0"><b>${arrows[sId] || 'S' + sId}:</b> <span style="color:${rsrpColor}">${avgRsrp} dBm</span> · ${sec.count.toLocaleString()} pts<br><span style="color:#64748b;font-size:10px;word-wrap:break-word;overflow-wrap:break-word;display:block">ECI: ${ecis}</span></div>`;
     }).join('');
 
     siteMarker.bindTooltip(`
-      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;max-width:320px">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;width:280px">
         <div style="font-size:13px;font-weight:700;color:${ringColor};margin-bottom:4px">eNB ${enbId}</div>
         <div style="color:#94a3b8;margin-bottom:6px">${centerLat.toFixed(6)}, ${centerLon.toFixed(6)}</div>
         <div><b>Operator:</b> ${escapeHtml(site.operator)}</div>
         <div><b>Samples:</b> ${site.samples.toLocaleString()}</div>
         <div><b>Avg RSRP:</b> <span style="color:${ringColor}">${siteAvgRsrp.toFixed(0)} dBm</span></div>
-        <div style="margin-top:4px"><b>ECI (${uniqueEcis.length}):</b> ${eciListHtml}</div>
+        <div style="margin-top:4px;word-wrap:break-word;overflow-wrap:break-word"><b>ECI (${uniqueEcis.length}):</b><br><span style="line-height:1.6">${eciListHtml}</span></div>
         <hr style="margin:6px 0;border-color:#334155">
         <div style="font-weight:700;margin-bottom:2px">Sectors:</div>
         ${sectorInfo}
       </div>
-    `, { permanent: false, direction: 'top', maxWidth: 350 });
+    `, { permanent: false, direction: 'top' });
 
     // Sector arrows — color by RSRP
     Object.entries(site.sectors).forEach(([sId, sec]) => {
