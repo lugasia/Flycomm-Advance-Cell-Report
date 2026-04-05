@@ -1550,7 +1550,10 @@ function showSearchPreview(place, coords) {
   const preview = document.getElementById('place-preview');
   const shortName = place.display_name.split(',').slice(0, 2).join(', ');
   document.getElementById('place-preview-name').textContent = shortName;
-  document.getElementById('place-preview-type').textContent = formatPlaceType(place.type, place.class) + ' — ' + (coords.length) + ' vertices';
+  // Calculate polygon area in km² using Shoelace formula with lat/lon→km conversion
+  const areaKm2 = calcPolygonAreaKm2(coords);
+  const areaStr = areaKm2 >= 1 ? areaKm2.toFixed(1) + ' km²' : (areaKm2 * 1000000).toFixed(0) + ' m²';
+  document.getElementById('place-preview-type').textContent = formatPlaceType(place.type, place.class) + ' — ' + (coords.length) + ' vertices · ' + areaStr;
   document.getElementById('place-preview-meta').textContent = place.display_name;
   preview.style.display = 'block';
 
@@ -2832,6 +2835,23 @@ function displayResults(result) {
 }
 
 function wrapLng(lng) { return ((lng + 180) % 360 + 360) % 360 - 180; }
+
+// Polygon area in km² — Shoelace formula with equirectangular projection
+function calcPolygonAreaKm2(coords) {
+  // coords = [[lat, lon], ...]
+  if (coords.length < 3) return 0;
+  const toRad = Math.PI / 180;
+  const midLat = coords.reduce((s, c) => s + c[0], 0) / coords.length;
+  const kmPerDegLat = 111.32;
+  const kmPerDegLon = 111.32 * Math.cos(midLat * toRad);
+  let area = 0;
+  for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
+    const xi = coords[i][1] * kmPerDegLon, yi = coords[i][0] * kmPerDegLat;
+    const xj = coords[j][1] * kmPerDegLon, yj = coords[j][0] * kmPerDegLat;
+    area += (xj + xi) * (yj - yi);
+  }
+  return Math.abs(area / 2);
+}
 
 function escapeHtml(text) {
   const div = document.createElement('div');
