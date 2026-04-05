@@ -2339,7 +2339,7 @@ function getRawContributorsSQL() {
   let conditions = [];
   // Exclude 'Searching' state (band B0 + PLMN 255-255)
   conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
-  conditions.push('deviceInfo_deviceId IS NOT NULL');
+  conditions.push(`deviceInfo_deviceId != ''`);
 
   // Add polygon filters with bbox pre-filter
   if (polygons.length > 0) {
@@ -3200,7 +3200,7 @@ function buildContributorsGeoSQL() {
   const operatorFilter = document.getElementById('contrib-operator').value.trim();
 
   let conditions = [];
-  conditions.push(`deviceInfo_deviceId IS NOT NULL`);
+  conditions.push(`deviceInfo_deviceId != ''`);
 
   if (polygons.length > 0) {
     polygons.forEach(p => {
@@ -3873,11 +3873,14 @@ function generateContributorsSQL() {
   let conditions = [];
   // Exclude 'Searching' state (band B0 + PLMN 255-255)
   conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
-  conditions.push(`deviceInfo_deviceId <span class="keyword">IS NOT NULL</span>`);
+  conditions.push(`deviceInfo_deviceId != <span class="string">''</span>`);
 
-  // Add polygon filters
+  // Add polygon filters with bbox pre-filter
   if (polygons.length > 0) {
     polygons.forEach((p, idx) => {
+      const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
+      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...pLats) - 0.01).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...pLats) + 0.01).toFixed(4)}</span>`);
+      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...pLons) - 0.01).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...pLons) + 0.01).toFixed(4)}</span>`);
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pointInPolygon = `<span class="function">pointInPolygon</span>(${geoCol}, [${polyPoints}])`;
       conditions.push(p.operation === 'inside' ? pointInPolygon : `<span class="keyword">NOT</span> ${pointInPolygon}`);
