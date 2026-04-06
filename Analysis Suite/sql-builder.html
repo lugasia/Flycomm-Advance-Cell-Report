@@ -1704,16 +1704,20 @@ async function showGridHeatmap() {
   const geoCol = GEO_COL;
   const timestampCol = TIMESTAMP_COL;
 
-  // Build conditions — bbox pre-filter before expensive pointInPolygon
+  // Build conditions — OR across polygons
   let conditions = [];
-  polygons.forEach(p => {
-    const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-    conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`);
-    conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`);
-    const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-    const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-    conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
-  });
+  if (polygons.length > 0) {
+    const polyConditions = polygons.map(p => {
+      const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
+      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`;
+      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`;
+      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
+      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
+      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
+      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
+    });
+    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
+  }
 
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
@@ -2341,16 +2345,18 @@ function getRawContributorsSQL() {
   conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
   conditions.push(`deviceInfo_deviceId != ''`);
 
-  // Add polygon filters with bbox pre-filter
+  // Add polygon filters with bbox pre-filter — OR across polygons
   if (polygons.length > 0) {
-    polygons.forEach((p, idx) => {
+    const polyConditions = polygons.map(p => {
       const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`);
-      conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`);
+      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`;
+      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`;
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      conditions.push(p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`);
+      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
+      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
+      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
+    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    OR ')})`);
   }
 
   // Add operator filter
@@ -2541,14 +2547,16 @@ function getRawCellRsrpSQL() {
   }
 
   if (hasPolygons && !usePolygon) {
-    polygons.forEach(p => {
+    const polyConditions = polygons.map(p => {
       const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...lats)) - 1} AND ${Math.ceil(Math.max(...lats)) + 1}`);
-      conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...lons)) - 1} AND ${Math.ceil(Math.max(...lons)) + 1}`);
+      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...lats)) - 1} AND ${Math.ceil(Math.max(...lats)) + 1}`;
+      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...lons)) - 1} AND ${Math.ceil(Math.max(...lons)) + 1}`;
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
+      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
+      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
+    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
   }
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
@@ -3202,15 +3210,16 @@ function buildContributorsGeoSQL() {
   conditions.push(`deviceInfo_deviceId != ''`);
 
   if (polygons.length > 0) {
-    polygons.forEach(p => {
-      // Bbox pre-filter before expensive pointInPolygon
+    const polyConditions = polygons.map(p => {
       const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`);
-      conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`);
+      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`;
+      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`;
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
+      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
+      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
+    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
   }
   if (operatorFilter) {
     const operators = operatorFilter.split(',').map(s => `'${s.trim()}'`).join(', ');
@@ -3767,16 +3776,18 @@ function generateCellRsrpSQL() {
     conditions.push(`(${cellFilters.join(' <span class="keyword">OR</span> ')})`);
   }
 
-  // Polygon filter
+  // Polygon filter — OR across polygons
   if (hasPolygons && !usePolygon) {
-    polygons.forEach(p => {
+    const polyConditions = polygons.map(p => {
       const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lats)) + 1}</span>`);
-      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lons)) + 1}</span>`);
+      const bbox1 = `bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lats)) + 1}</span>`;
+      const bbox2 = `bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lons)) + 1}</span>`;
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      conditions.push(`<span class="function">${p.operation === 'inside' ? pip : 'NOT ' + pip}</span>`);
+      const pipCond = `<span class="function">${p.operation === 'inside' ? pip : 'NOT ' + pip}</span>`;
+      return `(${bbox1} <span class="keyword">AND</span> ${bbox2} <span class="keyword">AND</span> ${pipCond})`;
     });
+    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    <span class="keyword">OR</span> ')})`);
   }
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
@@ -3873,16 +3884,18 @@ function generateContributorsSQL() {
   conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
   conditions.push(`deviceInfo_deviceId != <span class="string">''</span>`);
 
-  // Add polygon filters with bbox pre-filter
+  // Add polygon filters — OR across polygons
   if (polygons.length > 0) {
-    polygons.forEach((p, idx) => {
+    const polyConditions = polygons.map(p => {
       const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLats)) + 1}</span>`);
-      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLons)) + 1}</span>`);
+      const bbox1 = `bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLats)) + 1}</span>`;
+      const bbox2 = `bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLons)) + 1}</span>`;
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pointInPolygon = `<span class="function">pointInPolygon</span>(${geoCol}, [${polyPoints}])`;
-      conditions.push(p.operation === 'inside' ? pointInPolygon : `<span class="keyword">NOT</span> ${pointInPolygon}`);
+      const pip = `<span class="function">pointInPolygon</span>(${geoCol}, [${polyPoints}])`;
+      const pipCond = p.operation === 'inside' ? pip : `<span class="keyword">NOT</span> ${pip}`;
+      return `(${bbox1} <span class="keyword">AND</span> ${bbox2} <span class="keyword">AND</span> ${pipCond})`;
     });
+    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    <span class="keyword">OR</span> ')})`);
   }
 
   // Add operator filter
