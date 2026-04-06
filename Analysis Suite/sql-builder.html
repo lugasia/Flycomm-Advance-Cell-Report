@@ -1708,8 +1708,8 @@ async function showGridHeatmap() {
   let conditions = [];
   polygons.forEach(p => {
     const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-    conditions.push(`bin_lat BETWEEN ${(Math.min(...pLats) - 0.01).toFixed(4)} AND ${(Math.max(...pLats) + 0.01).toFixed(4)}`);
-    conditions.push(`bin_lon BETWEEN ${(Math.min(...pLons) - 0.01).toFixed(4)} AND ${(Math.max(...pLons) + 0.01).toFixed(4)}`);
+    conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`);
+    conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`);
     const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
     const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
     conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
@@ -2345,8 +2345,8 @@ function getRawContributorsSQL() {
   if (polygons.length > 0) {
     polygons.forEach((p, idx) => {
       const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat BETWEEN ${(Math.min(...pLats) - 0.01).toFixed(4)} AND ${(Math.max(...pLats) + 0.01).toFixed(4)}`);
-      conditions.push(`bin_lon BETWEEN ${(Math.min(...pLons) - 0.01).toFixed(4)} AND ${(Math.max(...pLons) + 0.01).toFixed(4)}`);
+      conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`);
+      conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`);
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
       conditions.push(p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`);
@@ -2543,9 +2543,8 @@ function getRawCellRsrpSQL() {
   if (hasPolygons && !usePolygon) {
     polygons.forEach(p => {
       const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-      const bboxPad = 0.01;
-      conditions.push(`bin_lat BETWEEN ${(Math.min(...lats) - bboxPad).toFixed(4)} AND ${(Math.max(...lats) + bboxPad).toFixed(4)}`);
-      conditions.push(`bin_lon BETWEEN ${(Math.min(...lons) - bboxPad).toFixed(4)} AND ${(Math.max(...lons) + bboxPad).toFixed(4)}`);
+      conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...lats)) - 1} AND ${Math.ceil(Math.max(...lats)) + 1}`);
+      conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...lons)) - 1} AND ${Math.ceil(Math.max(...lons)) + 1}`);
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
       conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
@@ -2614,9 +2613,9 @@ function getRawSQL() {
 
   // Bounding box pre-filter: bin_lat/bin_lon let ClickHouse skip granules before expensive pointInPolygon
   const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-  const bboxPad = 0.01;
-  const bboxLat = `bin_lat BETWEEN ${(Math.min(...lats) - bboxPad).toFixed(4)} AND ${(Math.max(...lats) + bboxPad).toFixed(4)}`;
-  const bboxLon = `bin_lon BETWEEN ${(Math.min(...lons) - bboxPad).toFixed(4)} AND ${(Math.max(...lons) + bboxPad).toFixed(4)}`;
+  // bin_lat/bin_lon are floored values — use floor/ceil with margin to ensure coverage
+  const bboxLat = `bin_lat BETWEEN ${Math.floor(Math.min(...lats)) - 1} AND ${Math.ceil(Math.max(...lats)) + 1}`;
+  const bboxLon = `bin_lon BETWEEN ${Math.floor(Math.min(...lons)) - 1} AND ${Math.ceil(Math.max(...lons)) + 1}`;
 
   let sql = '';
 
@@ -3206,8 +3205,8 @@ function buildContributorsGeoSQL() {
     polygons.forEach(p => {
       // Bbox pre-filter before expensive pointInPolygon
       const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat BETWEEN ${(Math.min(...pLats) - 0.01).toFixed(4)} AND ${(Math.max(...pLats) + 0.01).toFixed(4)}`);
-      conditions.push(`bin_lon BETWEEN ${(Math.min(...pLons) - 0.01).toFixed(4)} AND ${(Math.max(...pLons) + 0.01).toFixed(4)}`);
+      conditions.push(`bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`);
+      conditions.push(`bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`);
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
       conditions.push(p.operation === 'inside' ? pip : `NOT ${pip}`);
@@ -3772,9 +3771,8 @@ function generateCellRsrpSQL() {
   if (hasPolygons && !usePolygon) {
     polygons.forEach(p => {
       const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-      const bboxPad = 0.01;
-      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...lats) - bboxPad).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...lats) + bboxPad).toFixed(4)}</span>`);
-      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...lons) - bboxPad).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...lons) + bboxPad).toFixed(4)}</span>`);
+      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lats)) + 1}</span>`);
+      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lons)) + 1}</span>`);
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
       conditions.push(`<span class="function">${p.operation === 'inside' ? pip : 'NOT ' + pip}</span>`);
@@ -3879,8 +3877,8 @@ function generateContributorsSQL() {
   if (polygons.length > 0) {
     polygons.forEach((p, idx) => {
       const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...pLats) - 0.01).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...pLats) + 0.01).toFixed(4)}</span>`);
-      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${(Math.min(...pLons) - 0.01).toFixed(4)}</span> <span class="keyword">AND</span> <span class="number">${(Math.max(...pLons) + 0.01).toFixed(4)}</span>`);
+      conditions.push(`bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLats)) + 1}</span>`);
+      conditions.push(`bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLons)) + 1}</span>`);
       const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
       const pointInPolygon = `<span class="function">pointInPolygon</span>(${geoCol}, [${polyPoints}])`;
       conditions.push(p.operation === 'inside' ? pointInPolygon : `<span class="keyword">NOT</span> ${pointInPolygon}`);
