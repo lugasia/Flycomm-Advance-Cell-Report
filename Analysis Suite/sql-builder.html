@@ -3347,8 +3347,18 @@ function addContributorLegend(totalPoints, maxUsers) {
   const existing = document.getElementById('contributor-map-legend');
   if (existing) existing.remove();
 
-  const totalUsers = contributorMapData.reduce((s, d) => s + d.unique_users, 0);
-  const totalSamples = contributorMapData.reduce((s, d) => s + d.samples, 0);
+  // Use unique user count from table query results (not geo grid sum which double-counts users across locations)
+  let totalUsers = 0;
+  if (lastQueryResults?.data?.length) {
+    // Deduplicate by the finest grouping — each unique_users value represents distinct users within that group
+    // For a correct global count we take the max across all groups as a lower bound,
+    // but sum is closer when groups don't overlap (different operators/sources)
+    totalUsers = lastQueryResults.data.reduce((s, d) => s + (parseInt(d.unique_users) || 0), 0);
+  }
+  if (totalUsers === 0) totalUsers = Math.max(...contributorMapData.map(d => d.unique_users), 0);
+  const totalSamples = lastQueryResults?.data?.length
+    ? lastQueryResults.data.reduce((s, d) => s + (parseInt(d.total_samples) || 0), 0)
+    : contributorMapData.reduce((s, d) => s + d.samples, 0);
 
   const legend = document.createElement('div');
   legend.id = 'contributor-map-legend';
