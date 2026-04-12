@@ -934,7 +934,7 @@
           </div>
 
           <label class="field">eNB / Site ID (optional, comma-separated)</label>
-          <textarea id="cell-enb-list" placeholder="e.g. 53400, 12345" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
+          <textarea id="cell-enb-list" placeholder="e.g. 53400, 00D7212" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
 
           <label class="field">ECI / ECGI (optional, comma-separated)</label>
           <textarea id="cell-ecgi-list" placeholder="e.g. 426010001174785, 615030001174017" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
@@ -2409,7 +2409,7 @@ function getRawCellSearchSQL() {
   const mcc = document.getElementById('cell-mcc').value.trim();
   const mnc = document.getElementById('cell-mnc').value.trim();
   const enbRaw = document.getElementById('cell-enb-list').value;
-  const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^[0-9A-Fa-f]+$/.test(s));
   const ecgiRaw = document.getElementById('cell-ecgi-list').value;
   const ecgiList = ecgiRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
 
@@ -2458,7 +2458,7 @@ function getRawCellSearchSQL() {
 
   // eNB / Site ID filter
   if (hasEnb) {
-    conditions.push(`s.site_id IN (${enbList.join(', ')})`);
+    conditions.push(`s.site_id IN (${enbList.map(e => `'${e}'`).join(', ')})`);
   }
 
   // ECI/ECGI filter
@@ -3630,7 +3630,7 @@ function generateCellSearchSQL() {
   const mcc = document.getElementById('cell-mcc').value.trim();
   const mnc = document.getElementById('cell-mnc').value.trim();
   const enbRaw = document.getElementById('cell-enb-list').value;
-  const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+  const enbList = enbRaw.split(',').map(s => s.trim()).filter(s => s && /^[0-9A-Fa-f]+$/.test(s));
   const ecgiRaw = document.getElementById('cell-ecgi-list').value;
   const ecgiList = ecgiRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
 
@@ -3688,7 +3688,7 @@ function generateCellSearchSQL() {
 
   // eNB / Site ID filter
   if (hasEnb) {
-    conditions.push(`s.site_id <span class="keyword">IN</span> (${enbList.join(', ')})`);
+    conditions.push(`s.site_id <span class="keyword">IN</span> (${enbList.map(e => `<span class="string">'${e}'</span>`).join(', ')})`);
   }
 
   // ECI/ECGI filter — search in site_samples map keys
@@ -4271,7 +4271,7 @@ function generateSQL() {
       const cellMcc = document.getElementById('cell-mcc').value.trim();
       const cellMnc = document.getElementById('cell-mnc').value.trim();
       const cellEnbRaw = document.getElementById('cell-enb-list').value;
-      const cellEnbList = cellEnbRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
+      const cellEnbList = cellEnbRaw.split(',').map(s => s.trim()).filter(s => s && /^[0-9A-Fa-f]+$/.test(s));
       const ecgiRaw = document.getElementById('cell-ecgi-list').value;
       const ecgiList = ecgiRaw.split(',').map(s => s.trim()).filter(s => s && /^\d+$/.test(s));
       const hasCellMcc = /^\d{3}$/.test(cellMcc);
@@ -4312,7 +4312,7 @@ function generateSQL() {
 
       // eNB / Site ID filter
       if (hasCellEnb) {
-        conditions.push(`s.site_id <span class="keyword">IN</span> (${cellEnbList.join(', ')})`);
+        conditions.push(`s.site_id <span class="keyword">IN</span> (${cellEnbList.map(e => `<span class="string">'${e}'</span>`).join(', ')})`);
       }
 
       // ECGI filter
