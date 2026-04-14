@@ -2264,6 +2264,7 @@ async function executeSQL() {
         if (btn) btn.disabled = false;
         // Fetch all polygon sites if checkbox is checked
         if (document.getElementById('rsrp-show-sites').checked) {
+          console.log('Sites overlay: checkbox checked, polygons:', polygons.length, 'connected:', isConnected);
           clearPolygonSites();
           fetchPolygonSites();
         }
@@ -6449,7 +6450,8 @@ let rsrpSitesLayer = null;
 let rsrpSitesData = null;
 
 async function fetchPolygonSites() {
-  if (!isConnected || polygons.length === 0) return;
+  if (!isConnected) { showMapToast('Sites: not connected to DB', '#ef4444'); return; }
+  if (polygons.length === 0) { showMapToast('Sites: no polygon drawn', '#f59e0b'); return; }
 
   // Build bounding box from polygons
   const allLats = [], allLons = [];
