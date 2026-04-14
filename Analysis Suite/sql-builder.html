@@ -966,6 +966,11 @@
             <label for="rsrp-use-polygon">Search globally (ignore polygon area)</label>
           </div>
 
+          <div class="checkbox-row" style="margin-top:6px">
+            <input type="checkbox" id="rsrp-show-sites">
+            <label for="rsrp-show-sites">Show all sites from DB in polygon area</label>
+          </div>
+
           <label class="field" style="margin-top:12px;">Result Limit</label>
           <input type="number" id="rsrp-limit" value="50000" min="10" max="100000" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;">
         </div>
@@ -2257,6 +2262,11 @@ async function executeSQL() {
         renderCellRsrpOnMap(result.data);
         const btn = document.getElementById('rsrp-coverage-btn');
         if (btn) btn.disabled = false;
+        // Fetch all polygon sites if checkbox is checked
+        if (document.getElementById('rsrp-show-sites').checked) {
+          clearPolygonSites();
+          fetchPolygonSites();
+        }
       }
 
       // Enable ML analysis button for cell queries
@@ -6424,6 +6434,171 @@ function clearSitesLayer() {
   if (sitesSectorLayer) { map.removeLayer(sitesSectorLayer); sitesSectorLayer = null; }
   ['sites-legend', 'sites-loading'].forEach(id => { const el = document.getElementById(id); if (el) el.remove(); });
   sitesData = null;
+}
+
+// ── Fetch ALL sites in polygon, aggregated by site_id ──
+let rsrpSitesLayer = null;
+let rsrpSitesData = null;
+
+async function fetchPolygonSites() {
+  if (!isConnected || polygons.length === 0) return;
+
+  // Build bounding box from polygons
+  const allLats = [], allLons = [];
+  polygons.forEach(p => {
+    p.coords.forEach(c => { allLats.push(c[0]); allLons.push(c[1]); });
+  });
+  const latMin = Math.min(...allLats).toFixed(6);
+  const latMax = Math.max(...allLats).toFixed(6);
+  const lonMin = Math.min(...allLons).toFixed(6);
+  const lonMax = Math.max(...allLons).toFixed(6);
+
+  // Loading indicator
+  const loadingEl = document.createElement('div');
+  loadingEl.id = 'polygon-sites-loading';
+  loadingEl.style.cssText = 'position:absolute;bottom:50px;left:12px;z-index:1000;background:rgba(10,22,40,0.88);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:11px;color:var(--sub);font-family:Inter,sans-serif;display:flex;align-items:center;gap:6px;';
+  loadingEl.innerHTML = '<div class="place-search-spinner" style="width:12px;height:12px;border-width:1.5px"></div> Loading polygon sites...';
+  document.getElementById('map').appendChild(loadingEl);
+
+  try {
+    const sql = `SELECT
+      site_id,
+      any(lat) AS lat,
+      any(lng) AS lng,
+      groupArray(DISTINCT tech) AS techs,
+      max(height) AS height,
+      count() AS row_count,
+      groupArray(sectors) AS all_sectors,
+      groupArray(DISTINCT splitByChar('_', id)[2]) AS plmns
+    FROM sites
+    WHERE lat BETWEEN ${latMin} AND ${latMax}
+      AND lng BETWEEN ${lonMin} AND ${lonMax}
+    GROUP BY site_id
+    ORDER BY row_count DESC
+    LIMIT 5000`;
+
+    const result = await executeClickHouseQuery(sql);
+    loadingEl.remove();
+    if (result && result.data && result.data.length > 0) {
+      rsrpSitesData = result.data;
+      renderPolygonSites(rsrpSitesData);
+    }
+  } catch (e) {
+    loadingEl.remove();
+    console.warn('Polygon sites fetch failed:', e.message);
+  }
+}
+
+function renderPolygonSites(data) {
+  if (rsrpSitesLayer) { map.removeLayer(rsrpSitesLayer); rsrpSitesLayer = null; }
+  if (!data || data.length === 0) return;
+
+  rsrpSitesLayer = L.layerGroup();
+
+  data.forEach(d => {
+    const lat = parseFloat(d.lat), lon = parseFloat(d.lng);
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    const techs = Array.isArray(d.techs) ? d.techs.join(', ') : (d.techs || '—');
+    const plmns = Array.isArray(d.plmns) ? d.plmns.join(', ') : (d.plmns || '—');
+    const rowCount = parseInt(d.row_count) || 1;
+
+    // Parse and aggregate sectors from all rows for this site_id
+    const allSectorsArr = Array.isArray(d.all_sectors) ? d.all_sectors : [];
+    let totalSectors = 0;
+    const seenAzimuths = new Set();
+    allSectorsArr.forEach(s => {
+      const parsed = parseSectors(s);
+      parsed.forEach(sec => seenAzimuths.add(sec.azimuth));
+      totalSectors += parsed.length;
+    });
+    const azimuths = [...seenAzimuths].sort((a, b) => a - b).map(a => a + '°').join(', ');
+
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="display:flex;align-items:center;justify-content:center;width:24px;height:24px;background:rgba(139,92,246,0.15);border:1.5px solid #8b5cf6;border-radius:50%;box-shadow:0 0 6px rgba(139,92,246,0.35)">
+        <span class="material-icons" style="font-size:14px;color:#8b5cf6">cell_tower</span>
+      </div>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -14],
+    });
+
+    const marker = L.marker([lat, lon], { icon });
+    marker.bindPopup(`
+      <div style="font-family:Inter,sans-serif;font-size:13px;min-width:200px">
+        <div style="font-weight:700;margin-bottom:6px;color:#8b5cf6;display:flex;align-items:center;gap:6px">
+          <span class="material-icons" style="font-size:15px">cell_tower</span>
+          Site ${escapeHtml(String(d.site_id))}
+        </div>
+        <div><strong>Tech:</strong> ${escapeHtml(techs)}</div>
+        <div><strong>PLMNs:</strong> ${escapeHtml(plmns)}</div>
+        <div><strong>Height:</strong> ${d.height || '—'} m</div>
+        <div><strong>DB rows:</strong> ${rowCount} (${seenAzimuths.size} unique sectors)</div>
+        ${azimuths ? '<div><strong>Azimuths:</strong> ' + azimuths + '</div>' : ''}
+        <div style="margin-top:4px;font-size:10px;color:#94a3b8">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
+      </div>
+    `, { className: 'mcc-popup' });
+    rsrpSitesLayer.addLayer(marker);
+  });
+
+  rsrpSitesLayer.addTo(map);
+  addPolygonSitesLegend(data.length);
+}
+
+function addPolygonSitesLegend(count) {
+  const existing = document.getElementById('polygon-sites-legend');
+  if (existing) existing.remove();
+
+  const ctrl = document.createElement('div');
+  ctrl.id = 'polygon-sites-legend';
+  ctrl.style.cssText = 'position:absolute;top:12px;left:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 12px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:180px;';
+
+  ctrl.innerHTML = `
+    <div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;color:#8b5cf6">
+      <span class="material-icons" style="font-size:16px">cell_tower</span>
+      DB Sites — ${count} in polygon
+    </div>
+    <div style="display:flex;gap:4px;margin-bottom:8px">
+      <button onclick="togglePolygonSites(true)" id="polygon-sites-show-btn" style="flex:1;font-size:10px;padding:3px 6px;border-radius:4px;border:1px solid #8b5cf6;background:rgba(139,92,246,0.2);color:#8b5cf6;cursor:pointer;font-weight:600">
+        Show
+      </button>
+      <button onclick="togglePolygonSites(false)" id="polygon-sites-hide-btn" style="flex:1;font-size:10px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--sub);cursor:pointer;font-weight:400">
+        Hide
+      </button>
+    </div>
+    <div style="font-size:10px;color:var(--sub);margin-bottom:6px">Aggregated by site ID</div>
+    <button onclick="clearPolygonSites()" style="width:100%;padding:4px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--sub);font-size:10px;cursor:pointer">Clear Layer</button>
+  `;
+  document.getElementById('map').appendChild(ctrl);
+}
+
+function togglePolygonSites(show) {
+  if (!rsrpSitesLayer) return;
+  if (show) {
+    rsrpSitesLayer.addTo(map);
+  } else {
+    map.removeLayer(rsrpSitesLayer);
+  }
+  const showBtn = document.getElementById('polygon-sites-show-btn');
+  const hideBtn = document.getElementById('polygon-sites-hide-btn');
+  if (showBtn && hideBtn) {
+    showBtn.style.borderColor = show ? '#8b5cf6' : 'var(--border)';
+    showBtn.style.background = show ? 'rgba(139,92,246,0.2)' : 'var(--card)';
+    showBtn.style.color = show ? '#8b5cf6' : 'var(--sub)';
+    showBtn.style.fontWeight = show ? '600' : '400';
+    hideBtn.style.borderColor = !show ? '#8b5cf6' : 'var(--border)';
+    hideBtn.style.background = !show ? 'rgba(139,92,246,0.2)' : 'var(--card)';
+    hideBtn.style.color = !show ? '#8b5cf6' : 'var(--sub)';
+    hideBtn.style.fontWeight = !show ? '600' : '400';
+  }
+}
+
+function clearPolygonSites() {
+  if (rsrpSitesLayer) { map.removeLayer(rsrpSitesLayer); rsrpSitesLayer = null; }
+  const el = document.getElementById('polygon-sites-legend');
+  if (el) el.remove();
+  rsrpSitesData = null;
 }
 
 async function fetchAndOverlaySites(resultData) {
