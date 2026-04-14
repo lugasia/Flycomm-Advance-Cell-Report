@@ -6465,14 +6465,15 @@ async function fetchPolygonSites() {
       site_id,
       any(lat) AS lat,
       any(lng) AS lng,
-      groupArray(DISTINCT tech) AS techs,
+      groupUniqArray(tech) AS techs,
       max(height) AS height,
       count() AS row_count,
       groupArray(sectors) AS all_sectors,
-      groupArray(DISTINCT splitByChar('_', id)[2]) AS plmns
+      groupUniqArray(splitByChar('_', id)[2]) AS plmns
     FROM sites
     WHERE lat BETWEEN ${latMin} AND ${latMax}
       AND lng BETWEEN ${lonMin} AND ${lonMax}
+      AND site_id != 0
     GROUP BY site_id
     ORDER BY row_count DESC
     LIMIT 5000`;
@@ -6482,6 +6483,8 @@ async function fetchPolygonSites() {
     if (result && result.data && result.data.length > 0) {
       rsrpSitesData = result.data;
       renderPolygonSites(rsrpSitesData);
+    } else {
+      console.warn('Polygon sites: no data returned');
     }
   } catch (e) {
     loadingEl.remove();
@@ -6552,23 +6555,25 @@ function addPolygonSitesLegend(count) {
 
   const ctrl = document.createElement('div');
   ctrl.id = 'polygon-sites-legend';
-  ctrl.style.cssText = 'position:absolute;top:12px;left:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 12px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:180px;';
+  ctrl.style.cssText = 'position:absolute;top:12px;right:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 14px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:190px;';
 
   ctrl.innerHTML = `
     <div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;color:#8b5cf6">
       <span class="material-icons" style="font-size:16px">cell_tower</span>
-      DB Sites — ${count} in polygon
+      DB Sites — ${count} in area
     </div>
-    <div style="display:flex;gap:4px;margin-bottom:8px">
-      <button onclick="togglePolygonSites(true)" id="polygon-sites-show-btn" style="flex:1;font-size:10px;padding:3px 6px;border-radius:4px;border:1px solid #8b5cf6;background:rgba(139,92,246,0.2);color:#8b5cf6;cursor:pointer;font-weight:600">
-        Show
+    <div style="display:flex;gap:4px;margin-bottom:6px">
+      <button onclick="togglePolygonSites(true)" id="polygon-sites-show-btn" style="flex:1;font-size:11px;padding:5px 8px;border-radius:6px;border:1px solid #8b5cf6;background:rgba(139,92,246,0.2);color:#8b5cf6;cursor:pointer;font-weight:600">
+        <span class="material-icons" style="font-size:13px;vertical-align:middle;margin-right:2px">visibility</span> Show
       </button>
-      <button onclick="togglePolygonSites(false)" id="polygon-sites-hide-btn" style="flex:1;font-size:10px;padding:3px 6px;border-radius:4px;border:1px solid var(--border);background:var(--card);color:var(--sub);cursor:pointer;font-weight:400">
-        Hide
+      <button onclick="togglePolygonSites(false)" id="polygon-sites-hide-btn" style="flex:1;font-size:11px;padding:5px 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--sub);cursor:pointer;font-weight:400">
+        <span class="material-icons" style="font-size:13px;vertical-align:middle;margin-right:2px">visibility_off</span> Hide
       </button>
     </div>
     <div style="font-size:10px;color:var(--sub);margin-bottom:6px">Aggregated by site ID</div>
-    <button onclick="clearPolygonSites()" style="width:100%;padding:4px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--sub);font-size:10px;cursor:pointer">Clear Layer</button>
+    <button onclick="clearPolygonSites()" style="width:100%;padding:4px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--sub);font-size:10px;cursor:pointer">
+      <span class="material-icons" style="font-size:11px;vertical-align:middle">close</span> Clear Layer
+    </button>
   `;
   document.getElementById('map').appendChild(ctrl);
 }
@@ -6576,28 +6581,23 @@ function addPolygonSitesLegend(count) {
 function togglePolygonSites(show) {
   if (!rsrpSitesLayer) return;
   if (show) {
-    rsrpSitesLayer.addTo(map);
+    if (!map.hasLayer(rsrpSitesLayer)) rsrpSitesLayer.addTo(map);
   } else {
     map.removeLayer(rsrpSitesLayer);
   }
   const showBtn = document.getElementById('polygon-sites-show-btn');
   const hideBtn = document.getElementById('polygon-sites-hide-btn');
   if (showBtn && hideBtn) {
-    showBtn.style.borderColor = show ? '#8b5cf6' : 'var(--border)';
-    showBtn.style.background = show ? 'rgba(139,92,246,0.2)' : 'var(--card)';
-    showBtn.style.color = show ? '#8b5cf6' : 'var(--sub)';
-    showBtn.style.fontWeight = show ? '600' : '400';
-    hideBtn.style.borderColor = !show ? '#8b5cf6' : 'var(--border)';
-    hideBtn.style.background = !show ? 'rgba(139,92,246,0.2)' : 'var(--card)';
-    hideBtn.style.color = !show ? '#8b5cf6' : 'var(--sub)';
-    hideBtn.style.fontWeight = !show ? '600' : '400';
+    showBtn.style.cssText = `flex:1;font-size:11px;padding:5px 8px;border-radius:6px;cursor:pointer;border:1px solid ${show ? '#8b5cf6' : 'var(--border)'};background:${show ? 'rgba(139,92,246,0.2)' : 'var(--card)'};color:${show ? '#8b5cf6' : 'var(--sub)'};font-weight:${show ? '600' : '400'}`;
+    hideBtn.style.cssText = `flex:1;font-size:11px;padding:5px 8px;border-radius:6px;cursor:pointer;border:1px solid ${!show ? '#8b5cf6' : 'var(--border)'};background:${!show ? 'rgba(139,92,246,0.2)' : 'var(--card)'};color:${!show ? '#8b5cf6' : 'var(--sub)'};font-weight:${!show ? '600' : '400'}`;
   }
 }
 
 function clearPolygonSites() {
   if (rsrpSitesLayer) { map.removeLayer(rsrpSitesLayer); rsrpSitesLayer = null; }
-  const el = document.getElementById('polygon-sites-legend');
-  if (el) el.remove();
+  ['polygon-sites-legend', 'polygon-sites-loading'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.remove();
+  });
   rsrpSitesData = null;
 }
 
