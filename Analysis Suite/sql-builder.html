@@ -6436,6 +6436,14 @@ function clearSitesLayer() {
   sitesData = null;
 }
 
+function showMapToast(msg, color) {
+  const t = document.createElement('div');
+  t.style.cssText = `position:absolute;bottom:50px;left:50%;transform:translateX(-50%);z-index:1100;background:rgba(10,22,40,0.95);border:1px solid ${color || 'var(--border)'};border-radius:8px;padding:8px 16px;font-size:12px;color:${color || 'var(--text)'};font-family:Inter,sans-serif;white-space:nowrap;`;
+  t.textContent = msg;
+  document.getElementById('map').appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
 // ── Fetch ALL sites in polygon, aggregated by site_id ──
 let rsrpSitesLayer = null;
 let rsrpSitesData = null;
@@ -6474,6 +6482,7 @@ async function fetchPolygonSites() {
     WHERE lat BETWEEN ${latMin} AND ${latMax}
       AND lng BETWEEN ${lonMin} AND ${lonMax}
       AND site_id != 0
+      AND toString(site_id) != ''
     GROUP BY site_id
     ORDER BY row_count DESC
     LIMIT 5000`;
@@ -6484,10 +6493,11 @@ async function fetchPolygonSites() {
       rsrpSitesData = result.data;
       renderPolygonSites(rsrpSitesData);
     } else {
-      console.warn('Polygon sites: no data returned');
+      showMapToast('No sites found in polygon area', '#f59e0b');
     }
   } catch (e) {
     loadingEl.remove();
+    showMapToast('Sites query failed: ' + e.message, '#ef4444');
     console.warn('Polygon sites fetch failed:', e.message);
   }
 }
@@ -6555,7 +6565,7 @@ function addPolygonSitesLegend(count) {
 
   const ctrl = document.createElement('div');
   ctrl.id = 'polygon-sites-legend';
-  ctrl.style.cssText = 'position:absolute;top:12px;right:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 14px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:190px;';
+  ctrl.style.cssText = 'position:absolute;bottom:60px;right:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 14px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:190px;';
 
   ctrl.innerHTML = `
     <div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;color:#8b5cf6">
