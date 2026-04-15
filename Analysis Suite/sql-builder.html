@@ -3171,7 +3171,7 @@ function renderCoverageOnMap(results) {
   // ── 4. COVERAGE LEGEND ──
   const legend = document.createElement('div');
   legend.id = 'coverage-legend';
-  legend.style.cssText = 'position:fixed;bottom:60px;right:16px;z-index:1000;background:rgba(10,22,40,0.92);border:1px solid #334155;border-radius:10px;padding:12px 16px;font-size:12px;color:#e2e8f0;box-shadow:0 4px 16px rgba(0,0,0,0.4)';
+  legend.style.cssText = 'position:fixed;top:12px;right:16px;z-index:1000;background:rgba(10,22,40,0.92);border:1px solid #334155;border-radius:10px;padding:12px 16px;font-size:12px;color:#e2e8f0;box-shadow:0 4px 16px rgba(0,0,0,0.4)';
   legend.innerHTML = `
     <div style="font-weight:700;margin-bottom:8px;color:#3b82f6">RSRP Coverage</div>
     <div style="display:flex;flex-direction:column;gap:4px">
@@ -6570,7 +6570,7 @@ function addPolygonSitesLegend(count) {
 
   const ctrl = document.createElement('div');
   ctrl.id = 'polygon-sites-legend';
-  ctrl.style.cssText = 'position:absolute;bottom:60px;right:12px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 14px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:190px;';
+  ctrl.style.cssText = 'position:fixed;top:230px;right:16px;z-index:1000;background:rgba(10,22,40,0.92);backdrop-filter:blur(8px);border:1px solid rgba(139,92,246,0.4);border-radius:12px;padding:10px 14px;color:var(--text);font-family:Inter,sans-serif;font-size:12px;min-width:190px;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
 
   ctrl.innerHTML = `
     <div style="font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:6px;color:#8b5cf6">
@@ -6627,50 +6627,48 @@ function highlightUnmatchedCells() {
   // Build set of known site_ids from DB
   const knownSiteIds = new Set(rsrpSitesData.map(s => String(s.site_id)));
 
-  // Group RSRP results by eNB to get unique sites
-  const enbMap = {};
+  unmatchedSitesLayer = L.layerGroup();
+  let count = 0;
+  const seenEnbs = new Set();
+
+  // Check each RSRP cell — draw red dashed ring around each unmatched one
   lastQueryResults.data.forEach(d => {
     const enb = String(d.cell_enb || '');
     if (!enb || enb === '0') return;
-    if (!enbMap[enb]) {
-      enbMap[enb] = { lat: parseFloat(d.latitude), lon: parseFloat(d.longitude), enb, plmn: d.network_PLMN || '', operator: d.network_operator || '' };
-    }
-  });
+    if (knownSiteIds.has(enb)) return; // matched in DB — skip
 
-  unmatchedSitesLayer = L.layerGroup();
-  let count = 0;
+    const lat = parseFloat(d.latitude), lon = parseFloat(d.longitude);
+    if (isNaN(lat) || isNaN(lon)) return;
 
-  Object.values(enbMap).forEach(site => {
-    if (knownSiteIds.has(site.enb)) return; // matched — skip
-    if (isNaN(site.lat) || isNaN(site.lon)) return;
-
-    const circle = L.circle([site.lat, site.lon], {
-      radius: 120,
+    const circle = L.circleMarker([lat, lon], {
+      radius: 18,
       color: '#ef4444',
       weight: 2,
-      dashArray: '6, 4',
+      dashArray: '5, 4',
       fill: false,
-      opacity: 0.8,
+      opacity: 0.85,
     });
     circle.bindPopup(`
       <div style="font-family:Inter,sans-serif;font-size:13px;min-width:180px">
         <div style="font-weight:700;color:#ef4444;margin-bottom:4px">
           <span class="material-icons" style="font-size:14px;vertical-align:middle">warning</span>
-          Unknown Site
+          Not in Sites DB
         </div>
-        <div><strong>eNB:</strong> ${escapeHtml(site.enb)}</div>
-        <div><strong>PLMN:</strong> ${escapeHtml(site.plmn)}</div>
-        <div><strong>Operator:</strong> ${escapeHtml(site.operator)}</div>
-        <div style="margin-top:4px;font-size:10px;color:#94a3b8">Not found in sites DB</div>
+        <div><strong>eNB:</strong> ${escapeHtml(enb)}</div>
+        <div><strong>ECI:</strong> ${escapeHtml(String(d.cell_eci || '—'))}</div>
+        <div><strong>PLMN:</strong> ${escapeHtml(d.network_PLMN || '—')}</div>
+        <div><strong>Operator:</strong> ${escapeHtml(d.network_operator || '—')}</div>
+        <div style="margin-top:4px;font-size:10px;color:#94a3b8">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
       </div>
     `, { className: 'mcc-popup' });
     unmatchedSitesLayer.addLayer(circle);
+    seenEnbs.add(enb);
     count++;
   });
 
   if (count > 0) {
     unmatchedSitesLayer.addTo(map);
-    showMapToast(`${count} cells not in sites DB`, '#ef4444');
+    showMapToast(`${seenEnbs.size} unknown eNBs (${count} cells) not in sites DB`, '#ef4444');
   }
 }
 
