@@ -2263,10 +2263,10 @@ async function executeSQL() {
         const btn = document.getElementById('rsrp-coverage-btn');
         if (btn) btn.disabled = false;
         // Fetch all polygon sites if checkbox is checked
-        if (document.getElementById('rsrp-show-sites').checked) {
-          console.log('Sites overlay: checkbox checked, polygons:', polygons.length, 'connected:', isConnected);
+        const sitesCheckbox = document.getElementById('rsrp-show-sites');
+        if (sitesCheckbox && sitesCheckbox.checked) {
           clearPolygonSites();
-          fetchPolygonSites();
+          fetchPolygonSites().catch(err => console.error('fetchPolygonSites error:', err));
         }
       }
 
@@ -6451,17 +6451,26 @@ let rsrpSitesData = null;
 
 async function fetchPolygonSites() {
   if (!isConnected) { showMapToast('Sites: not connected to DB', '#ef4444'); return; }
-  if (polygons.length === 0) { showMapToast('Sites: no polygon drawn', '#f59e0b'); return; }
 
-  // Build bounding box from polygons
-  const allLats = [], allLons = [];
-  polygons.forEach(p => {
-    p.coords.forEach(c => { allLats.push(c[0]); allLons.push(c[1]); });
-  });
-  const latMin = Math.min(...allLats).toFixed(6);
-  const latMax = Math.max(...allLats).toFixed(6);
-  const lonMin = Math.min(...allLons).toFixed(6);
-  const lonMax = Math.max(...allLons).toFixed(6);
+  // Get bounding box from polygons or from current map view
+  let latMin, latMax, lonMin, lonMax;
+  if (polygons.length > 0) {
+    const allLats = [], allLons = [];
+    polygons.forEach(p => {
+      p.coords.forEach(c => { allLats.push(c[0]); allLons.push(c[1]); });
+    });
+    latMin = Math.min(...allLats).toFixed(6);
+    latMax = Math.max(...allLats).toFixed(6);
+    lonMin = Math.min(...allLons).toFixed(6);
+    lonMax = Math.max(...allLons).toFixed(6);
+  } else {
+    // Fallback: use current map bounds
+    const bounds = map.getBounds();
+    latMin = bounds.getSouth().toFixed(6);
+    latMax = bounds.getNorth().toFixed(6);
+    lonMin = bounds.getWest().toFixed(6);
+    lonMax = bounds.getEast().toFixed(6);
+  }
 
   // Loading indicator
   const loadingEl = document.createElement('div');
@@ -6471,36 +6480,36 @@ async function fetchPolygonSites() {
   document.getElementById('map').appendChild(loadingEl);
 
   try {
-    const sql = `SELECT
-      site_id,
-      any(lat) AS lat,
-      any(lng) AS lng,
-      groupUniqArray(tech) AS techs,
-      max(height) AS height,
-      count() AS row_count,
-      groupArray(sectors) AS all_sectors,
-      groupUniqArray(splitByChar('_', id)[2]) AS plmns
-    FROM sites
-    WHERE lat BETWEEN ${latMin} AND ${latMax}
-      AND lng BETWEEN ${lonMin} AND ${lonMax}
-      AND site_id != 0
-      AND toString(site_id) != ''
-    GROUP BY site_id
-    ORDER BY row_count DESC
-    LIMIT 5000`;
+    const sql = `SELECT site_id, lat, lng, tech, height, sectors, splitByChar('_', id)[2] AS plmn FROM sites WHERE lat BETWEEN ${latMin} AND ${latMax} AND lng BETWEEN ${lonMin} AND ${lonMax} LIMIT 10000`;
 
     const result = await executeClickHouseQuery(sql);
     loadingEl.remove();
     if (result && result.data && result.data.length > 0) {
-      rsrpSitesData = result.data;
+      // Aggregate client-side by site_id
+      const siteMap = {};
+      result.data.forEach(d => {
+        const sid = String(d.site_id);
+        if (!sid || sid === '0') return;
+        if (!siteMap[sid]) {
+          siteMap[sid] = { site_id: sid, lat: parseFloat(d.lat), lng: parseFloat(d.lng), techs: new Set(), plmns: new Set(), height: 0, rows: 0, azimuths: new Set() };
+        }
+        const s = siteMap[sid];
+        s.rows++;
+        if (d.tech) s.techs.add(d.tech);
+        if (d.plmn) s.plmns.add(d.plmn);
+        if (d.height && parseFloat(d.height) > s.height) s.height = parseFloat(d.height);
+        parseSectors(d.sectors).forEach(sec => s.azimuths.add(sec.azimuth));
+      });
+      rsrpSitesData = Object.values(siteMap);
       renderPolygonSites(rsrpSitesData);
+      showMapToast(`Loaded ${rsrpSitesData.length} sites from DB`, '#8b5cf6');
     } else {
-      showMapToast('No sites found in polygon area', '#f59e0b');
+      showMapToast('No sites found in area', '#f59e0b');
     }
   } catch (e) {
     loadingEl.remove();
     showMapToast('Sites query failed: ' + e.message, '#ef4444');
-    console.warn('Polygon sites fetch failed:', e.message);
+    console.error('Polygon sites fetch failed:', e);
   }
 }
 
@@ -6514,20 +6523,10 @@ function renderPolygonSites(data) {
     const lat = parseFloat(d.lat), lon = parseFloat(d.lng);
     if (isNaN(lat) || isNaN(lon)) return;
 
-    const techs = Array.isArray(d.techs) ? d.techs.join(', ') : (d.techs || '—');
-    const plmns = Array.isArray(d.plmns) ? d.plmns.join(', ') : (d.plmns || '—');
-    const rowCount = parseInt(d.row_count) || 1;
-
-    // Parse and aggregate sectors from all rows for this site_id
-    const allSectorsArr = Array.isArray(d.all_sectors) ? d.all_sectors : [];
-    let totalSectors = 0;
-    const seenAzimuths = new Set();
-    allSectorsArr.forEach(s => {
-      const parsed = parseSectors(s);
-      parsed.forEach(sec => seenAzimuths.add(sec.azimuth));
-      totalSectors += parsed.length;
-    });
-    const azimuths = [...seenAzimuths].sort((a, b) => a - b).map(a => a + '°').join(', ');
+    const techs = [...(d.techs || [])].join(', ') || '—';
+    const plmns = [...(d.plmns || [])].join(', ') || '—';
+    const azimuths = [...(d.azimuths || [])].sort((a, b) => a - b).map(a => a + '°').join(', ');
+    const sectorCount = (d.azimuths || new Set()).size;
 
     const icon = L.divIcon({
       className: '',
@@ -6549,7 +6548,7 @@ function renderPolygonSites(data) {
         <div><strong>Tech:</strong> ${escapeHtml(techs)}</div>
         <div><strong>PLMNs:</strong> ${escapeHtml(plmns)}</div>
         <div><strong>Height:</strong> ${d.height || '—'} m</div>
-        <div><strong>DB rows:</strong> ${rowCount} (${seenAzimuths.size} unique sectors)</div>
+        <div><strong>DB rows:</strong> ${d.rows} (${sectorCount} sectors)</div>
         ${azimuths ? '<div><strong>Azimuths:</strong> ' + azimuths + '</div>' : ''}
         <div style="margin-top:4px;font-size:10px;color:#94a3b8">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
       </div>
