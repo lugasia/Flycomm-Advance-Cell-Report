@@ -813,7 +813,13 @@
     #map-data-panel .panel-header .meta { font-size: 11px; color: var(--sub); }
     #map-data-panel .panel-body { overflow-y: auto; flex: 1; }
     #map-data-panel table { width: 100%; border-collapse: collapse; font-size: 11px; }
-    #map-data-panel th { background: rgba(15,29,50,0.9); padding: 7px 10px; text-align: left; font-weight: 600; color: var(--sub); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; }
+    #map-data-panel th { background: rgba(15,29,50,0.9); padding: 7px 10px; text-align: left; font-weight: 600; color: var(--sub); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; font-size: 10px; text-transform: uppercase; letter-spacing: 0.3px; cursor: pointer; user-select: none; }
+    #map-data-panel th:hover { color: var(--accent); }
+    #map-data-panel th .sort-arrow { font-size: 10px; margin-left: 2px; opacity: 0.5; }
+    #map-data-panel th.sorted .sort-arrow { opacity: 1; color: var(--accent); }
+    #map-data-panel .panel-search { background: var(--navy); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 10px; font-size: 11px; font-family: 'JetBrains Mono', monospace; width: 180px; margin-right: 8px; }
+    #map-data-panel .panel-search:focus { outline: none; border-color: var(--accent); }
+    #map-data-panel .panel-search::placeholder { color: var(--sub); }
     #map-data-panel td { padding: 6px 10px; border-bottom: 1px solid rgba(30,45,74,0.5); font-family: 'JetBrains Mono', monospace; font-size: 11px; white-space: nowrap; }
     #map-data-panel tr { cursor: pointer; }
     #map-data-panel tr:hover td { background: rgba(59,130,246,0.1); }
@@ -6358,16 +6364,101 @@ function renderCellRsrpOnMap(data) {
   showCellRsrpDataPanel(data, plmnColorMap);
 }
 
+// ── RSRP Coverage Data Panel (sortable + searchable) ──
+let _rsrpPanelData = null;
+let _rsrpPanelPlmnMap = null;
+let _rsrpSortCol = null;
+let _rsrpSortAsc = true;
+
+const RSRP_COLUMNS = [
+  { key: 'tech',     label: 'Tech',     get: d => d.tech || '' },
+  { key: 'enb',      label: 'eNB/RNC',  get: d => d.cell_enb || d.cell_rnc || d.cell_lac || '' },
+  { key: 'eci',      label: 'ECI/CI',   get: d => d.cell_eci || d.cell_nci || d.cell_ci || '' },
+  { key: 'ecgi',     label: 'ECGI/CGI', get: d => d.cell_ecgi || d.cell_cgi || d.cell_nci || '' },
+  { key: 'plmn',     label: 'PLMN',     get: d => d.network_PLMN || '' },
+  { key: 'operator', label: 'Operator', get: d => d.network_operator || '' },
+  { key: 'samples',  label: 'Samples',  get: d => parseInt(d.samples) || 0, numeric: true },
+  { key: 'avg_rsrp', label: 'Avg RSRP', get: d => parseFloat(d.avg_rsrp) || -999, numeric: true },
+  { key: 'min_rsrp', label: 'Min',      get: d => parseInt(d.min_rsrp) || -999, numeric: true },
+  { key: 'max_rsrp', label: 'Max',      get: d => parseInt(d.max_rsrp) || -999, numeric: true },
+  { key: 'tac_lac',  label: 'TAC/LAC',  get: d => d.cell_tac || d.cell_lac || '' },
+  { key: 'pci',      label: 'PCI',      get: d => parseInt(d.cell_pci) || 0, numeric: true },
+];
+
 function showCellRsrpDataPanel(data, plmnColorMap) {
+  _rsrpPanelData = data;
+  _rsrpPanelPlmnMap = plmnColorMap;
+  _rsrpSortCol = null;
+  _rsrpSortAsc = true;
+
   const panel = document.getElementById('map-data-panel');
-  const body = document.getElementById('panel-body');
   document.getElementById('panel-title').textContent = 'Cell/eNB RSRP Coverage — Results';
-  document.getElementById('panel-meta').textContent = data.length + ' cells';
-  body.style.display = '';
   document.getElementById('panel-minimize-btn').textContent = '_';
 
-  let html = '<table><thead><tr><th>Tech</th><th>eNB</th><th>ECI</th><th>ECGI/CGI</th><th>PLMN</th><th>Operator</th><th>Samples</th><th>Avg RSRP</th><th>Min</th><th>Max</th><th>TAC/LAC</th><th>PCI</th></tr></thead><tbody>';
-  data.forEach(d => {
+  // Add search input next to meta
+  const metaEl = document.getElementById('panel-meta');
+  metaEl.innerHTML = `<input type="text" id="rsrp-panel-search" class="panel-search" placeholder="Search..." oninput="renderRsrpTable()"> <span id="rsrp-panel-count">${data.length} cells</span>`;
+
+  const body = document.getElementById('panel-body');
+  body.style.display = '';
+  renderRsrpTable();
+  panel.classList.add('visible');
+}
+
+function sortRsrpBy(colKey) {
+  if (_rsrpSortCol === colKey) {
+    _rsrpSortAsc = !_rsrpSortAsc;
+  } else {
+    _rsrpSortCol = colKey;
+    _rsrpSortAsc = true;
+  }
+  renderRsrpTable();
+}
+
+function renderRsrpTable() {
+  if (!_rsrpPanelData) return;
+  const body = document.getElementById('panel-body');
+  const searchEl = document.getElementById('rsrp-panel-search');
+  const countEl = document.getElementById('rsrp-panel-count');
+  const query = (searchEl?.value || '').toLowerCase();
+
+  // Filter
+  let filtered = _rsrpPanelData;
+  if (query) {
+    filtered = filtered.filter(d => {
+      const haystack = [d.tech, d.cell_enb, d.cell_eci, d.cell_ci, d.cell_ecgi, d.cell_cgi, d.cell_nci,
+        d.network_PLMN, d.network_operator, d.cell_tac, d.cell_lac, d.cell_pci, d.cell_rnc, d.cell_cid
+      ].map(v => String(v || '')).join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+  }
+
+  // Sort
+  if (_rsrpSortCol) {
+    const col = RSRP_COLUMNS.find(c => c.key === _rsrpSortCol);
+    if (col) {
+      filtered = [...filtered].sort((a, b) => {
+        let va = col.get(a), vb = col.get(b);
+        if (col.numeric) return _rsrpSortAsc ? va - vb : vb - va;
+        va = String(va).toLowerCase(); vb = String(vb).toLowerCase();
+        return _rsrpSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+    }
+  }
+
+  if (countEl) countEl.textContent = `${filtered.length} / ${_rsrpPanelData.length} cells`;
+
+  // Header
+  let html = '<table><thead><tr>';
+  RSRP_COLUMNS.forEach(col => {
+    const isSorted = _rsrpSortCol === col.key;
+    const arrow = isSorted ? (_rsrpSortAsc ? '▲' : '▼') : '▲';
+    html += `<th class="${isSorted ? 'sorted' : ''}" onclick="sortRsrpBy('${col.key}')">${col.label}<span class="sort-arrow">${arrow}</span></th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  // Rows
+  filtered.forEach(d => {
     const lat = parseFloat(d.latitude) || 0, lon = parseFloat(d.longitude) || 0;
     const plmn = d.network_PLMN || '';
     const mcc = d.network_mcc || '';
@@ -6383,13 +6474,13 @@ function showCellRsrpDataPanel(data, plmnColorMap) {
       else if (avgRsrp > -110) rsrpColor = '#f97316';
       else rsrpColor = '#dc2626';
     }
-    // Show the best global ID available
     const globalId = d.cell_ecgi || d.cell_cgi || d.cell_nci || '—';
     const cellId = d.cell_eci || d.cell_nci || d.cell_ci || '—';
+    const siteId = d.cell_enb || d.cell_rnc || d.cell_lac || '—';
     const areaCode = d.cell_tac || d.cell_lac || '—';
     html += `<tr onclick="flyToPoint(${lat},${lon},16)" title="Click to fly">
       <td>${d.tech || '—'}</td>
-      <td>${d.cell_enb || '—'}</td>
+      <td>${siteId}</td>
       <td>${cellId}</td>
       <td style="font-size:10px">${globalId}</td>
       <td><span class="badge ${cls}">${escapeHtml(plmn)}</span></td>
@@ -6404,7 +6495,6 @@ function showCellRsrpDataPanel(data, plmnColorMap) {
   });
   html += '</tbody></table>';
   body.innerHTML = html;
-  panel.classList.add('visible');
 }
 
 // ════════════════════════════════════════════════════════════════
