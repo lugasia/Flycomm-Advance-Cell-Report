@@ -952,10 +952,10 @@
             Search <strong style="color:var(--text)">measurements</strong> by cell identifiers with RSRP coverage (all RATs: 2G/3G/4G/5G)
           </p>
 
-          <label class="field">eNB / gNB / Site ID <span style="color:var(--sub);font-weight:400">(4G eNodeB, 5G gNodeB)</span></label>
+          <label class="field">eNB / gNB / RNC / LAC <span style="color:var(--sub);font-weight:400">(4G eNB, 5G gNB, 3G RNC, 2G LAC)</span></label>
           <textarea id="rsrp-enb-list" placeholder="e.g. 12345, 67890" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
 
-          <label class="field">ECI / NCI <span style="color:var(--sub);font-weight:400">(4G E-UTRAN Cell ID, 5G NR Cell ID)</span></label>
+          <label class="field">ECI / NCI / CI / CID <span style="color:var(--sub);font-weight:400">(4G ECI, 5G NCI, 3G/2G Cell ID)</span></label>
           <textarea id="rsrp-eci-list" placeholder="e.g. 111, 222, 333" rows="2" style="width:100%;padding:10px 12px;background:var(--navy);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px;font-family:'JetBrains Mono',monospace;resize:vertical;margin-bottom:12px;"></textarea>
 
           <label class="field">ECGI / CGI <span style="color:var(--sub);font-weight:400">(full global ID, e.g. 42501...)</span></label>
@@ -2549,9 +2549,10 @@ function getRawCellRsrpSQL() {
   conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
 
   // Cell identity filters — combined with OR when multiple types given
+  // Covers all RATs: 2G (LAC/CI/CGI), 3G (RNC/CI/CGI), 4G (eNB/ECI/ECGI), 5G (gNB/NCI/NCGI)
   const cellFilters = [];
-  if (hasEnb) cellFilters.push(`cell_enb IN (${enbList.join(', ')})`);
-  if (hasEci) cellFilters.push(`cell_eci IN (${eciList.join(', ')}) OR cell_nci IN (${eciList.join(', ')})`);
+  if (hasEnb) cellFilters.push(`cell_enb IN (${enbList.join(', ')}) OR cell_rnc IN (${enbList.join(', ')}) OR cell_lac IN (${enbList.join(', ')})`);
+  if (hasEci) cellFilters.push(`cell_eci IN (${eciList.join(', ')}) OR cell_nci IN (${eciList.join(', ')}) OR cell_ci IN (${eciList.join(', ')}) OR cell_cid IN (${eciList.join(', ')})`);
   if (hasEcgi) cellFilters.push(`cell_ecgi IN (${ecgiList.map(e => `'${e}'`).join(', ')}) OR cell_cgi IN (${ecgiList.map(e => `'${e}'`).join(', ')})`);
   if (cellFilters.length > 0) {
     conditions.push(`(${cellFilters.join(' OR ')})`);
@@ -3785,10 +3786,10 @@ function generateCellRsrpSQL() {
   conditions.push(`signal_rsrp != <span class="number">0</span>`);
   conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
 
-  // Cell identity filters
+  // Cell identity filters — all RATs: 2G/3G/4G/5G
   const cellFilters = [];
-  if (hasEnb) cellFilters.push(`cell_enb <span class="keyword">IN</span> (${enbList.join(', ')})`);
-  if (hasEci) cellFilters.push(`cell_eci <span class="keyword">IN</span> (${eciList.join(', ')}) <span class="keyword">OR</span> cell_nci <span class="keyword">IN</span> (${eciList.join(', ')})`);
+  if (hasEnb) cellFilters.push(`cell_enb <span class="keyword">IN</span> (${enbList.join(', ')}) <span class="keyword">OR</span> cell_rnc <span class="keyword">IN</span> (${enbList.join(', ')}) <span class="keyword">OR</span> cell_lac <span class="keyword">IN</span> (${enbList.join(', ')})`);
+  if (hasEci) cellFilters.push(`cell_eci <span class="keyword">IN</span> (${eciList.join(', ')}) <span class="keyword">OR</span> cell_nci <span class="keyword">IN</span> (${eciList.join(', ')}) <span class="keyword">OR</span> cell_ci <span class="keyword">IN</span> (${eciList.join(', ')}) <span class="keyword">OR</span> cell_cid <span class="keyword">IN</span> (${eciList.join(', ')})`);
   if (hasEcgi) {
     const ecgiStrs = ecgiList.map(e => `<span class="string">'${e}'</span>`).join(', ');
     cellFilters.push(`cell_ecgi <span class="keyword">IN</span> (${ecgiStrs}) <span class="keyword">OR</span> cell_cgi <span class="keyword">IN</span> (${ecgiStrs})`);
@@ -6619,7 +6620,7 @@ function clearPolygonSites() {
   rsrpSitesData = null;
 }
 
-// ── Highlight RSRP cells whose eNB is NOT in sites DB ──
+// ── Highlight RSRP cells whose site is NOT in sites DB ──
 function highlightUnmatchedCells() {
   if (unmatchedSitesLayer) { map.removeLayer(unmatchedSitesLayer); unmatchedSitesLayer = null; }
   if (!rsrpSitesData || !lastQueryResults?.data) return;
@@ -6629,16 +6630,38 @@ function highlightUnmatchedCells() {
 
   unmatchedSitesLayer = L.layerGroup();
   let count = 0;
-  const seenEnbs = new Set();
+  const seenSites = new Set();
 
-  // Check each RSRP cell — draw red dashed ring around each unmatched one
+  // Check each RSRP cell — derive site identifier per RAT
   lastQueryResults.data.forEach(d => {
-    const enb = String(d.cell_enb || '');
-    if (!enb || enb === '0') return;
-    if (knownSiteIds.has(enb)) return; // matched in DB — skip
+    const tech = (d.tech || '').toUpperCase();
+    let siteId = '';
+    let siteLabel = '';
+
+    if (tech === 'NR' || tech === 'LTE') {
+      // 4G/5G: use eNB (= ECI >> 8)
+      siteId = String(d.cell_enb || '');
+      siteLabel = `eNB: ${siteId}`;
+    } else if (tech === 'WCDMA') {
+      // 3G: use RNC (site-level), fall back to LAC
+      siteId = String(d.cell_rnc || d.cell_lac || '');
+      siteLabel = d.cell_rnc ? `RNC: ${siteId}` : `LAC: ${siteId}`;
+    } else if (tech === 'GSM') {
+      // 2G: use LAC (site-level)
+      siteId = String(d.cell_lac || '');
+      siteLabel = `LAC: ${siteId}`;
+    } else {
+      siteId = String(d.cell_enb || d.cell_lac || '');
+      siteLabel = `ID: ${siteId}`;
+    }
+
+    if (!siteId || siteId === '0') return;
+    if (knownSiteIds.has(siteId)) return; // matched in DB — skip
 
     const lat = parseFloat(d.latitude), lon = parseFloat(d.longitude);
     if (isNaN(lat) || isNaN(lon)) return;
+
+    const cellId = d.cell_eci || d.cell_ci || d.cell_cid || d.cell_nci || '—';
 
     const circle = L.circleMarker([lat, lon], {
       radius: 18,
@@ -6654,21 +6677,22 @@ function highlightUnmatchedCells() {
           <span class="material-icons" style="font-size:14px;vertical-align:middle">warning</span>
           Not in Sites DB
         </div>
-        <div><strong>eNB:</strong> ${escapeHtml(enb)}</div>
-        <div><strong>ECI:</strong> ${escapeHtml(String(d.cell_eci || '—'))}</div>
+        <div><strong>Tech:</strong> ${escapeHtml(tech || '—')}</div>
+        <div><strong>${escapeHtml(siteLabel)}</strong></div>
+        <div><strong>Cell ID:</strong> ${escapeHtml(String(cellId))}</div>
         <div><strong>PLMN:</strong> ${escapeHtml(d.network_PLMN || '—')}</div>
         <div><strong>Operator:</strong> ${escapeHtml(d.network_operator || '—')}</div>
         <div style="margin-top:4px;font-size:10px;color:#94a3b8">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>
       </div>
     `, { className: 'mcc-popup' });
     unmatchedSitesLayer.addLayer(circle);
-    seenEnbs.add(enb);
+    seenSites.add(siteId);
     count++;
   });
 
   if (count > 0) {
     unmatchedSitesLayer.addTo(map);
-    showMapToast(`${seenEnbs.size} unknown eNBs (${count} cells) not in sites DB`, '#ef4444');
+    showMapToast(`${seenSites.size} unknown sites (${count} cells) not in sites DB`, '#ef4444');
   }
 }
 
