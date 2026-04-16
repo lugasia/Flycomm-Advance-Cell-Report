@@ -1005,6 +1005,7 @@
           <div class="tech-checkboxes">
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-operator" checked> By Operator</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-source"> By Source</label>
+            <label class="checkbox-row"><input type="checkbox" id="contrib-by-week"> By Week</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-month"> By Month</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-mcc"> By MCC (Country)</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-tech"> By Tech (LTE/NR/GSM)</label>
@@ -2309,6 +2310,7 @@ function getRawContributorsSQL() {
   // Contributors-specific options
   const byOperator = document.getElementById('contrib-by-operator').checked;
   const bySource = document.getElementById('contrib-by-source').checked;
+  const byWeek = document.getElementById('contrib-by-week').checked;
   const byMonth = document.getElementById('contrib-by-month').checked;
   const byMcc = document.getElementById('contrib-by-mcc').checked;
   const byTech = document.getElementById('contrib-by-tech').checked;
@@ -2341,6 +2343,10 @@ function getRawContributorsSQL() {
   if (bySource) {
     selectCols.push('    source');
     groupByCols.push('source');
+  }
+  if (byWeek) {
+    selectCols.push(`    toStartOfWeek(${timestampCol}) AS week`);
+    groupByCols.push('week');
   }
   if (byMonth) {
     selectCols.push(`    toStartOfMonth(${timestampCol}) AS month`);
@@ -3855,6 +3861,7 @@ function generateContributorsSQL() {
   // Contributors-specific options
   const byOperator = document.getElementById('contrib-by-operator').checked;
   const bySource = document.getElementById('contrib-by-source').checked;
+  const byWeek = document.getElementById('contrib-by-week').checked;
   const byMonth = document.getElementById('contrib-by-month').checked;
   const byMcc = document.getElementById('contrib-by-mcc').checked;
   const byTech = document.getElementById('contrib-by-tech').checked;
@@ -3891,6 +3898,10 @@ function generateContributorsSQL() {
   if (bySource) {
     selectCols.push(`    source`);
     groupByCols.push(`source`);
+  }
+  if (byWeek) {
+    selectCols.push(`    <span class="function">toStartOfWeek</span>(${timestampCol}) <span class="keyword">AS</span> week`);
+    groupByCols.push(`week`);
   }
   if (byMonth) {
     selectCols.push(`    <span class="function">toStartOfMonth</span>(${timestampCol}) <span class="keyword">AS</span> month`);
