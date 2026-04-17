@@ -1008,7 +1008,7 @@
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-week"> By Week</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-month"> By Month</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-mcc"> By MCC (Country)</label>
-            <label class="checkbox-row"><input type="checkbox" id="contrib-by-tech"> By Tech (LTE/NR/GSM)</label>
+            <label class="checkbox-row"><input type="checkbox" id="contrib-by-tech"> By Tech (2G/3G/4G/5G)</label>
             <label class="checkbox-row"><input type="checkbox" id="contrib-by-plmn"> By PLMN</label>
           </div>
 
@@ -2545,6 +2545,8 @@ function getRawCellRsrpSQL() {
   sql += `    network_mnc,\n`;
   sql += `    network_PLMN,\n`;
   sql += `    network_operator,\n`;
+  sql += `    any(band_name) AS band_name,\n`;
+  sql += `    any(band_number) AS band_number,\n`;
   sql += `    count() AS samples,\n`;
   sql += `    round(avg(signal_rsrp), 1) AS avg_rsrp,\n`;
   sql += `    min(signal_rsrp) AS min_rsrp,\n`;
@@ -3783,6 +3785,8 @@ function generateCellRsrpSQL() {
   sql += `    network_mnc,\n`;
   sql += `    network_PLMN,\n`;
   sql += `    network_operator,\n`;
+  sql += `    <span class="function">any</span>(band_name) <span class="keyword">AS</span> band_name,\n`;
+  sql += `    <span class="function">any</span>(band_number) <span class="keyword">AS</span> band_number,\n`;
   sql += `    <span class="function">count</span>() <span class="keyword">AS</span> samples,\n`;
   sql += `    <span class="function">round</span>(<span class="function">avg</span>(signal_rsrp), <span class="number">1</span>) <span class="keyword">AS</span> avg_rsrp,\n`;
   sql += `    <span class="function">min</span>(signal_rsrp) <span class="keyword">AS</span> min_rsrp,\n`;
@@ -6434,8 +6438,8 @@ let _rsrpSortAsc = true;
 const RSRP_COLUMNS = [
   { key: 'tech',     label: 'Tech',     get: d => d.tech || '' },
   { key: 'enb',      label: 'eNB/RNC',  get: d => d.cell_enb || d.cell_rnc || d.cell_lac || '' },
-  { key: 'eci',      label: 'ECI/CI',   get: d => d.cell_eci || d.cell_nci || d.cell_ci || '' },
   { key: 'ecgi',     label: 'ECGI/CGI', get: d => d.cell_ecgi || d.cell_cgi || d.cell_nci || '' },
+  { key: 'band',     label: 'Band',     get: d => d.band_name || (d.band_number ? 'B' + d.band_number : '') },
   { key: 'plmn',     label: 'PLMN',     get: d => d.network_PLMN || '' },
   { key: 'operator', label: 'Operator', get: d => d.network_operator || '' },
   { key: 'samples',  label: 'Samples',  get: d => parseInt(d.samples) || 0, numeric: true },
@@ -6487,8 +6491,9 @@ function renderRsrpTable() {
   let filtered = _rsrpPanelData;
   if (query) {
     filtered = filtered.filter(d => {
-      const haystack = [d.tech, d.cell_enb, d.cell_eci, d.cell_ci, d.cell_ecgi, d.cell_cgi, d.cell_nci,
-        d.network_PLMN, d.network_operator, d.cell_tac, d.cell_lac, d.cell_pci, d.cell_rnc, d.cell_cid
+      const haystack = [d.tech, d.cell_enb, d.cell_ecgi, d.cell_cgi, d.cell_nci,
+        d.network_PLMN, d.network_operator, d.cell_tac, d.cell_lac, d.cell_pci, d.cell_rnc,
+        d.band_name, d.band_number
       ].map(v => String(v || '')).join(' ').toLowerCase();
       return haystack.includes(query);
     });
@@ -6536,14 +6541,14 @@ function renderRsrpTable() {
       else rsrpColor = '#dc2626';
     }
     const globalId = d.cell_ecgi || d.cell_cgi || d.cell_nci || '—';
-    const cellId = d.cell_eci || d.cell_nci || d.cell_ci || '—';
     const siteId = d.cell_enb || d.cell_rnc || d.cell_lac || '—';
     const areaCode = d.cell_tac || d.cell_lac || '—';
+    const bandLabel = d.band_name || (d.band_number ? 'B' + d.band_number : '—');
     html += `<tr onclick="flyToPoint(${lat},${lon},16)" title="Click to fly">
       <td>${d.tech || '—'}</td>
       <td>${siteId}</td>
-      <td>${cellId}</td>
       <td style="font-size:10px">${globalId}</td>
+      <td>${escapeHtml(bandLabel)}</td>
       <td><span class="badge ${cls}">${escapeHtml(plmn)}</span></td>
       <td>${escapeHtml(d.network_operator || '—')}</td>
       <td>${(parseInt(d.samples) || 0).toLocaleString()}</td>
