@@ -1759,7 +1759,8 @@ WHERE
     ${conditions.join('\n    AND ')}
 GROUP BY grid_lat, grid_lon
 ORDER BY samples DESC
-LIMIT 100000`;
+LIMIT 100000
+SETTINGS validate_polygons = 0`;
 
   const resultsContainer = document.getElementById('results-container');
   const resultsMeta = document.getElementById('results-meta');
@@ -2422,7 +2423,8 @@ function getRawContributorsSQL() {
 
   sql += 'ORDER BY\n';
   sql += '    unique_users DESC\n';
-  sql += `LIMIT ${resultLimit}`;
+  sql += `LIMIT ${resultLimit}\n`;
+  sql += `SETTINGS validate_polygons = 0`;
 
   return sql;
 }
@@ -2601,7 +2603,8 @@ function getRawCellRsrpSQL() {
   sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
   sql += `ORDER BY\n`;
   sql += `    cell_enb, samples DESC\n`;
-  sql += `LIMIT ${resultLimit}`;
+  sql += `LIMIT ${resultLimit}\n`;
+  sql += `SETTINGS validate_polygons = 0`;
 
   return sql;
 }
@@ -2703,7 +2706,8 @@ function getRawSQL() {
     sql += `    network_iso,\n`;
     sql += `    ${geoCol}.1,\n`;
     sql += `    ${geoCol}.2\n`;
-    sql += `LIMIT 50000`;
+    sql += `LIMIT 50000\n`;
+    sql += `SETTINGS validate_polygons = 0`;
   } else if (queryType === 'tac') {
     // TAC Anomaly Detection query
     const minTacChanges = document.getElementById('min-tac-changes').value || '2';
@@ -2778,7 +2782,8 @@ function getRawSQL() {
     sql += `ORDER BY\n`;
     sql += `    distinct_area_count DESC,\n`;
     sql += `    total_samples DESC\n`;
-    sql += `LIMIT ${tacLimit}`;
+    sql += `LIMIT ${tacLimit}\n`;
+    sql += `SETTINGS validate_polygons = 0`;
   } else if (queryType === 'bands') {
     sql += `SELECT\n`;
     sql += `    band_name,\n`;
@@ -3273,7 +3278,8 @@ WHERE
 GROUP BY lat, lon
 HAVING unique_users > 0
 ORDER BY unique_users DESC
-LIMIT 50000`;
+LIMIT 50000
+SETTINGS validate_polygons = 0`;
 }
 
 function clearContributorLayers() {
@@ -3844,7 +3850,8 @@ function generateCellRsrpSQL() {
   sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
   sql += `<span class="keyword">ORDER BY</span>\n`;
   sql += `    cell_enb, samples <span class="keyword">DESC</span>\n`;
-  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>;`;
+  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>\n`;
+  sql += `<span class="keyword">SETTINGS</span> validate_polygons = <span class="number">0</span>;`;
 
   document.getElementById('sql-output').innerHTML = sql;
 }
@@ -3981,7 +3988,8 @@ function generateContributorsSQL() {
 
   sql += `<span class="keyword">ORDER BY</span>\n`;
   sql += `    unique_users <span class="keyword">DESC</span>\n`;
-  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>;`;
+  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>\n`;
+  sql += `<span class="keyword">SETTINGS</span> validate_polygons = <span class="number">0</span>;`;
 
   document.getElementById('sql-output').innerHTML = sql;
 }
@@ -4297,7 +4305,8 @@ function generateSQL() {
       sql += `<span class="keyword">ORDER BY</span>\n`;
       sql += `    distinct_area_count <span class="keyword">DESC</span>,\n`;
       sql += `    total_samples <span class="keyword">DESC</span>\n`;
-      sql += `<span class="keyword">LIMIT</span> <span class="number">${tacLimit}</span>;\n\n`;
+      sql += `<span class="keyword">LIMIT</span> <span class="number">${tacLimit}</span>\n`;
+      sql += `<span class="keyword">SETTINGS</span> validate_polygons = <span class="number">0</span>;\n\n`;
 
     } else if (queryType === 'cell') {
       // Cell/eNB Search query — sites + site_samples (per polygon)
