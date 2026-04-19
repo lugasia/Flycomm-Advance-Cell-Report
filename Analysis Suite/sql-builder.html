@@ -1299,6 +1299,7 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://unpkg.com/@turf/turf@7/turf.min.js"></script>
 <script>
 // ════════════════════════════════════════════════════════════════
 //  STATE
@@ -1311,6 +1312,40 @@ const TIMESTAMP_COL = 'timestamp';
 
 const polygons = [];
 let map, drawnItems;
+
+// Replace self-intersecting polygon coords with convex hull so ClickHouse
+// pointInPolygon accepts them. Only runs if turf.js is loaded and the polygon
+// actually has self-intersections (unkinkPolygon returns >1 feature).
+function sanitizePolygon(polygon) {
+  if (typeof turf === 'undefined' || !polygon || !polygon.coords || polygon.coords.length < 3) return;
+  const lonLat = polygon.coords.map(c => [c[1], c[0]]);
+  const first = lonLat[0], last = lonLat[lonLat.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) lonLat.push([first[0], first[1]]);
+  try {
+    const poly = turf.polygon([lonLat]);
+    const unkinked = turf.unkinkPolygon(poly);
+    if (unkinked.features.length <= 1) return;
+    const points = turf.featureCollection(lonLat.map(c => turf.point(c)));
+    const hull = turf.convex(points);
+    if (!hull) return;
+    const newCoords = hull.geometry.coordinates[0].map(c => [c[1], c[0]]);
+    polygon.coords = newCoords;
+    if (polygon.layer && typeof drawnItems !== 'undefined' && drawnItems) {
+      const opts = polygon.layer.options || {};
+      drawnItems.removeLayer(polygon.layer);
+      polygon.layer = L.polygon(newCoords, {
+        color: opts.color || '#3b82f6',
+        fillColor: opts.fillColor || '#3b82f6',
+        fillOpacity: opts.fillOpacity != null ? opts.fillOpacity : 0.2,
+        weight: opts.weight || 2
+      }).addTo(drawnItems);
+    }
+    console.warn('Polygon had self-intersections — replaced with convex hull for SQL compatibility.');
+  } catch (e) {
+    console.warn('Polygon sanitize failed:', e);
+  }
+}
+
 let isConnected = false;
 let contributorHeatLayer = null;
 let contributorDotsLayer = null;
@@ -1602,6 +1637,7 @@ function approveSearchPolygon() {
     coords: coords,
     operation: document.getElementById('operation').value
   };
+  sanitizePolygon(polygon);
   polygons.push(polygon);
 
   // Clear search state
@@ -1759,8 +1795,7 @@ WHERE
     ${conditions.join('\n    AND ')}
 GROUP BY grid_lat, grid_lon
 ORDER BY samples DESC
-LIMIT 100000
-SETTINGS validate_polygons = 0`;
+LIMIT 100000`;
 
   const resultsContainer = document.getElementById('results-container');
   const resultsMeta = document.getElementById('results-meta');
@@ -2423,8 +2458,7 @@ function getRawContributorsSQL() {
 
   sql += 'ORDER BY\n';
   sql += '    unique_users DESC\n';
-  sql += `LIMIT ${resultLimit}\n`;
-  sql += `SETTINGS validate_polygons = 0`;
+  sql += `LIMIT ${resultLimit}`;
 
   return sql;
 }
@@ -2603,8 +2637,7 @@ function getRawCellRsrpSQL() {
   sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
   sql += `ORDER BY\n`;
   sql += `    cell_enb, samples DESC\n`;
-  sql += `LIMIT ${resultLimit}\n`;
-  sql += `SETTINGS validate_polygons = 0`;
+  sql += `LIMIT ${resultLimit}`;
 
   return sql;
 }
@@ -2706,8 +2739,7 @@ function getRawSQL() {
     sql += `    network_iso,\n`;
     sql += `    ${geoCol}.1,\n`;
     sql += `    ${geoCol}.2\n`;
-    sql += `LIMIT 50000\n`;
-    sql += `SETTINGS validate_polygons = 0`;
+    sql += `LIMIT 50000`;
   } else if (queryType === 'tac') {
     // TAC Anomaly Detection query
     const minTacChanges = document.getElementById('min-tac-changes').value || '2';
@@ -2782,8 +2814,7 @@ function getRawSQL() {
     sql += `ORDER BY\n`;
     sql += `    distinct_area_count DESC,\n`;
     sql += `    total_samples DESC\n`;
-    sql += `LIMIT ${tacLimit}\n`;
-    sql += `SETTINGS validate_polygons = 0`;
+    sql += `LIMIT ${tacLimit}`;
   } else if (queryType === 'bands') {
     sql += `SELECT\n`;
     sql += `    band_name,\n`;
@@ -3278,8 +3309,7 @@ WHERE
 GROUP BY lat, lon
 HAVING unique_users > 0
 ORDER BY unique_users DESC
-LIMIT 50000
-SETTINGS validate_polygons = 0`;
+LIMIT 50000`;
 }
 
 function clearContributorLayers() {
@@ -3561,6 +3591,7 @@ function initMap() {
       operation: document.getElementById('operation').value
     };
 
+    sanitizePolygon(polygon);
     polygons.push(polygon);
     updatePolygonList();
     updateStats();
@@ -3576,6 +3607,7 @@ function initMap() {
       const polygon = polygons.find(p => p.layer === layer);
       if (polygon) {
         polygon.coords = layer.getLatLngs()[0].map(ll => [ll.lat, wrapLng(ll.lng)]);
+        sanitizePolygon(polygon);
       }
     });
     generateSQL();
@@ -3850,8 +3882,7 @@ function generateCellRsrpSQL() {
   sql += `    network_mcc, network_mnc, network_PLMN, network_operator\n`;
   sql += `<span class="keyword">ORDER BY</span>\n`;
   sql += `    cell_enb, samples <span class="keyword">DESC</span>\n`;
-  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>\n`;
-  sql += `<span class="keyword">SETTINGS</span> validate_polygons = <span class="number">0</span>;`;
+  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>;`;
 
   document.getElementById('sql-output').innerHTML = sql;
 }
@@ -3988,8 +4019,7 @@ function generateContributorsSQL() {
 
   sql += `<span class="keyword">ORDER BY</span>\n`;
   sql += `    unique_users <span class="keyword">DESC</span>\n`;
-  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>\n`;
-  sql += `<span class="keyword">SETTINGS</span> validate_polygons = <span class="number">0</span>;`;
+  sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>;`;
 
   document.getElementById('sql-output').innerHTML = sql;
 }
@@ -4305,8 +4335,7 @@ function generateSQL() {
       sql += `<span class="keyword">ORDER BY</span>\n`;
       sql += `    distinct_area_count <span class="keyword">DESC</span>,\n`;
       sql += `    total_samples <span class="keyword">DESC</span>\n`;
-      sql += `<span class="keyword">LIMIT</span> <span class="number">${tacLimit}</span>\n`;
-      sql += `<span class="keyword">SETTINGS</span> validate_polygons = <span class="number">0</span>;\n\n`;
+      sql += `<span class="keyword">LIMIT</span> <span class="number">${tacLimit}</span>;\n\n`;
 
     } else if (queryType === 'cell') {
       // Cell/eNB Search query — sites + site_samples (per polygon)
