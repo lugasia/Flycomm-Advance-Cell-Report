@@ -1312,7 +1312,10 @@ const TIMESTAMP_COL = 'timestamp';
 // `measurements` is partitioned by createdAt (ingestion time), not timestamp (event time).
 // Without a createdAt filter, ClickHouse can't prune partitions and scans the full ~530M-row table.
 const CREATEDAT_COL = 'createdAt';
-const CREATEDAT_BUFFER_DAYS = 7;
+// Lower buffer tolerates small clock skew (createdAt slightly before timestamp).
+// Upper buffer tolerates late ingestion (createdAt well after timestamp, e.g. batched uploads).
+const CREATEDAT_LOWER_BUFFER_DAYS = 1;
+const CREATEDAT_UPPER_BUFFER_DAYS = 7;
 
 function bufferDateStr(dateStr, daysOffset) {
   const d = new Date(dateStr + 'T00:00:00Z');
@@ -1321,9 +1324,8 @@ function bufferDateStr(dateStr, daysOffset) {
 }
 
 // Push date-range filters for measurements queries. Emits both:
-//   - createdAt mirror (lower bound only, with buffer) -> enables partition pruning
+//   - createdAt mirror (both bounds, with asymmetric buffer) -> enables partition + granule pruning
 //   - timestamp filter (full bounds) -> exact result correctness
-// We deliberately omit createdAt upper bound so late-ingested rows in the timestamp range aren't lost.
 function pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, opts) {
   if (!useTimeline) return;
   const html = opts && opts.html;
@@ -1331,13 +1333,34 @@ function pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, op
     ? (s) => `<span class="function">toDateTime</span>(<span class="string">'${s}'</span>)`
     : (s) => `toDateTime('${s}')`;
   if (dateFrom) {
-    const bufferedFrom = bufferDateStr(dateFrom, -CREATEDAT_BUFFER_DAYS);
+    const bufferedFrom = bufferDateStr(dateFrom, -CREATEDAT_LOWER_BUFFER_DAYS);
     conditions.push(`${CREATEDAT_COL} >= ${fmt(bufferedFrom + ' 00:00:00')}`);
     conditions.push(`${TIMESTAMP_COL} >= ${fmt(dateFrom + ' 00:00:00')}`);
   }
   if (dateTo) {
+    const bufferedTo = bufferDateStr(dateTo, CREATEDAT_UPPER_BUFFER_DAYS);
+    conditions.push(`${CREATEDAT_COL} <= ${fmt(bufferedTo + ' 23:59:59')}`);
     conditions.push(`${TIMESTAMP_COL} <= ${fmt(dateTo + ' 23:59:59')}`);
   }
+}
+
+// When multiple polygons are used, ClickHouse's optimizer may not extract bin_lat/bin_lon bounds
+// from the nested OR expression inside pointInPolygon. Emit them as redundant top-level AND
+// conditions so granule pruning on (bin_lat, bin_lon) can run.
+function pushPolygonBboxHints(conditions, polygons, opts) {
+  if (!polygons || polygons.length < 2) return;
+  const html = opts && opts.html;
+  const kw = (s) => html ? `<span class="keyword">${s}</span>` : s;
+  const latRanges = polygons.map(p => {
+    const lats = p.coords.map(c => c[0]);
+    return `bin_lat ${kw('BETWEEN')} ${Math.floor(Math.min(...lats)) - 1} ${kw('AND')} ${Math.ceil(Math.max(...lats)) + 1}`;
+  });
+  const lonRanges = polygons.map(p => {
+    const lons = p.coords.map(c => c[1]);
+    return `bin_lon ${kw('BETWEEN')} ${Math.floor(Math.min(...lons)) - 1} ${kw('AND')} ${Math.ceil(Math.max(...lons)) + 1}`;
+  });
+  conditions.push(`(${latRanges.join(` ${kw('OR')} `)})`);
+  conditions.push(`(${lonRanges.join(` ${kw('OR')} `)})`);
 }
 
 const polygons = [];
@@ -1795,6 +1818,7 @@ async function showGridHeatmap() {
       return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
     conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
+    pushPolygonBboxHints(conditions, polygons);
   }
 
   const excludeMcc = document.getElementById('exclude-mcc').checked;
@@ -2445,6 +2469,7 @@ function getRawContributorsSQL() {
       return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
     conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    OR ')})`);
+    pushPolygonBboxHints(conditions, polygons);
   }
 
   // Add operator filter
@@ -2643,6 +2668,7 @@ function getRawCellRsrpSQL() {
       return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
     conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
+    pushPolygonBboxHints(conditions, polygons);
   }
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
@@ -3290,6 +3316,7 @@ function buildContributorsGeoSQL() {
       return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
     });
     conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
+    pushPolygonBboxHints(conditions, polygons);
   }
   if (operatorFilter) {
     const operators = operatorFilter.split(',').map(s => `'${s.trim()}'`).join(', ');
@@ -3871,6 +3898,7 @@ function generateCellRsrpSQL() {
       return `(${bbox1} <span class="keyword">AND</span> ${bbox2} <span class="keyword">AND</span> ${pipCond})`;
     });
     conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    <span class="keyword">OR</span> ')})`);
+    pushPolygonBboxHints(conditions, polygons, {html: true});
   }
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
@@ -3983,6 +4011,7 @@ function generateContributorsSQL() {
       return `(${bbox1} <span class="keyword">AND</span> ${bbox2} <span class="keyword">AND</span> ${pipCond})`;
     });
     conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    <span class="keyword">OR</span> ')})`);
+    pushPolygonBboxHints(conditions, polygons, {html: true});
   }
 
   // Add operator filter
