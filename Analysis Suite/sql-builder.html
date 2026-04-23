@@ -1309,6 +1309,36 @@
 const TABLE_NAME = 'measurements';
 const GEO_COL = 'location_geo_coordinates';
 const TIMESTAMP_COL = 'timestamp';
+// `measurements` is partitioned by createdAt (ingestion time), not timestamp (event time).
+// Without a createdAt filter, ClickHouse can't prune partitions and scans the full ~530M-row table.
+const CREATEDAT_COL = 'createdAt';
+const CREATEDAT_BUFFER_DAYS = 7;
+
+function bufferDateStr(dateStr, daysOffset) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + daysOffset);
+  return d.toISOString().slice(0, 10);
+}
+
+// Push date-range filters for measurements queries. Emits both:
+//   - createdAt mirror (lower bound only, with buffer) -> enables partition pruning
+//   - timestamp filter (full bounds) -> exact result correctness
+// We deliberately omit createdAt upper bound so late-ingested rows in the timestamp range aren't lost.
+function pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, opts) {
+  if (!useTimeline) return;
+  const html = opts && opts.html;
+  const fmt = html
+    ? (s) => `<span class="function">toDateTime</span>(<span class="string">'${s}'</span>)`
+    : (s) => `toDateTime('${s}')`;
+  if (dateFrom) {
+    const bufferedFrom = bufferDateStr(dateFrom, -CREATEDAT_BUFFER_DAYS);
+    conditions.push(`${CREATEDAT_COL} >= ${fmt(bufferedFrom + ' 00:00:00')}`);
+    conditions.push(`${TIMESTAMP_COL} >= ${fmt(dateFrom + ' 00:00:00')}`);
+  }
+  if (dateTo) {
+    conditions.push(`${TIMESTAMP_COL} <= ${fmt(dateTo + ' 23:59:59')}`);
+  }
+}
 
 const polygons = [];
 let map, drawnItems;
@@ -1777,8 +1807,7 @@ async function showGridHeatmap() {
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
   if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
-  if (useTimeline && dateFrom) conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-  if (useTimeline && dateTo) conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
+  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
   const hourCond = getHourRangeCondition(timestampCol, false);
   if (hourCond) conditions.push(hourCond);
   const sourceFilter = getSourceFilterCondition(false);
@@ -2433,12 +2462,7 @@ function getRawContributorsSQL() {
   }
 
   // Add timeline filters
-  if (useTimeline && dateFrom) {
-    conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-  }
-  if (useTimeline && dateTo) {
-    conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
-  }
+  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
   const hourCond = getHourRangeCondition(timestampCol, false);
   if (hourCond) conditions.push(hourCond);
 
@@ -2623,8 +2647,7 @@ function getRawCellRsrpSQL() {
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
   if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
-  if (useTimeline && dateFrom) conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-  if (useTimeline && dateTo) conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
+  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
   const hourCond = getHourRangeCondition(timestampCol, false);
   if (hourCond) conditions.push(hourCond);
   const sourceFilt = getSourceFilterCondition(false);
@@ -2714,12 +2737,7 @@ function getRawSQL() {
     if (includeMcc && includeMccValue) {
       conditions.push(`network_mcc = ${includeMccValue}`);
     }
-    if (useTimeline && dateFrom) {
-      conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-    }
-    if (useTimeline && dateTo) {
-      conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
-    }
+    pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
     const hourCondSelect = getHourRangeCondition(timestampCol, false);
     if (hourCondSelect) conditions.push(hourCondSelect);
     // Add source filter
@@ -2786,12 +2804,7 @@ function getRawSQL() {
     if (excludeMcc && filterMcc) {
       conditions.push(`network_mcc != ${filterMcc}`);
     }
-    if (useTimeline && dateFrom) {
-      conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-    }
-    if (useTimeline && dateTo) {
-      conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
-    }
+    pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
     const hourCondTac = getHourRangeCondition(timestampCol, false);
     if (hourCondTac) conditions.push(hourCondTac);
     // Add source filter
@@ -2846,12 +2859,7 @@ function getRawSQL() {
     if (includeMcc && includeMccValue) {
       conditions.push(`network_mcc = ${includeMccValue}`);
     }
-    if (useTimeline && dateFrom) {
-      conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-    }
-    if (useTimeline && dateTo) {
-      conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
-    }
+    pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
     const hourCondBand = getHourRangeCondition(timestampCol, false);
     if (hourCondBand) conditions.push(hourCondBand);
     const sourceFilterBand = getSourceFilterCondition(false);
@@ -3289,8 +3297,7 @@ function buildContributorsGeoSQL() {
   }
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
   if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
-  if (useTimeline && dateFrom) conditions.push(`${timestampCol} >= toDateTime('${dateFrom} 00:00:00')`);
-  if (useTimeline && dateTo) conditions.push(`${timestampCol} <= toDateTime('${dateTo} 23:59:59')`);
+  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
   const hourCond = getHourRangeCondition(timestampCol, false);
   if (hourCond) conditions.push(hourCond);
   const sourceFilter = getSourceFilterCondition(false);
@@ -3868,8 +3875,7 @@ function generateCellRsrpSQL() {
 
   if (excludeMcc && filterMcc) conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
   if (includeMcc && includeMccValue) conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-  if (useTimeline && dateFrom) conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
-  if (useTimeline && dateTo) conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
+  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
   const hourCond = getHourRangeCondition(timestampCol, true);
   if (hourCond) conditions.push(hourCond);
   const sourceFilt = getSourceFilterCondition(true);
@@ -3994,12 +4000,7 @@ function generateContributorsSQL() {
   }
 
   // Add timeline filters
-  if (useTimeline && dateFrom) {
-    conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
-  }
-  if (useTimeline && dateTo) {
-    conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
-  }
+  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
   const hourCondContrib = getHourRangeCondition(timestampCol, true);
   if (hourCondContrib) conditions.push(hourCondContrib);
 
@@ -4101,12 +4102,7 @@ function generateSQL() {
         if (includeMcc && includeMccValue) {
           conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
         }
-        if (useTimeline && dateFrom) {
-          conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
-        }
-        if (useTimeline && dateTo) {
-          conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
-        }
+        pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
         const hourCondSelect = getHourRangeCondition(timestampCol, true);
         if (hourCondSelect) conditions.push(hourCondSelect);
         const sourceFilterSelect = getSourceFilterCondition(true);
@@ -4202,12 +4198,7 @@ function generateSQL() {
         if (includeMcc && includeMccValue) {
           bandConds.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
         }
-        if (useTimeline && dateFrom) {
-          bandConds.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
-        }
-        if (useTimeline && dateTo) {
-          bandConds.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
-        }
+        pushMeasurementsDateRange(bandConds, dateFrom, dateTo, useTimeline, {html: true});
         const hourCondBand = getHourRangeCondition(timestampCol, true);
         if (hourCondBand) bandConds.push(hourCondBand);
         const sourceFilterBand = getSourceFilterCondition(true);
@@ -4310,12 +4301,7 @@ function generateSQL() {
       if (excludeMcc && filterMcc) {
         conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
       }
-      if (useTimeline && dateFrom) {
-        conditions.push(`${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`);
-      }
-      if (useTimeline && dateTo) {
-        conditions.push(`${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`);
-      }
+      pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
       const hourCondTacHtml = getHourRangeCondition(timestampCol, true);
       if (hourCondTacHtml) conditions.push(hourCondTacHtml);
       // Add source filter
@@ -4419,6 +4405,8 @@ function generateSQL() {
         sql += `\n    <span class="keyword">AND</span> network_mcc = <span class="number">${includeMccValue}</span>`;
       }
       if (useTimeline && dateFrom) {
+        const bufferedFromCnt = bufferDateStr(dateFrom, -CREATEDAT_BUFFER_DAYS);
+        sql += `\n    <span class="keyword">AND</span> ${CREATEDAT_COL} >= <span class="function">toDateTime</span>(<span class="string">'${bufferedFromCnt} 00:00:00'</span>)`;
         sql += `\n    <span class="keyword">AND</span> ${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`;
       }
       if (useTimeline && dateTo) {
