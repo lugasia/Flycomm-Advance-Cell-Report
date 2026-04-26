@@ -1311,56 +1311,72 @@ const GEO_COL = 'location_geo_coordinates';
 const TIMESTAMP_COL = 'timestamp';
 // `measurements` is partitioned by createdAt (ingestion time), not timestamp (event time).
 // Without a createdAt filter, ClickHouse can't prune partitions and scans the full ~530M-row table.
-const CREATEDAT_COL = 'createdAt';
-// Lower buffer tolerates small clock skew (createdAt slightly before timestamp).
-// Upper buffer tolerates late ingestion (createdAt well after timestamp, e.g. batched uploads).
-const CREATEDAT_LOWER_BUFFER_DAYS = 1;
-const CREATEDAT_UPPER_BUFFER_DAYS = 7;
-
-function bufferDateStr(dateStr, daysOffset) {
-  const d = new Date(dateStr + 'T00:00:00Z');
-  d.setUTCDate(d.getUTCDate() + daysOffset);
-  return d.toISOString().slice(0, 10);
-}
-
-// Push date-range filters for measurements queries. Emits both:
-//   - createdAt mirror (both bounds, with asymmetric buffer) -> enables partition + granule pruning
-//   - timestamp filter (full bounds) -> exact result correctness
+// `measurements` partition key is toYYYYMM(timestamp). Filtering on `timestamp` prunes
+// monthly partitions and engages the idx_timestamp minmax skip index. There is no createdAt
+// mirror needed — createdAt is the SRMT version column, not the partition key.
 function pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, opts) {
   if (!useTimeline) return;
   const html = opts && opts.html;
   const fmt = html
     ? (s) => `<span class="function">toDateTime</span>(<span class="string">'${s}'</span>)`
     : (s) => `toDateTime('${s}')`;
-  if (dateFrom) {
-    const bufferedFrom = bufferDateStr(dateFrom, -CREATEDAT_LOWER_BUFFER_DAYS);
-    conditions.push(`${CREATEDAT_COL} >= ${fmt(bufferedFrom + ' 00:00:00')}`);
-    conditions.push(`${TIMESTAMP_COL} >= ${fmt(dateFrom + ' 00:00:00')}`);
-  }
-  if (dateTo) {
-    const bufferedTo = bufferDateStr(dateTo, CREATEDAT_UPPER_BUFFER_DAYS);
-    conditions.push(`${CREATEDAT_COL} <= ${fmt(bufferedTo + ' 23:59:59')}`);
-    conditions.push(`${TIMESTAMP_COL} <= ${fmt(dateTo + ' 23:59:59')}`);
-  }
+  if (dateFrom) conditions.push(`${TIMESTAMP_COL} >= ${fmt(dateFrom + ' 00:00:00')}`);
+  if (dateTo) conditions.push(`${TIMESTAMP_COL} <= ${fmt(dateTo + ' 23:59:59')}`);
 }
 
-// When multiple polygons are used, ClickHouse's optimizer may not extract bin_lat/bin_lon bounds
-// from the nested OR expression inside pointInPolygon. Emit them as redundant top-level AND
-// conditions so granule pruning on (bin_lat, bin_lon) can run.
-function pushPolygonBboxHints(conditions, polygons, opts) {
-  if (!polygons || polygons.length < 2) return;
+// Build the polygon spatial filter for a measurements query. Each polygon emits a single
+// AND-group of:
+//   bin_lat / bin_lon BETWEEN ...     -> hits ix_bin_lat / ix_bin_lon skip indexes,
+//                                        engages the proj_geo_time projection
+//   location_lat_rounded /            -> precise (~100m) refinement on surviving granules
+//      location_lng_rounded BETWEEN
+//   pointInPolygon(...)               -> exact polygon test on surviving rows
+// Multiple polygons are OR'd. This whole expression belongs in PREWHERE so that granules
+// outside any polygon never touch the wide column list.
+function buildPolygonSpatialFilter(polygons, geoCol, opts) {
+  if (!polygons || polygons.length === 0) return null;
   const html = opts && opts.html;
   const kw = (s) => html ? `<span class="keyword">${s}</span>` : s;
-  const latRanges = polygons.map(p => {
+  const fn = (s) => html ? `<span class="function">${s}</span>` : s;
+  const num = (n) => html ? `<span class="number">${n}</span>` : String(n);
+
+  const polyConditions = polygons.map(p => {
     const lats = p.coords.map(c => c[0]);
-    return `bin_lat ${kw('BETWEEN')} ${Math.floor(Math.min(...lats)) - 1} ${kw('AND')} ${Math.ceil(Math.max(...lats)) + 1}`;
-  });
-  const lonRanges = polygons.map(p => {
     const lons = p.coords.map(c => c[1]);
-    return `bin_lon ${kw('BETWEEN')} ${Math.floor(Math.min(...lons)) - 1} ${kw('AND')} ${Math.ceil(Math.max(...lons)) + 1}`;
+    const latMin = Math.min(...lats), latMax = Math.max(...lats);
+    const lonMin = Math.min(...lons), lonMax = Math.max(...lons);
+    // bin_lat / bin_lon are floored to 0.1°; use floor(min*10)/10 .. floor(max*10)/10.
+    const binLatMin = Math.floor(latMin * 10) / 10;
+    const binLatMax = Math.floor(latMax * 10) / 10;
+    const binLonMin = Math.floor(lonMin * 10) / 10;
+    const binLonMax = Math.floor(lonMax * 10) / 10;
+    const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
+    const pip = `${fn('pointInPolygon')}(${geoCol}, [${polyPoints}])`;
+    const pipCond = p.operation === 'inside' ? pip : `${kw('NOT')} ${pip}`;
+    return `(bin_lat ${kw('BETWEEN')} ${num(binLatMin)} ${kw('AND')} ${num(binLatMax)}` +
+           ` ${kw('AND')} bin_lon ${kw('BETWEEN')} ${num(binLonMin)} ${kw('AND')} ${num(binLonMax)}` +
+           ` ${kw('AND')} location_lat_rounded ${kw('BETWEEN')} ${num(latMin.toFixed(6))} ${kw('AND')} ${num(latMax.toFixed(6))}` +
+           ` ${kw('AND')} location_lng_rounded ${kw('BETWEEN')} ${num(lonMin.toFixed(6))} ${kw('AND')} ${num(lonMax.toFixed(6))}` +
+           ` ${kw('AND')} ${pipCond})`;
   });
-  conditions.push(`(${latRanges.join(` ${kw('OR')} `)})`);
-  conditions.push(`(${lonRanges.join(` ${kw('OR')} `)})`);
+  return polyConditions.length === 1
+    ? polyConditions[0]
+    : `(${polyConditions.join(` ${kw('OR')} `)})`;
+}
+
+// Renders WHERE/PREWHERE clauses given two arrays of conditions. PREWHERE is omitted if empty.
+function renderWhereClauses(prewhere, where, opts) {
+  const html = opts && opts.html;
+  const kw = (s) => html ? `<span class="keyword">${s}</span>` : s;
+  const sep = '\n    ' + kw('AND') + ' ';
+  let out = '';
+  if (prewhere.length > 0) {
+    out += `${kw('PREWHERE')}\n    ${prewhere.join(sep)}\n`;
+  }
+  if (where.length > 0) {
+    out += `${kw('WHERE')}\n    ${where.join(sep)}\n`;
+  }
+  return out;
 }
 
 const polygons = [];
@@ -1805,22 +1821,6 @@ async function showGridHeatmap() {
   const geoCol = GEO_COL;
   const timestampCol = TIMESTAMP_COL;
 
-  // Build conditions — OR across polygons
-  let conditions = [];
-  if (polygons.length > 0) {
-    const polyConditions = polygons.map(p => {
-      const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`;
-      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`;
-      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
-      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
-    });
-    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
-    pushPolygonBboxHints(conditions, polygons);
-  }
-
   const excludeMcc = document.getElementById('exclude-mcc').checked;
   const filterMcc = document.getElementById('filter-mcc').value;
   const includeMcc = document.getElementById('include-mcc').checked;
@@ -1829,13 +1829,19 @@ async function showGridHeatmap() {
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
 
-  if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
-  if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
-  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
+  let prewhere = [];
+  let where = [];
+
+  pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+  const spatial = buildPolygonSpatialFilter(polygons, geoCol);
+  if (spatial) prewhere.push(spatial);
+
+  if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
+  if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
   const hourCond = getHourRangeCondition(timestampCol, false);
-  if (hourCond) conditions.push(hourCond);
+  if (hourCond) where.push(hourCond);
   const sourceFilter = getSourceFilterCondition(false);
-  if (sourceFilter) conditions.push(sourceFilter);
+  if (sourceFilter) where.push(sourceFilter);
 
   // Grid query: round coords to ~50m cells
   const sql = `SELECT
@@ -1844,8 +1850,7 @@ async function showGridHeatmap() {
     count() AS samples,
     uniq(deviceInfo_deviceId) AS devices
 FROM ${tableName}
-WHERE
-    ${conditions.join('\n    AND ')}
+${renderWhereClauses(prewhere, where).trimEnd()}
 GROUP BY grid_lat, grid_lon
 ORDER BY samples DESC
 LIMIT 100000`;
@@ -2450,61 +2455,38 @@ function getRawContributorsSQL() {
 
   sql += selectCols.join(',\n') + '\n';
   sql += `FROM ${tableName}\n`;
-  sql += 'WHERE\n';
 
-  let conditions = [];
+  // PREWHERE: time + spatial (engages partition pruning, skip indexes, proj_geo_time projection).
+  // WHERE: identity / dimensional filters that aren't part of the geo+time pruning path.
+  let prewhere = [];
+  let where = [];
+
+  pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+  const spatial = buildPolygonSpatialFilter(polygons, geoCol);
+  if (spatial) prewhere.push(spatial);
+
   // Exclude 'Searching' state (band B0 + PLMN 255-255)
-  conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
-  conditions.push(`deviceInfo_deviceId != ''`);
+  where.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+  where.push(`deviceInfo_deviceId != ''`);
 
-  // Add polygon filters with bbox pre-filter — OR across polygons
-  if (polygons.length > 0) {
-    const polyConditions = polygons.map(p => {
-      const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`;
-      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`;
-      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
-      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
-    });
-    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    OR ')})`);
-    pushPolygonBboxHints(conditions, polygons);
-  }
-
-  // Add operator filter
   if (operatorFilter) {
     const operators = operatorFilter.split(',').map(s => `'${s.trim()}'`).join(', ');
-    conditions.push(`network_operator IN (${operators})`);
+    where.push(`network_operator IN (${operators})`);
   }
+  if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
+  if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
 
-  // Add MCC filters
-  if (excludeMcc && filterMcc) {
-    conditions.push(`network_mcc != ${filterMcc}`);
-  }
-  if (includeMcc && includeMccValue) {
-    conditions.push(`network_mcc = ${includeMccValue}`);
-  }
-
-  // Add timeline filters
-  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
   const hourCond = getHourRangeCondition(timestampCol, false);
-  if (hourCond) conditions.push(hourCond);
-
-  // Add source filter
+  if (hourCond) where.push(hourCond);
   const sourceFilter = getSourceFilterCondition(false);
-  if (sourceFilter) {
-    conditions.push(sourceFilter);
-  }
+  if (sourceFilter) where.push(sourceFilter);
 
-  sql += `    ${conditions.join('\n    AND ')}\n`;
+  sql += renderWhereClauses(prewhere, where);
 
-  // Add GROUP BY if any grouping is selected
   if (groupByCols.length > 0) {
     sql += 'GROUP BY\n';
     sql += `    ${groupByCols.join(',\n    ')}\n`;
   }
-
   sql += 'ORDER BY\n';
   sql += '    unique_users DESC\n';
   sql += `LIMIT ${resultLimit}`;
@@ -2641,11 +2623,18 @@ function getRawCellRsrpSQL() {
   sql += `    round(avg(${geoCol}.1), 6) AS longitude,\n`;
   sql += `    round(avg(${geoCol}.2), 6) AS latitude\n`;
   sql += `FROM ${tableName}\n`;
-  sql += `WHERE\n`;
 
-  let conditions = [];
-  conditions.push(`signal_rsrp != 0`);
-  conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+  let prewhere = [];
+  let where = [];
+
+  pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+  if (hasPolygons && !usePolygon) {
+    const spatial = buildPolygonSpatialFilter(polygons, geoCol);
+    if (spatial) prewhere.push(spatial);
+  }
+
+  where.push(`signal_rsrp != 0`);
+  where.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
 
   // Cell identity filters — combined with OR when multiple types given
   // Covers all RATs: 2G (LAC/CI/CGI), 3G (RNC/CI/CGI), 4G (eNB/ECI/ECGI), 5G (gNB/NCI/NCGI)
@@ -2653,33 +2642,16 @@ function getRawCellRsrpSQL() {
   if (hasEnb) cellFilters.push(`cell_enb IN (${enbList.join(', ')}) OR cell_rnc IN (${enbList.join(', ')}) OR cell_lac IN (${enbList.join(', ')})`);
   if (hasEci) cellFilters.push(`cell_eci IN (${eciList.join(', ')}) OR cell_nci IN (${eciList.join(', ')}) OR cell_ci IN (${eciList.join(', ')}) OR cell_cid IN (${eciList.join(', ')})`);
   if (hasEcgi) cellFilters.push(`cell_ecgi IN (${ecgiList.map(e => `'${e}'`).join(', ')}) OR cell_cgi IN (${ecgiList.map(e => `'${e}'`).join(', ')})`);
-  if (cellFilters.length > 0) {
-    conditions.push(`(${cellFilters.join(' OR ')})`);
-  }
+  if (cellFilters.length > 0) where.push(`(${cellFilters.join(' OR ')})`);
 
-  if (hasPolygons && !usePolygon) {
-    const polyConditions = polygons.map(p => {
-      const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...lats)) - 1} AND ${Math.ceil(Math.max(...lats)) + 1}`;
-      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...lons)) - 1} AND ${Math.ceil(Math.max(...lons)) + 1}`;
-      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
-      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
-    });
-    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
-    pushPolygonBboxHints(conditions, polygons);
-  }
-
-  if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
-  if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
-  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
+  if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
+  if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
   const hourCond = getHourRangeCondition(timestampCol, false);
-  if (hourCond) conditions.push(hourCond);
+  if (hourCond) where.push(hourCond);
   const sourceFilt = getSourceFilterCondition(false);
-  if (sourceFilt) conditions.push(sourceFilt);
+  if (sourceFilt) where.push(sourceFilt);
 
-  sql += `    ${conditions.join('\n    AND ')}\n`;
+  sql += renderWhereClauses(prewhere, where);
   sql += `GROUP BY\n`;
   sql += `    tech, cell_enb, cell_eci, cell_ci, cell_ecgi, cell_cgi, cell_nci,\n`;
   sql += `    cell_lac, cell_tac, cell_pci,\n`;
@@ -2724,17 +2696,9 @@ function getRawSQL() {
   const dateFrom = document.getElementById('date-from').value;
   const dateTo = document.getElementById('date-to').value;
 
-  // Only execute the first polygon's SELECT query
-  const p = polygons[0];
-  const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-  const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-  const condition = p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`;
-
-  // Bounding box pre-filter: bin_lat/bin_lon let ClickHouse skip granules before expensive pointInPolygon
-  const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-  // bin_lat/bin_lon are floored values — use floor/ceil with margin to ensure coverage
-  const bboxLat = `bin_lat BETWEEN ${Math.floor(Math.min(...lats)) - 1} AND ${Math.ceil(Math.max(...lats)) + 1}`;
-  const bboxLon = `bin_lon BETWEEN ${Math.floor(Math.min(...lons)) - 1} AND ${Math.ceil(Math.max(...lons)) + 1}`;
+  // Spatial filter — bin_lat/bin_lon + location_lat_rounded + pointInPolygon, OR'd across polygons.
+  // Belongs in PREWHERE: hits the ix_bin_lat/ix_bin_lon skip indexes and engages proj_geo_time.
+  const spatialFilter = buildPolygonSpatialFilter(polygons, geoCol);
 
   let sql = '';
 
@@ -2752,31 +2716,22 @@ function getRawSQL() {
     sql += `    ${geoCol}.1 AS longitude,\n`;
     sql += `    ${geoCol}.2 AS latitude\n`;
     sql += `FROM ${tableName}\n`;
-    sql += `WHERE\n`;
 
-    let conditions = [];
-    // Exclude 'Searching' state (band B0 + PLMN 255-255)
-    conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
-    if (excludeMcc && filterMcc) {
-      conditions.push(`network_mcc != ${filterMcc}`);
-    }
-    if (includeMcc && includeMccValue) {
-      conditions.push(`network_mcc = ${includeMccValue}`);
-    }
-    pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
+    let prewhere = [];
+    let where = [];
+
+    pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+    if (spatialFilter) prewhere.push(spatialFilter);
+
+    where.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+    if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
+    if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
     const hourCondSelect = getHourRangeCondition(timestampCol, false);
-    if (hourCondSelect) conditions.push(hourCondSelect);
-    // Add source filter
+    if (hourCondSelect) where.push(hourCondSelect);
     const sourceFilterRawSelect = getSourceFilterCondition(false);
-    if (sourceFilterRawSelect) {
-      conditions.push(sourceFilterRawSelect);
-    }
-    // Bbox pre-filter before expensive pointInPolygon
-    conditions.push(bboxLat);
-    conditions.push(bboxLon);
-    conditions.push(condition);
+    if (sourceFilterRawSelect) where.push(sourceFilterRawSelect);
 
-    sql += `    ${conditions.join('\n    AND ')}\n`;
+    sql += renderWhereClauses(prewhere, where);
     sql += `GROUP BY\n`;
     sql += `    network_PLMN,\n`;
     sql += `    network_operator,\n`;
@@ -2813,37 +2768,25 @@ function getRawSQL() {
     sql += `    round(avg(location_geo_coordinates.2), 6) AS avg_lat,\n`;
     sql += `    round(avg(location_geo_coordinates.1), 6) AS avg_lon\n`;
     sql += `FROM ${tableName}\n`;
-    sql += `WHERE\n`;
 
-    let conditions = [];
-    // Exclude 'Searching' state (band B0 + PLMN 255-255)
-    conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
-    conditions.push(`(cell_eci IS NOT NULL OR cell_lac IS NOT NULL)`);
-    conditions.push(`network_mcc IS NOT NULL`);
+    let prewhere = [];
+    let where = [];
 
-    if (techs.length > 0 && techs.length < 5) {
-      conditions.push(`tech IN (${techs.join(', ')})`);
-    }
-    if (includeMcc && includeMccValue) {
-      conditions.push(`network_mcc = ${includeMccValue}`);
-    }
-    if (excludeMcc && filterMcc) {
-      conditions.push(`network_mcc != ${filterMcc}`);
-    }
-    pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
+    pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+    if (spatialFilter) prewhere.push(spatialFilter);
+
+    where.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+    where.push(`(cell_eci IS NOT NULL OR cell_lac IS NOT NULL)`);
+    where.push(`network_mcc IS NOT NULL`);
+    if (techs.length > 0 && techs.length < 5) where.push(`tech IN (${techs.join(', ')})`);
+    if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
+    if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
     const hourCondTac = getHourRangeCondition(timestampCol, false);
-    if (hourCondTac) conditions.push(hourCondTac);
-    // Add source filter
+    if (hourCondTac) where.push(hourCondTac);
     const sourceFilterRawTac = getSourceFilterCondition(false);
-    if (sourceFilterRawTac) {
-      conditions.push(sourceFilterRawTac);
-    }
-    // Bbox pre-filter before expensive pointInPolygon
-    conditions.push(bboxLat);
-    conditions.push(bboxLon);
-    conditions.push(condition);
+    if (sourceFilterRawTac) where.push(sourceFilterRawTac);
 
-    sql += `    ${conditions.join('\n    AND ')}\n`;
+    sql += renderWhereClauses(prewhere, where);
     sql += `GROUP BY\n`;
     sql += `    network_mcc,\n`;
     sql += `    network_mnc,\n`;
@@ -2874,27 +2817,23 @@ function getRawSQL() {
     sql += `    round(avg(${geoCol}.2), 6) AS latitude,\n`;
     sql += `    round(avg(${geoCol}.1), 6) AS longitude\n`;
     sql += `FROM ${tableName}\n`;
-    sql += `WHERE\n`;
 
-    let conditions = [];
-    conditions.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
-    conditions.push(`signal_rsrp != 0`);
-    if (excludeMcc && filterMcc) {
-      conditions.push(`network_mcc != ${filterMcc}`);
-    }
-    if (includeMcc && includeMccValue) {
-      conditions.push(`network_mcc = ${includeMccValue}`);
-    }
-    pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
+    let prewhere = [];
+    let where = [];
+
+    pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+    if (spatialFilter) prewhere.push(spatialFilter);
+
+    where.push(`NOT (band_name = 'B0' AND network_PLMN = '255-255')`);
+    where.push(`signal_rsrp != 0`);
+    if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
+    if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
     const hourCondBand = getHourRangeCondition(timestampCol, false);
-    if (hourCondBand) conditions.push(hourCondBand);
+    if (hourCondBand) where.push(hourCondBand);
     const sourceFilterBand = getSourceFilterCondition(false);
-    if (sourceFilterBand) conditions.push(sourceFilterBand);
-    conditions.push(bboxLat);
-    conditions.push(bboxLon);
-    conditions.push(condition);
+    if (sourceFilterBand) where.push(sourceFilterBand);
 
-    sql += `    ${conditions.join('\n    AND ')}\n`;
+    sql += renderWhereClauses(prewhere, where);
     sql += `GROUP BY\n`;
     sql += `    band_name, band_number, earfcn, band_channelNumber,\n`;
     sql += `    band_bandwidth, band_duplexMode, tech,\n`;
@@ -3302,33 +3241,24 @@ function buildContributorsGeoSQL() {
   const dateTo = document.getElementById('date-to').value;
   const operatorFilter = document.getElementById('contrib-operator').value.trim();
 
-  let conditions = [];
-  conditions.push(`deviceInfo_deviceId != ''`);
+  let prewhere = [];
+  let where = [];
 
-  if (polygons.length > 0) {
-    const polyConditions = polygons.map(p => {
-      const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      const bbox1 = `bin_lat BETWEEN ${Math.floor(Math.min(...pLats)) - 1} AND ${Math.ceil(Math.max(...pLats)) + 1}`;
-      const bbox2 = `bin_lon BETWEEN ${Math.floor(Math.min(...pLons)) - 1} AND ${Math.ceil(Math.max(...pLons)) + 1}`;
-      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      const pipCond = p.operation === 'inside' ? pip : `NOT ${pip}`;
-      return `(${bbox1} AND ${bbox2} AND ${pipCond})`;
-    });
-    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join(' OR ')})`);
-    pushPolygonBboxHints(conditions, polygons);
-  }
+  pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
+  const spatial = buildPolygonSpatialFilter(polygons, geoCol);
+  if (spatial) prewhere.push(spatial);
+
+  where.push(`deviceInfo_deviceId != ''`);
   if (operatorFilter) {
     const operators = operatorFilter.split(',').map(s => `'${s.trim()}'`).join(', ');
-    conditions.push(`network_operator IN (${operators})`);
+    where.push(`network_operator IN (${operators})`);
   }
-  if (excludeMcc && filterMcc) conditions.push(`network_mcc != ${filterMcc}`);
-  if (includeMcc && includeMccValue) conditions.push(`network_mcc = ${includeMccValue}`);
-  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline);
+  if (excludeMcc && filterMcc) where.push(`network_mcc != ${filterMcc}`);
+  if (includeMcc && includeMccValue) where.push(`network_mcc = ${includeMccValue}`);
   const hourCond = getHourRangeCondition(timestampCol, false);
-  if (hourCond) conditions.push(hourCond);
+  if (hourCond) where.push(hourCond);
   const sourceFilter = getSourceFilterCondition(false);
-  if (sourceFilter) conditions.push(sourceFilter);
+  if (sourceFilter) where.push(sourceFilter);
 
   // Grid-based aggregation: round coordinates to ~110m precision for density
   return `SELECT
@@ -3338,8 +3268,7 @@ function buildContributorsGeoSQL() {
     count() AS samples,
     groupUniqArray(network_operator) AS operators
 FROM ${tableName}
-WHERE
-    ${conditions.join('\n    AND ')}
+${renderWhereClauses(prewhere, where).trimEnd()}
 GROUP BY lat, lon
 HAVING unique_users > 0
 ORDER BY unique_users DESC
@@ -3868,11 +3797,18 @@ function generateCellRsrpSQL() {
   sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">1</span>), <span class="number">6</span>) <span class="keyword">AS</span> longitude,\n`;
   sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">2</span>), <span class="number">6</span>) <span class="keyword">AS</span> latitude\n`;
   sql += `<span class="keyword">FROM</span> ${tableName}\n`;
-  sql += `<span class="keyword">WHERE</span>\n`;
 
-  let conditions = [];
-  conditions.push(`signal_rsrp != <span class="number">0</span>`);
-  conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+  let prewhere = [];
+  let where = [];
+
+  pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline, {html: true});
+  if (hasPolygons && !usePolygon) {
+    const spatial = buildPolygonSpatialFilter(polygons, geoCol, {html: true});
+    if (spatial) prewhere.push(spatial);
+  }
+
+  where.push(`signal_rsrp != <span class="number">0</span>`);
+  where.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
 
   // Cell identity filters — all RATs: 2G/3G/4G/5G
   const cellFilters = [];
@@ -3882,34 +3818,16 @@ function generateCellRsrpSQL() {
     const ecgiStrs = ecgiList.map(e => `<span class="string">'${e}'</span>`).join(', ');
     cellFilters.push(`cell_ecgi <span class="keyword">IN</span> (${ecgiStrs}) <span class="keyword">OR</span> cell_cgi <span class="keyword">IN</span> (${ecgiStrs})`);
   }
-  if (cellFilters.length > 0) {
-    conditions.push(`(${cellFilters.join(' <span class="keyword">OR</span> ')})`);
-  }
+  if (cellFilters.length > 0) where.push(`(${cellFilters.join(' <span class="keyword">OR</span> ')})`);
 
-  // Polygon filter — OR across polygons
-  if (hasPolygons && !usePolygon) {
-    const polyConditions = polygons.map(p => {
-      const lats = p.coords.map(c => c[0]), lons = p.coords.map(c => c[1]);
-      const bbox1 = `bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lats)) + 1}</span>`;
-      const bbox2 = `bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...lons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...lons)) + 1}</span>`;
-      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pip = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-      const pipCond = `<span class="function">${p.operation === 'inside' ? pip : 'NOT ' + pip}</span>`;
-      return `(${bbox1} <span class="keyword">AND</span> ${bbox2} <span class="keyword">AND</span> ${pipCond})`;
-    });
-    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    <span class="keyword">OR</span> ')})`);
-    pushPolygonBboxHints(conditions, polygons, {html: true});
-  }
-
-  if (excludeMcc && filterMcc) conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
-  if (includeMcc && includeMccValue) conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
+  if (excludeMcc && filterMcc) where.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+  if (includeMcc && includeMccValue) where.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
   const hourCond = getHourRangeCondition(timestampCol, true);
-  if (hourCond) conditions.push(hourCond);
+  if (hourCond) where.push(hourCond);
   const sourceFilt = getSourceFilterCondition(true);
-  if (sourceFilt) conditions.push(sourceFilt);
+  if (sourceFilt) where.push(sourceFilt);
 
-  sql += `    ${conditions.join('\n    <span class="keyword">AND</span> ')}\n`;
+  sql += renderWhereClauses(prewhere, where, {html: true});
   sql += `<span class="keyword">GROUP BY</span>\n`;
   sql += `    tech, cell_enb, cell_eci, cell_ci, cell_ecgi, cell_cgi, cell_nci,\n`;
   sql += `    cell_lac, cell_tac, cell_pci,\n`;
@@ -3992,61 +3910,34 @@ function generateContributorsSQL() {
 
   sql += selectCols.join(',\n') + '\n';
   sql += `<span class="keyword">FROM</span> ${tableName}\n`;
-  sql += `<span class="keyword">WHERE</span>\n`;
 
-  let conditions = [];
-  // Exclude 'Searching' state (band B0 + PLMN 255-255)
-  conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
-  conditions.push(`deviceInfo_deviceId != <span class="string">''</span>`);
+  let prewhere = [];
+  let where = [];
 
-  // Add polygon filters — OR across polygons
-  if (polygons.length > 0) {
-    const polyConditions = polygons.map(p => {
-      const pLats = p.coords.map(c => c[0]), pLons = p.coords.map(c => c[1]);
-      const bbox1 = `bin_lat <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLats)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLats)) + 1}</span>`;
-      const bbox2 = `bin_lon <span class="keyword">BETWEEN</span> <span class="number">${Math.floor(Math.min(...pLons)) - 1}</span> <span class="keyword">AND</span> <span class="number">${Math.ceil(Math.max(...pLons)) + 1}</span>`;
-      const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-      const pip = `<span class="function">pointInPolygon</span>(${geoCol}, [${polyPoints}])`;
-      const pipCond = p.operation === 'inside' ? pip : `<span class="keyword">NOT</span> ${pip}`;
-      return `(${bbox1} <span class="keyword">AND</span> ${bbox2} <span class="keyword">AND</span> ${pipCond})`;
-    });
-    conditions.push(polyConditions.length === 1 ? polyConditions[0] : `(${polyConditions.join('\n    <span class="keyword">OR</span> ')})`);
-    pushPolygonBboxHints(conditions, polygons, {html: true});
-  }
+  pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline, {html: true});
+  const spatial = buildPolygonSpatialFilter(polygons, geoCol, {html: true});
+  if (spatial) prewhere.push(spatial);
 
-  // Add operator filter
+  where.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+  where.push(`deviceInfo_deviceId != <span class="string">''</span>`);
+
   if (operatorFilter) {
     const operators = operatorFilter.split(',').map(s => `'${s.trim()}'`).join(', ');
-    conditions.push(`network_operator <span class="keyword">IN</span> (${operators})`);
+    where.push(`network_operator <span class="keyword">IN</span> (${operators})`);
   }
-
-  // Add MCC filters
-  if (excludeMcc && filterMcc) {
-    conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
-  }
-  if (includeMcc && includeMccValue) {
-    conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-  }
-
-  // Add timeline filters
-  pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
+  if (excludeMcc && filterMcc) where.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+  if (includeMcc && includeMccValue) where.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
   const hourCondContrib = getHourRangeCondition(timestampCol, true);
-  if (hourCondContrib) conditions.push(hourCondContrib);
-
-  // Add source filter
+  if (hourCondContrib) where.push(hourCondContrib);
   const sourceFilter = getSourceFilterCondition(true);
-  if (sourceFilter) {
-    conditions.push(sourceFilter);
-  }
+  if (sourceFilter) where.push(sourceFilter);
 
-  sql += `    ${conditions.join('\n    <span class="keyword">AND</span> ')}\n`;
+  sql += renderWhereClauses(prewhere, where, {html: true});
 
-  // Add GROUP BY if any grouping is selected
   if (groupByCols.length > 0) {
     sql += `<span class="keyword">GROUP BY</span>\n`;
     sql += `    ${groupByCols.join(',\n    ')}\n`;
   }
-
   sql += `<span class="keyword">ORDER BY</span>\n`;
   sql += `    unique_users <span class="keyword">DESC</span>\n`;
   sql += `<span class="keyword">LIMIT</span> <span class="number">${resultLimit}</span>;`;
@@ -4105,6 +3996,9 @@ function generateSQL() {
     const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
     const condition = p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`;
 
+    // Per-polygon spatial filter for measurements queries (PREWHERE).
+    const polySpatial = buildPolygonSpatialFilter([p], geoCol, {html: true});
+
     sql += `<span class="comment">-- ${p.name} (${p.operation.toUpperCase()})</span>\n`;
 
     if (queryType === 'select') {
@@ -4120,27 +4014,22 @@ function generateSQL() {
         sql += `    ${geoCol}.<span class="number">2</span> <span class="keyword">AS</span> latitude,\n`;
         sql += `    timestamp\n`;
         sql += `<span class="keyword">FROM</span> ${tableName}\n`;
-        sql += `<span class="keyword">WHERE</span>\n`;
 
-        let conditions = [];
-        conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+        let prewhere = [];
+        let where = [];
 
-        if (excludeMcc && filterMcc) {
-          conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
-        }
-        if (includeMcc && includeMccValue) {
-          conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-        }
-        pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
+        pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline, {html: true});
+        if (polySpatial) prewhere.push(polySpatial);
+
+        where.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+        if (excludeMcc && filterMcc) where.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+        if (includeMcc && includeMccValue) where.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
         const hourCondSelect = getHourRangeCondition(timestampCol, true);
-        if (hourCondSelect) conditions.push(hourCondSelect);
+        if (hourCondSelect) where.push(hourCondSelect);
         const sourceFilterSelect = getSourceFilterCondition(true);
-        if (sourceFilterSelect) {
-          conditions.push(sourceFilterSelect);
-        }
-        conditions.push(`<span class="function">${condition}</span>`);
+        if (sourceFilterSelect) where.push(sourceFilterSelect);
 
-        sql += `    ${conditions.join('\n    <span class="keyword">AND</span> ')}\n`;
+        sql += renderWhereClauses(prewhere, where, {html: true});
         sql += `<span class="keyword">GROUP BY</span>\n`;
         sql += `    network_PLMN,\n`;
         sql += `    network_operator,\n`;
@@ -4216,25 +4105,23 @@ function generateSQL() {
         sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">2</span>), <span class="number">6</span>) <span class="keyword">AS</span> latitude,\n`;
         sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">1</span>), <span class="number">6</span>) <span class="keyword">AS</span> longitude\n`;
         sql += `<span class="keyword">FROM</span> ${tableName}\n`;
-        sql += `<span class="keyword">WHERE</span>\n`;
 
-        let bandConds = [];
-        bandConds.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
-        bandConds.push(`signal_rsrp != <span class="number">0</span>`);
-        if (excludeMcc && filterMcc) {
-          bandConds.push(`network_mcc != <span class="number">${filterMcc}</span>`);
-        }
-        if (includeMcc && includeMccValue) {
-          bandConds.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-        }
-        pushMeasurementsDateRange(bandConds, dateFrom, dateTo, useTimeline, {html: true});
+        let bandPrewhere = [];
+        let bandWhere = [];
+
+        pushMeasurementsDateRange(bandPrewhere, dateFrom, dateTo, useTimeline, {html: true});
+        if (polySpatial) bandPrewhere.push(polySpatial);
+
+        bandWhere.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+        bandWhere.push(`signal_rsrp != <span class="number">0</span>`);
+        if (excludeMcc && filterMcc) bandWhere.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+        if (includeMcc && includeMccValue) bandWhere.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
         const hourCondBand = getHourRangeCondition(timestampCol, true);
-        if (hourCondBand) bandConds.push(hourCondBand);
+        if (hourCondBand) bandWhere.push(hourCondBand);
         const sourceFilterBand = getSourceFilterCondition(true);
-        if (sourceFilterBand) bandConds.push(sourceFilterBand);
-        bandConds.push(`<span class="function">${condition}</span>`);
+        if (sourceFilterBand) bandWhere.push(sourceFilterBand);
 
-        sql += `    ${bandConds.join('\n    <span class="keyword">AND</span> ')}\n`;
+        sql += renderWhereClauses(bandPrewhere, bandWhere, {html: true});
         sql += `<span class="keyword">GROUP BY</span>\n`;
         sql += `    band_name, band_number, earfcn, band_channelNumber,\n`;
         sql += `    band_bandwidth, band_duplexMode, tech,\n`;
@@ -4313,34 +4200,25 @@ function generateSQL() {
       sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">2</span>), <span class="number">6</span>) <span class="keyword">AS</span> avg_lat,\n`;
       sql += `    <span class="function">round</span>(<span class="function">avg</span>(${geoCol}.<span class="number">1</span>), <span class="number">6</span>) <span class="keyword">AS</span> avg_lon\n`;
       sql += `<span class="keyword">FROM</span> ${tableName}\n`;
-      sql += `<span class="keyword">WHERE</span>\n`;
 
-      let conditions = [];
-      // Exclude 'Searching' state (band B0 + PLMN 255-255)
-      conditions.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
-      conditions.push(`(<span class="keyword">cell_eci IS NOT NULL OR</span> cell_lac <span class="keyword">IS NOT NULL</span>)`);
-      conditions.push(`network_mcc <span class="keyword">IS NOT NULL</span>`);
+      let tacPrewhere = [];
+      let tacWhere = [];
 
-      if (techs.length > 0 && techs.length < 5) {
-        conditions.push(`tech <span class="keyword">IN</span> (${techs.join(', ')})`);
-      }
-      if (includeMcc && includeMccValue) {
-        conditions.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
-      }
-      if (excludeMcc && filterMcc) {
-        conditions.push(`network_mcc != <span class="number">${filterMcc}</span>`);
-      }
-      pushMeasurementsDateRange(conditions, dateFrom, dateTo, useTimeline, {html: true});
+      pushMeasurementsDateRange(tacPrewhere, dateFrom, dateTo, useTimeline, {html: true});
+      if (polySpatial) tacPrewhere.push(polySpatial);
+
+      tacWhere.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
+      tacWhere.push(`(<span class="keyword">cell_eci IS NOT NULL OR</span> cell_lac <span class="keyword">IS NOT NULL</span>)`);
+      tacWhere.push(`network_mcc <span class="keyword">IS NOT NULL</span>`);
+      if (techs.length > 0 && techs.length < 5) tacWhere.push(`tech <span class="keyword">IN</span> (${techs.join(', ')})`);
+      if (includeMcc && includeMccValue) tacWhere.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
+      if (excludeMcc && filterMcc) tacWhere.push(`network_mcc != <span class="number">${filterMcc}</span>`);
       const hourCondTacHtml = getHourRangeCondition(timestampCol, true);
-      if (hourCondTacHtml) conditions.push(hourCondTacHtml);
-      // Add source filter
+      if (hourCondTacHtml) tacWhere.push(hourCondTacHtml);
       const sourceFilterTac = getSourceFilterCondition(true);
-      if (sourceFilterTac) {
-        conditions.push(sourceFilterTac);
-      }
-      conditions.push(`<span class="function">${condition}</span>`);
+      if (sourceFilterTac) tacWhere.push(sourceFilterTac);
 
-      sql += `    ${conditions.join('\n    <span class="keyword">AND</span> ')}\n`;
+      sql += renderWhereClauses(tacPrewhere, tacWhere, {html: true});
       sql += `<span class="keyword">GROUP BY</span>\n`;
       sql += `    network_mcc,\n`;
       sql += `    network_mnc,\n`;
@@ -4417,35 +4295,23 @@ function generateSQL() {
   // Add count preview
   if (polygons.length > 0 && queryType !== 'cell') {
     const p = polygons[0];
-    const polyPoints = p.coords.map(c => `(${c[1].toFixed(8)}, ${c[0].toFixed(8)})`).join(', ');
-    const pointInPolygon = `pointInPolygon(${geoCol}, [${polyPoints}])`;
-    const condition = p.operation === 'inside' ? pointInPolygon : `NOT ${pointInPolygon}`;
 
     if (useMeasurements || (queryType !== 'select' && queryType !== 'bands')) {
       sql += `<span class="comment">-- Count affected rows (measurements)</span>\n`;
       sql += `<span class="keyword">SELECT</span> <span class="function">count</span>() <span class="keyword">AS</span> affected_rows\n`;
       sql += `<span class="keyword">FROM</span> ${tableName}\n`;
-      sql += `<span class="keyword">WHERE</span> <span class="function">${condition}</span>`;
 
-      if (excludeMcc && filterMcc) {
-        sql += `\n    <span class="keyword">AND</span> network_mcc != <span class="number">${filterMcc}</span>`;
-      }
-      if (includeMcc && includeMccValue) {
-        sql += `\n    <span class="keyword">AND</span> network_mcc = <span class="number">${includeMccValue}</span>`;
-      }
-      if (useTimeline && dateFrom) {
-        const bufferedFromCnt = bufferDateStr(dateFrom, -CREATEDAT_BUFFER_DAYS);
-        sql += `\n    <span class="keyword">AND</span> ${CREATEDAT_COL} >= <span class="function">toDateTime</span>(<span class="string">'${bufferedFromCnt} 00:00:00'</span>)`;
-        sql += `\n    <span class="keyword">AND</span> ${timestampCol} >= <span class="function">toDateTime</span>(<span class="string">'${dateFrom} 00:00:00'</span>)`;
-      }
-      if (useTimeline && dateTo) {
-        sql += `\n    <span class="keyword">AND</span> ${timestampCol} <= <span class="function">toDateTime</span>(<span class="string">'${dateTo} 23:59:59'</span>)`;
-      }
+      let cntPrewhere = [];
+      let cntWhere = [];
+      pushMeasurementsDateRange(cntPrewhere, dateFrom, dateTo, useTimeline, {html: true});
+      const cntSpatial = buildPolygonSpatialFilter([p], geoCol, {html: true});
+      if (cntSpatial) cntPrewhere.push(cntSpatial);
+      if (excludeMcc && filterMcc) cntWhere.push(`network_mcc != <span class="number">${filterMcc}</span>`);
+      if (includeMcc && includeMccValue) cntWhere.push(`network_mcc = <span class="number">${includeMccValue}</span>`);
       const hourCondUpdate = getHourRangeCondition(timestampCol, true);
-      if (hourCondUpdate) {
-        sql += `\n    <span class="keyword">AND</span> ${hourCondUpdate}`;
-      }
-      sql += `;\n\n`;
+      if (hourCondUpdate) cntWhere.push(hourCondUpdate);
+
+      sql += renderWhereClauses(cntPrewhere, cntWhere, {html: true}).trimEnd() + `;\n\n`;
     }
 
     if (useBadMeasurements && (queryType === 'select' || queryType === 'bands')) {
