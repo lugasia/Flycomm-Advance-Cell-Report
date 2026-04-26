@@ -3339,7 +3339,8 @@ function flyToCell(lat, lon) {
 //  CONTRIBUTORS MAP VISUALIZATION (Heatmap + Dots)
 // ════════════════════════════════════════════════════════════════
 
-function buildContributorsGeoSQL() {
+function buildContributorsGeoSQL(polygonsOverride, dateFromOverride, dateToOverride) {
+  const polys = polygonsOverride || polygons;
   const tableName = TABLE_NAME;
   const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
@@ -3348,16 +3349,16 @@ function buildContributorsGeoSQL() {
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
   const timestampCol = TIMESTAMP_COL;
-  const dateFrom = document.getElementById('date-from').value;
-  const dateTo = document.getElementById('date-to').value;
+  const dateFrom = dateFromOverride || document.getElementById('date-from').value;
+  const dateTo = dateToOverride || document.getElementById('date-to').value;
   const operatorFilter = document.getElementById('contrib-operator').value.trim();
 
   let prewhere = [];
   let where = [];
 
   pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
-    prewhere.push(...buildPolygonBboxFilter(polygons));
-  const pip = buildPolygonPipFilter(polygons, geoCol);
+  prewhere.push(...buildPolygonBboxFilter(polys));
+  const pip = buildPolygonPipFilter(polys, geoCol);
   if (pip) where.push(pip);
 
   where.push(`deviceInfo_deviceId != ''`);
@@ -3563,31 +3564,71 @@ async function showContributorsOnMap() {
   resultsContainer.innerHTML = '<p style="color:var(--sub);padding:20px;text-align:center;">Fetching contributor locations for map...</p>';
 
   try {
-    const geoSQL = buildContributorsGeoSQL();
-    console.log('[Contributors Map] Executing geo query:', geoSQL);
+    // Same fan-out as the Contributors report: per polygon x per 24h chunk.
+    const useTimeline = document.getElementById('use-timeline').checked;
+    const dateFromInput = document.getElementById('date-from').value;
+    const dateToInput = document.getElementById('date-to').value;
+    const polysList = polygons.length > 0 ? polygons.map(p => [p]) : [null];
+    const dateChunks = useTimeline ? splitDateRange(dateFromInput, dateToInput, CONTRIB_CHUNK_DAYS) : [{ from: null, to: null }];
+    const totalCells = polysList.length * dateChunks.length;
 
+    const merged = new Map();
+    let cellIdx = 0;
     const startTime = performance.now();
-    const result = await executeClickHouseQuery(geoSQL);
+
+    for (const polyArg of polysList) {
+      for (const chunk of dateChunks) {
+        cellIdx++;
+        if (totalCells > 1) {
+          resultsContainer.innerHTML = `<p style="color:var(--sub);padding:20px;text-align:center;">Fetching map data ${cellIdx} / ${totalCells}...</p>`;
+        }
+        const geoSQL = buildContributorsGeoSQL(polyArg, chunk.from, chunk.to);
+        const r = await executeClickHouseQuery(geoSQL);
+        if (!r || !r.data) continue;
+        for (const row of r.data) {
+          const key = `${row.lat}|${row.lon}`;
+          const existing = merged.get(key);
+          if (!existing) {
+            merged.set(key, {
+              lat: row.lat,
+              lon: row.lon,
+              unique_users: parseInt(row.unique_users) || 0,
+              samples: parseInt(row.samples) || 0,
+              operators: Array.isArray(row.operators) ? [...row.operators] : []
+            });
+          } else {
+            existing.unique_users += parseInt(row.unique_users) || 0;
+            existing.samples += parseInt(row.samples) || 0;
+            if (Array.isArray(row.operators)) {
+              for (const op of row.operators) if (!existing.operators.includes(op)) existing.operators.push(op);
+            }
+          }
+        }
+      }
+    }
+
+    const data = Array.from(merged.values()).sort((a, b) => b.unique_users - a.unique_users);
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
 
-    if (!result || !result.data || result.data.length === 0) {
+    if (data.length === 0) {
       resultsMeta.textContent = `0 rows in ${elapsed}s`;
       resultsContainer.innerHTML = '<p style="color:var(--orange);padding:20px;text-align:center;">No contributor location data found.</p>';
       return;
     }
 
-    resultsMeta.textContent = `${result.data.length} locations in ${elapsed}s`;
+    const result = { meta: [{name:'lat'},{name:'lon'},{name:'unique_users'},{name:'samples'},{name:'operators'}], data, rows: data.length };
+    resultsMeta.textContent = `${data.length} locations in ${elapsed}s (${totalCells} ${totalCells === 1 ? 'query' : 'queries'})`;
     displayResults(result);
 
     // Render on map
-    renderContributorsOnMap(result.data);
+    renderContributorsOnMap(data);
 
-    const totalUsers = result.data.reduce((s, d) => s + (parseInt(d.unique_users) || 0), 0);
+    const totalUsers = data.reduce((s, d) => s + (parseInt(d.unique_users) || 0), 0);
     resultsContainer.innerHTML += `
       <div style="padding:12px;text-align:center;background:var(--dark);border-radius:8px;margin:12px">
         <span class="material-icons" style="color:#f59e0b;font-size:28px;vertical-align:middle">map</span>
         <span style="color:var(--green);font-size:14px;margin-left:8px">
-          Showing <strong>${result.data.length.toLocaleString()}</strong> locations with <strong>${totalUsers.toLocaleString()}</strong> unique users on map
+          Showing <strong>${data.length.toLocaleString()}</strong> locations with <strong>${totalUsers.toLocaleString()}</strong> unique users on map
         </span>
       </div>
     `;
