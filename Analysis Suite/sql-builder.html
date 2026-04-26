@@ -2315,7 +2315,10 @@ async function testConnection(silent = false) {
 // Each per-polygon SQL is a clean PREWHERE timestamp + bin_lat + bin_lon AND-chain
 // that activates the proj_geo_time projection — single-polygon scans are 10-100x
 // smaller than the OR'd multi-polygon variant on the unsorted base table.
-const CONTRIB_CHUNK_DAYS = 14;
+// Chunk per calendar day. The OR'd polygon bbox + timestamp PREWHERE doesn't activate
+// proj_geo_time on this cluster, so each chunk reads a full daily slice of the partition
+// (~10-30M rows). Anything wider than 24h overshoots the readonly 400M row cap.
+const CONTRIB_CHUNK_DAYS = 1;
 
 function splitDateRange(dateFrom, dateTo, chunkDays) {
   if (!dateFrom || !dateTo) return [{ from: dateFrom, to: dateTo }];
@@ -3974,8 +3977,8 @@ function generateContributorsSQL() {
   const resultLimit = document.getElementById('contrib-limit').value || '1000';
 
   let sql = '<span class="comment">-- User Contributors Report (Regulator/Operator Statistics)</span>\n';
-  sql += `<span class="comment">-- Execution fans out into (polygon x ${CONTRIB_CHUNK_DAYS}-day time chunks) cells; rows merged in JS by group key.</span>\n`;
-  sql += '<span class="comment">-- Each cell is a clean PREWHERE timestamp + bin_lat/bin_lon AND-chain that activates proj_geo_time. Below is one cell.</span>\n';
+  sql += `<span class="comment">-- Execution fans out into (polygon x 24-hour time chunks) cells; rows merged in JS by group key.</span>\n`;
+  sql += '<span class="comment">-- Each cell is a single-day query that fits under the readonly row-scan cap. Below is one cell.</span>\n';
   sql += `<span class="keyword">SELECT</span>\n`;
 
   // Build SELECT columns based on grouping options
