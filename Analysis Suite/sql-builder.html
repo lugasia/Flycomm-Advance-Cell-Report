@@ -2295,7 +2295,30 @@ async function testConnection(silent = false) {
 // Each per-polygon SQL is a clean PREWHERE timestamp + bin_lat + bin_lon AND-chain
 // that activates the proj_geo_time projection — single-polygon scans are 10-100x
 // smaller than the OR'd multi-polygon variant on the unsorted base table.
-async function executeContributorsPerPolygon() {
+const CONTRIB_CHUNK_DAYS = 14;
+
+function splitDateRange(dateFrom, dateTo, chunkDays) {
+  if (!dateFrom || !dateTo) return [{ from: dateFrom, to: dateTo }];
+  const start = new Date(dateFrom + 'T00:00:00Z');
+  const end = new Date(dateTo + 'T00:00:00Z');
+  if (isNaN(start) || isNaN(end) || end < start) return [{ from: dateFrom, to: dateTo }];
+  const chunks = [];
+  let cursor = new Date(start);
+  while (cursor <= end) {
+    const next = new Date(cursor);
+    next.setUTCDate(next.getUTCDate() + chunkDays - 1);
+    const chunkEnd = next > end ? end : next;
+    chunks.push({
+      from: cursor.toISOString().slice(0, 10),
+      to: chunkEnd.toISOString().slice(0, 10)
+    });
+    cursor = new Date(chunkEnd);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return chunks;
+}
+
+async function executeContributorsBatched() {
   const groupKeyCols = [];
   if (document.getElementById('contrib-by-mcc').checked)      groupKeyCols.push('network_mcc');
   if (document.getElementById('contrib-by-plmn').checked)     groupKeyCols.push('network_PLMN');
@@ -2308,15 +2331,29 @@ async function executeContributorsPerPolygon() {
   const merged = new Map();
   let metaTemplate = null;
 
-  for (const polygon of polygons) {
-    const sql = getRawContributorsSQL([polygon]);
+  const useTimeline = document.getElementById('use-timeline').checked;
+  const dateFromInput = document.getElementById('date-from').value;
+  const dateToInput = document.getElementById('date-to').value;
+  const polysList = polygons.length > 0 ? polygons.map(p => [p]) : [null];
+  const dateChunks = useTimeline ? splitDateRange(dateFromInput, dateToInput, CONTRIB_CHUNK_DAYS) : [{ from: null, to: null }];
+  const totalCells = polysList.length * dateChunks.length;
+  let cellIdx = 0;
+
+  for (const polyArg of polysList) {
+   for (const chunk of dateChunks) {
+    cellIdx++;
+    const resultsContainer = document.getElementById('results-container');
+    if (resultsContainer && totalCells > 1) {
+      resultsContainer.innerHTML = `<p style="color:var(--sub);padding:20px;text-align:center;">Executing query ${cellIdx} / ${totalCells}...</p>`;
+    }
+    const sql = getRawContributorsSQL(polyArg, chunk.from, chunk.to);
     const r = await executeClickHouseQuery(sql);
     if (!r || !r.data) continue;
     if (!metaTemplate && r.meta) metaTemplate = r.meta;
     for (const row of r.data) {
       const key = groupKeyCols.length === 0
         ? '__all__'
-        : groupKeyCols.map(c => row[c] === null || row[c] === undefined ? '' : String(row[c])).join('');
+        : groupKeyCols.map(c => row[c] === null || row[c] === undefined ? '' : String(row[c])).join('|');
       const existing = merged.get(key);
       if (!existing) {
         merged.set(key, { ...row });
@@ -2327,6 +2364,7 @@ async function executeContributorsPerPolygon() {
         if (row.last_contribution  && (!existing.last_contribution  || row.last_contribution  > existing.last_contribution))  existing.last_contribution  = row.last_contribution;
       }
     }
+   }
   }
 
   const data = Array.from(merged.values()).sort((a, b) => (parseInt(b.unique_users) || 0) - (parseInt(a.unique_users) || 0));
@@ -2362,8 +2400,8 @@ async function executeSQL() {
     // Multi-polygon contributors: split into per-polygon queries so each one is a clean
     // bin_lat/bin_lon/timestamp AND-chain that activates the proj_geo_time projection.
     // OR'd polygons inside a single query defeat the projection and force a wide scan.
-    if (queryType === 'contributors' && polygons.length > 1) {
-      result = await executeContributorsPerPolygon();
+    if (queryType === 'contributors') {
+      result = await executeContributorsBatched();
     } else {
       const rawSQL = getRawSQL();
       if (!rawSQL || !rawSQL.trim()) {
@@ -2434,7 +2472,7 @@ async function executeSQL() {
 }
 
 // Generate raw SQL for Contributors query (no HTML formatting)
-function getRawContributorsSQL(polygonsOverride) {
+function getRawContributorsSQL(polygonsOverride, dateFromOverride, dateToOverride) {
   const polys = polygonsOverride || polygons;
   const tableName = TABLE_NAME;
   const geoCol = GEO_COL;
@@ -2444,8 +2482,8 @@ function getRawContributorsSQL(polygonsOverride) {
   const includeMccValue = document.getElementById('include-mcc-value').value;
   const useTimeline = document.getElementById('use-timeline').checked;
   const timestampCol = TIMESTAMP_COL;
-  const dateFrom = document.getElementById('date-from').value;
-  const dateTo = document.getElementById('date-to').value;
+  const dateFrom = dateFromOverride || document.getElementById('date-from').value;
+  const dateTo = dateToOverride || document.getElementById('date-to').value;
 
   // Contributors-specific options
   const byOperator = document.getElementById('contrib-by-operator').checked;
@@ -3910,12 +3948,8 @@ function generateContributorsSQL() {
   const resultLimit = document.getElementById('contrib-limit').value || '1000';
 
   let sql = '<span class="comment">-- User Contributors Report (Regulator/Operator Statistics)</span>\n';
-  if (polygons.length > 1) {
-    sql += `<span class="comment">-- ${polygons.length} polygons drawn — execution fans out into ${polygons.length} per-polygon queries (one shown below)</span>\n`;
-    sql += '<span class="comment">-- and rows are merged in JS by group key. Single-polygon shape activates the proj_geo_time projection.</span>\n';
-  } else if (polygons.length === 1) {
-    sql += '<span class="comment">-- Filtered by polygon area</span>\n';
-  }
+  sql += `<span class="comment">-- Execution fans out into (polygon x ${CONTRIB_CHUNK_DAYS}-day time chunks) cells; rows merged in JS by group key.</span>\n`;
+  sql += '<span class="comment">-- Each cell is a clean PREWHERE timestamp + bin_lat/bin_lon AND-chain that activates proj_geo_time. Below is one cell.</span>\n';
   sql += `<span class="keyword">SELECT</span>\n`;
 
   // Build SELECT columns based on grouping options
