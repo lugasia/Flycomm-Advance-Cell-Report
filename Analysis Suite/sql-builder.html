@@ -2291,6 +2291,48 @@ async function testConnection(silent = false) {
   }
 }
 
+// Run the contributors query once per polygon, then merge rows by group key in JS.
+// Each per-polygon SQL is a clean PREWHERE timestamp + bin_lat + bin_lon AND-chain
+// that activates the proj_geo_time projection — single-polygon scans are 10-100x
+// smaller than the OR'd multi-polygon variant on the unsorted base table.
+async function executeContributorsPerPolygon() {
+  const groupKeyCols = [];
+  if (document.getElementById('contrib-by-mcc').checked)      groupKeyCols.push('network_mcc');
+  if (document.getElementById('contrib-by-plmn').checked)     groupKeyCols.push('network_PLMN');
+  if (document.getElementById('contrib-by-operator').checked) groupKeyCols.push('network_operator');
+  if (document.getElementById('contrib-by-tech').checked)     groupKeyCols.push('tech');
+  if (document.getElementById('contrib-by-source').checked)   groupKeyCols.push('source');
+  if (document.getElementById('contrib-by-week').checked)     groupKeyCols.push('week');
+  if (document.getElementById('contrib-by-month').checked)    groupKeyCols.push('month');
+
+  const merged = new Map();
+  let metaTemplate = null;
+
+  for (const polygon of polygons) {
+    const sql = getRawContributorsSQL([polygon]);
+    const r = await executeClickHouseQuery(sql);
+    if (!r || !r.data) continue;
+    if (!metaTemplate && r.meta) metaTemplate = r.meta;
+    for (const row of r.data) {
+      const key = groupKeyCols.length === 0
+        ? '__all__'
+        : groupKeyCols.map(c => row[c] === null || row[c] === undefined ? '' : String(row[c])).join('');
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, { ...row });
+      } else {
+        existing.unique_users  = (parseInt(existing.unique_users)  || 0) + (parseInt(row.unique_users)  || 0);
+        existing.total_samples = (parseInt(existing.total_samples) || 0) + (parseInt(row.total_samples) || 0);
+        if (row.first_contribution && (!existing.first_contribution || row.first_contribution < existing.first_contribution)) existing.first_contribution = row.first_contribution;
+        if (row.last_contribution  && (!existing.last_contribution  || row.last_contribution  > existing.last_contribution))  existing.last_contribution  = row.last_contribution;
+      }
+    }
+  }
+
+  const data = Array.from(merged.values()).sort((a, b) => (parseInt(b.unique_users) || 0) - (parseInt(a.unique_users) || 0));
+  return { meta: metaTemplate || (data[0] ? Object.keys(data[0]).map(k => ({ name: k })) : []), data, rows: data.length };
+}
+
 async function executeSQL() {
   if (!isConnected) {
     alert('Please connect to the database first');
@@ -2313,17 +2355,26 @@ async function executeSQL() {
   resultsContainer.innerHTML = '<p style="color:var(--sub);padding:20px;text-align:center;">Executing query...</p>';
 
   try {
-    // Get raw SQL without HTML formatting
-    const rawSQL = getRawSQL();
-    if (!rawSQL || !rawSQL.trim()) {
-      alert('No SQL generated. Please check that at least one table is selected.');
-      resultsContainer.innerHTML = '';
-      resultsSection.classList.remove('visible');
-      return;
-    }
+    let result;
+    let elapsed;
     const startTime = performance.now();
-    const result = await executeClickHouseQuery(rawSQL);
-    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
+    // Multi-polygon contributors: split into per-polygon queries so each one is a clean
+    // bin_lat/bin_lon/timestamp AND-chain that activates the proj_geo_time projection.
+    // OR'd polygons inside a single query defeat the projection and force a wide scan.
+    if (queryType === 'contributors' && polygons.length > 1) {
+      result = await executeContributorsPerPolygon();
+    } else {
+      const rawSQL = getRawSQL();
+      if (!rawSQL || !rawSQL.trim()) {
+        alert('No SQL generated. Please check that at least one table is selected.');
+        resultsContainer.innerHTML = '';
+        resultsSection.classList.remove('visible');
+        return;
+      }
+      result = await executeClickHouseQuery(rawSQL);
+    }
+    elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
 
     if (result && result.data && result.data.length > 0) {
       resultsMeta.textContent = `${result.data.length} rows in ${elapsed}s`;
@@ -2383,7 +2434,8 @@ async function executeSQL() {
 }
 
 // Generate raw SQL for Contributors query (no HTML formatting)
-function getRawContributorsSQL() {
+function getRawContributorsSQL(polygonsOverride) {
+  const polys = polygonsOverride || polygons;
   const tableName = TABLE_NAME;
   const geoCol = GEO_COL;
   const excludeMcc = document.getElementById('exclude-mcc').checked;
@@ -2456,7 +2508,7 @@ function getRawContributorsSQL() {
   let where = [];
 
   pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline);
-  const spatial = buildPolygonSpatialFilter(polygons, geoCol);
+  const spatial = buildPolygonSpatialFilter(polys, geoCol);
   if (spatial) prewhere.push(spatial);
 
   // Exclude 'Searching' state (band B0 + PLMN 255-255)
@@ -3858,7 +3910,10 @@ function generateContributorsSQL() {
   const resultLimit = document.getElementById('contrib-limit').value || '1000';
 
   let sql = '<span class="comment">-- User Contributors Report (Regulator/Operator Statistics)</span>\n';
-  if (polygons.length > 0) {
+  if (polygons.length > 1) {
+    sql += `<span class="comment">-- ${polygons.length} polygons drawn — execution fans out into ${polygons.length} per-polygon queries (one shown below)</span>\n`;
+    sql += '<span class="comment">-- and rows are merged in JS by group key. Single-polygon shape activates the proj_geo_time projection.</span>\n';
+  } else if (polygons.length === 1) {
     sql += '<span class="comment">-- Filtered by polygon area</span>\n';
   }
   sql += `<span class="keyword">SELECT</span>\n`;
@@ -3909,7 +3964,9 @@ function generateContributorsSQL() {
   let where = [];
 
   pushMeasurementsDateRange(prewhere, dateFrom, dateTo, useTimeline, {html: true});
-  const spatial = buildPolygonSpatialFilter(polygons, geoCol, {html: true});
+  // For multi-polygon, show the per-polygon shape that's actually executed (one query per polygon, merged in JS).
+  const polysForDisplay = polygons.length > 1 ? [polygons[0]] : polygons;
+  const spatial = buildPolygonSpatialFilter(polysForDisplay, geoCol, {html: true});
   if (spatial) prewhere.push(spatial);
 
   where.push(`<span class="keyword">NOT</span> (band_name = <span class="string">'B0'</span> <span class="keyword">AND</span> network_PLMN = <span class="string">'255-255'</span>)`);
