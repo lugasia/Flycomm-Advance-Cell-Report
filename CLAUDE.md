@@ -127,6 +127,14 @@ location_geo_coordinates.2        -- latitude
 - Extra fields populated: `deviceInfo_imei`, `deviceInfo_temperature`, `deviceInfo_uptime`, `deviceInfo_modemVersion`
 - 7 unique devices (by IMEI), all located in Israel
 
+#### Device identity (`deviceInfo_deviceId`)
+- **Format**: UUID v4 (e.g. `8a98cd85-a303-457e-a7d4-d242205cb544`)
+- **Persistent**: Same UUID appears across 9-11+ consecutive days — NOT a session ID
+- **Only available identifier**: `deviceInfo_personalId` and `deviceInfo_imei` are empty for all sources except modem (4 rows)
+- **Use `uniq(deviceInfo_deviceId)` for unique user/device counts** — this is the correct and only method
+- **Non-Nullable String**: Filter with `!= ''` not `IS NOT NULL` (empty = no device ID)
+- Verified Apr 2026: ~150K unique devices across all sources (Mar 2026 data)
+
 #### Important query notes
 - `location_geo_coordinates` is Point type — access lon/lat as `.1`/`.2`
 - `signal_rsrp` is `Int32` (NOT NULL, defaults to 0) — filter `signal_rsrp != 0` for real data
