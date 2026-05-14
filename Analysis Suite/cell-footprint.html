@@ -503,16 +503,23 @@ function renderHexes(hexes, metric) {
   const features = [];
   hexes.forEach(hex => {
     if (!hex.h3) return;
+    // ClickHouse's geoToH3 returns UInt64 serialised as a decimal string
+    // (e.g. "622236750380269567"). h3-js expects the index in hex
+    // (e.g. "8a194ad32d97fff"), so convert with BigInt.
+    let h3idx;
+    try { h3idx = BigInt(hex.h3).toString(16); }
+    catch (e) { return; }
     let boundary;
-    try { boundary = h3.cellToBoundary(hex.h3, true); }
+    try { boundary = h3.cellToBoundary(h3idx, true); }
     catch (e) { return; }
     // h3-js v4 returns [lng, lat] when 2nd arg is true; Leaflet wants [lat, lng]
     const latlngs = boundary.map(([lng, lat]) => [lat, lng]);
     const value = hex[metric];
     const color = rsrpToColor(value);
     const poly = L.polygon(latlngs, {
-      color, weight: 0.5,
-      fillColor: color, fillOpacity: 0.65,
+      color, weight: 1,
+      fillColor: color, fillOpacity: 0.35,
+      opacity: 0.85,
     });
     poly.bindTooltip(
       `<strong>${hex.samples.toLocaleString()} samples</strong><br/>` +
