@@ -455,12 +455,20 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 )
                 rows = count_result.get('data', [])
                 pre_count = int(rows[0].get('n', 0)) if rows else 0
-                if pre_count >= 20000:
-                    chosen_res = 11
+                # Bias finer than the original spec — at low sample counts
+                # res 9 hexes (~105,000 m²) cover several city blocks and feel
+                # nothing like a cell footprint. Resolutions below assume
+                # min_samples ~= 1 so the finer hexes survive the HAVING clause.
+                if pre_count >= 50000:
+                    chosen_res = 13
+                elif pre_count >= 10000:
+                    chosen_res = 12
                 elif pre_count >= 1000:
+                    chosen_res = 11
+                elif pre_count >= 100:
                     chosen_res = 10
                 else:
-                    chosen_res = 9
+                    chosen_res = 10
             chosen_res = max(8, min(15, int(chosen_res)))
 
             # ─── Main aggregation query ───
