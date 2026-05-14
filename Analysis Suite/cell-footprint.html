@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" type="image/png" href="Favicon.png">
+  <title>Advanced Cell Report — Cell Footprint</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="https://unpkg.com/h3-js@4"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:        #0a1628;
+      --card:        #162038;
+      --card2:       #1a2744;
+      --card-border: #1e3a5f;
+      --accent:      #3b82f6;
+      --accent2:     #60a5fa;
+      --red:         #ef4444;
+      --orange:      #f59e0b;
+      --green:       #22c55e;
+      --cyan:        #06b6d4;
+      --purple:      #a78bfa;
+      --text:        #e2e8f0;
+      --text-muted:  #94a3b8;
+      --text-dim:    #64748b;
+    }
+
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--navy); color: var(--text); overflow: hidden; }
+
+    #app { display: flex; height: 100vh; }
+
+    /* ── SIDEBAR ── */
+    aside {
+      width: 480px; min-width: 480px;
+      background: var(--card);
+      border-right: 1px solid var(--card-border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    #sb-header { padding: 16px 20px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+    #sb-header img { height: 32px; max-width: 100%; object-fit: contain; opacity: 0.85; display: block; margin-bottom: 6px; }
+    #sb-header h1 { font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; margin-top: 0; }
+    #sb-header h1 .material-icons { font-size: 20px; color: var(--accent); }
+    #sb-header p { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+    /* tool switcher */
+    .tool-switcher { display: flex; gap: 2px; padding: 8px 10px; border-bottom: 1px solid var(--card-border); background: var(--navy); flex-shrink: 0; }
+    .tool-switcher a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 6px; font-size: 10px; font-weight: 500; border-radius: 6px; color: var(--text-muted); text-decoration: none; transition: all .15s; }
+    .tool-switcher a .material-icons { font-size: 14px; }
+    .tool-switcher a:hover { background: rgba(59,130,246,.08); color: var(--text); }
+    .tool-switcher a.current { background: rgba(59,130,246,.15); color: var(--accent); font-weight: 600; }
+
+    #sb-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+    #sb-body::-webkit-scrollbar { width: 4px; }
+    #sb-body::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 2px; }
+    .sb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 7px; }
+
+    /* Connection bar — copied verbatim from db-dashboard.html */
+    #conn-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--card-border); cursor: pointer; background: rgba(255,255,255,0.02); transition: all 0.15s; }
+    #conn-bar:hover { border-color: rgba(59,130,246,0.4); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; transition: background 0.3s; }
+    .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .conn-dot.connecting { background: var(--orange); }
+    #conn-label { flex: 1; font-size: 12px; color: var(--text-muted); }
+    #conn-panel { display: none; padding: 12px; background: var(--navy); border-radius: 8px; border: 1px solid var(--card-border); margin-top: 6px; }
+    #conn-panel.open { display: block; }
+    .field-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px; }
+    .field-label:first-child { margin-top: 0; }
+    input.db-inp, select.db-inp, textarea.db-inp { width: 100%; background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'JetBrains Mono', monospace; outline: none; }
+    input.db-inp:focus, select.db-inp:focus, textarea.db-inp:focus { border-color: var(--accent); }
+    textarea.db-inp { resize: vertical; min-height: 54px; line-height: 1.4; }
+    select.db-inp { font-family: 'Inter', sans-serif; cursor: pointer; }
+
+    .qs-card { background: var(--navy); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px; }
+    .qs-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+    .qs-row.three { grid-template-columns: 1fr 1fr 1fr; }
+    .chk-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--text-muted); cursor: pointer; user-select: none; }
+    .chk-row input { accent-color: var(--accent); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; font-family: 'Inter', sans-serif; transition: all 0.15s; width: 100%; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-primary:disabled { background: var(--card-border); color: var(--text-muted); cursor: not-allowed; }
+    .btn-secondary { background: var(--navy); color: var(--text); border: 1px solid var(--card-border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn .material-icons { font-size: 16px; }
+
+    /* nav-links (bottom) */
+    #nav-links { padding: 10px 14px; border-top: 1px solid var(--card-border); display: flex; gap: 7px; flex-shrink: 0; }
+    #nav-links a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; flex-direction: column; padding: 7px 4px; border-radius: 8px; border: 1px solid var(--card-border); color: var(--text-muted); text-decoration: none; font-size: 10px; font-weight: 500; transition: all 0.2s; text-align: center; }
+    #nav-links a .material-icons { font-size: 17px; }
+    #nav-links a:hover { border-color: var(--accent); background: rgba(59,130,246,0.1); color: var(--text); }
+    #nav-links a.current { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
+
+    /* ── MAIN ── */
+    #main { flex: 1; position: relative; overflow: hidden; }
+    #map { position: absolute; inset: 0; background: #0a1628; }
+    .leaflet-container { background: #0a1628 !important; }
+    .leaflet-tile-pane { filter: brightness(1.6) contrast(1.1) saturate(1.1); }
+    .leaflet-control-attribution { display: none !important; }
+    .leaflet-control-zoom a { background: var(--card2) !important; color: var(--text) !important; border-color: var(--card-border) !important; }
+    .leaflet-control-zoom a:hover { background: var(--card-border) !important; }
+
+    /* Hex tooltip styling */
+    .hex-tooltip {
+      background: #1e3a5f !important; color: var(--text) !important;
+      border: 1px solid var(--card-border) !important; border-radius: 6px !important;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5) !important;
+      font-family: 'Inter', sans-serif !important; font-size: 11px !important;
+      padding: 7px 10px !important; line-height: 1.5;
+    }
+    .hex-tooltip::before { display: none !important; }
+
+    /* Info card (bottom-left) */
+    #info-card {
+      position: absolute; bottom: 18px; left: 18px; z-index: 500;
+      background: rgba(22, 32, 56, 0.92); backdrop-filter: blur(8px);
+      border: 1px solid var(--card-border); border-radius: 10px;
+      padding: 14px 16px; min-width: 260px; max-width: 340px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      font-size: 12px;
+    }
+    #info-card .ic-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    #info-card .ic-title .material-icons { font-size: 15px; color: var(--accent); }
+    .ic-row { display: flex; justify-content: space-between; gap: 14px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+    .ic-row:last-child { border-bottom: none; }
+    .ic-key { color: var(--text-muted); }
+    .ic-val { color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; text-align: right; word-break: break-all; }
+    #info-card.empty .ic-content { display: none; }
+    #info-card .ic-empty { display: none; color: var(--text-muted); font-size: 12px; padding: 4px 0; }
+    #info-card.empty .ic-empty { display: block; }
+
+    /* Legend (bottom-right) */
+    #legend {
+      position: absolute; bottom: 18px; right: 18px; z-index: 500;
+      background: rgba(22, 32, 56, 0.92); backdrop-filter: blur(8px);
+      border: 1px solid var(--card-border); border-radius: 10px;
+      padding: 12px 14px; font-size: 11px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    #legend .lg-title { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 8px; }
+    .lg-item { display: flex; align-items: center; gap: 8px; padding: 3px 0; font-family: 'JetBrains Mono', monospace; }
+    .lg-swatch { width: 16px; height: 16px; border-radius: 3px; flex-shrink: 0; border: 1px solid rgba(255,255,255,0.1); }
+
+    /* Metric toggle pills (top-right) */
+    #metric-pills {
+      position: absolute; top: 18px; right: 18px; z-index: 500;
+      display: flex; gap: 4px;
+      background: rgba(22, 32, 56, 0.92); backdrop-filter: blur(8px);
+      border: 1px solid var(--card-border); border-radius: 10px;
+      padding: 5px; box-shadow: 0 6px 18px rgba(0,0,0,0.3);
+    }
+    .pill {
+      padding: 6px 12px; border: none; border-radius: 6px; cursor: pointer;
+      background: transparent; color: var(--text-muted); font-size: 11px; font-weight: 600;
+      font-family: 'Inter', sans-serif; transition: all .15s;
+    }
+    .pill:hover { color: var(--text); }
+    .pill.active { background: var(--accent); color: #fff; }
+
+    /* Toast (top-center) */
+    #toast {
+      position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+      z-index: 600; padding: 10px 16px; border-radius: 8px;
+      background: rgba(239, 68, 68, 0.92); color: #fff;
+      font-size: 12px; font-weight: 500;
+      border: 1px solid rgba(239, 68, 68, 0.5);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+      display: none; max-width: 520px;
+    }
+    #toast.show { display: block; }
+    #toast.info { background: rgba(59, 130, 246, 0.92); border-color: rgba(59, 130, 246, 0.5); }
+
+    /* Loader overlay */
+    #loader {
+      position: absolute; inset: 0; z-index: 700;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(10, 22, 40, 0.5); backdrop-filter: blur(2px);
+    }
+    #loader.show { display: flex; }
+    .loader-card {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 10px; padding: 18px 22px; display: flex; align-items: center; gap: 12px;
+      font-size: 13px; color: var(--text);
+    }
+    .spinner { width: 18px; height: 18px; border: 2px solid var(--card-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside>
+    <div id="sb-header">
+      <img src="fcic.png" alt="FCIC" onerror="this.style.display='none'">
+      <h1><span class="material-icons">hexagon</span> Cell Footprint</h1>
+      <p>RSRP coverage heatmap per cell — H3 hex grid</p>
+    </div>
+
+    <div class="tool-switcher">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="nmf-viewer.html"><span class="material-icons">route</span>NMF Viewer</a>
+      <a href="cell-footprint.html" class="current"><span class="material-icons">hexagon</span>Cell Footprint</a>
+    </div>
+
+    <div id="sb-body">
+
+      <!-- Connection -->
+      <div>
+        <div class="sb-label">Database</div>
+        <div id="conn-bar" onclick="toggleConnPanel()">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Not connected — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="conn-panel">
+          <div class="field-label">Host</div>
+          <input class="db-inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <div class="field-label">Port</div>
+          <input class="db-inp" type="text" id="db-port" placeholder="8443" style="width:120px">
+          <div class="field-label">Database</div>
+          <input class="db-inp" type="text" id="db-name" value="default">
+          <div class="field-label">Username</div>
+          <input class="db-inp" type="text" id="db-user" placeholder="default">
+          <div class="field-label">Password</div>
+          <input class="db-inp" type="password" id="db-pass" placeholder="••••••••">
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+              <span class="material-icons" style="font-size:14px">sync</span> Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Query Settings -->
+      <div>
+        <div class="sb-label">Query Settings</div>
+        <div class="qs-card">
+          <div class="field-label">Query Type</div>
+          <select class="db-inp" id="query-type" disabled>
+            <option value="footprint">Cell / Sector RSRP Footprint</option>
+          </select>
+
+          <div class="field-label">eNB / gNB / RNC / LAC</div>
+          <textarea class="db-inp" id="in-enb" placeholder="33, 542647&#10;(comma- or newline-separated)" rows="2"></textarea>
+
+          <div class="field-label">ECI / NCI / CI / CID</div>
+          <textarea class="db-inp" id="in-eci" placeholder="8481, 8485" rows="2"></textarea>
+
+          <div class="field-label">ECGI / CGI</div>
+          <textarea class="db-inp" id="in-ecgi" placeholder="234100548264703" rows="2"></textarea>
+
+          <div class="field-label">PLMN <span style="color:var(--text-dim);font-weight:400">(required for ECI/eNB)</span></div>
+          <input class="db-inp" type="text" id="in-plmn" placeholder="e.g. 234-10">
+
+          <div class="qs-row">
+            <div>
+              <div class="field-label">Time Window</div>
+              <select class="db-inp" id="in-time">
+                <option value="24">Last Day</option>
+                <option value="168" selected>Last Week</option>
+                <option value="336">Last 2 Weeks</option>
+                <option value="720">Last Month</option>
+                <option value="custom">Custom Range</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">Metric</div>
+              <select class="db-inp" id="in-metric">
+                <option value="p50_rsrp" selected>Median (P50)</option>
+                <option value="avg_rsrp">Average</option>
+                <option value="max_rsrp">Max</option>
+                <option value="p75_rsrp">P75</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="custom-range" style="display:none;margin-top:10px">
+            <div class="qs-row">
+              <div>
+                <div class="field-label">From</div>
+                <input class="db-inp" type="datetime-local" id="in-from">
+              </div>
+              <div>
+                <div class="field-label">To</div>
+                <input class="db-inp" type="datetime-local" id="in-to">
+              </div>
+            </div>
+          </div>
+
+          <div class="qs-row three">
+            <div>
+              <div class="field-label">H3 Resolution</div>
+              <select class="db-inp" id="in-h3">
+                <option value="" selected>Auto</option>
+                <option value="9">9 (coarse)</option>
+                <option value="10">10 (medium)</option>
+                <option value="11">11 (fine)</option>
+                <option value="12">12 (very fine)</option>
+              </select>
+            </div>
+            <div>
+              <div class="field-label">Min Samples</div>
+              <input class="db-inp" type="number" id="in-min-samples" value="3" min="1">
+            </div>
+            <div>
+              <div class="field-label">Result Limit</div>
+              <input class="db-inp" type="number" id="in-limit" value="50000" min="1">
+            </div>
+          </div>
+
+          <label class="chk-row">
+            <input type="checkbox" id="in-nsa" checked>
+            Include NSA synthesized
+          </label>
+        </div>
+      </div>
+
+      <button class="btn btn-primary" id="btn-run" onclick="runFootprint()">
+        <span class="material-icons">play_arrow</span>Run Footprint
+      </button>
+
+    </div><!-- /sb-body -->
+
+    <div id="nav-links">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="db-dashboard.html"><span class="material-icons">dashboard</span>Dashboard</a>
+    </div>
+  </aside>
+
+  <!-- ═══════════════ MAIN ═══════════════ -->
+  <main id="main">
+    <div id="map"></div>
+
+    <div id="metric-pills">
+      <button class="pill active" data-metric="p50_rsrp">Median</button>
+      <button class="pill" data-metric="avg_rsrp">Avg</button>
+      <button class="pill" data-metric="max_rsrp">Max</button>
+      <button class="pill" data-metric="p75_rsrp">P75</button>
+    </div>
+
+    <div id="info-card" class="empty">
+      <div class="ic-title"><span class="material-icons">analytics</span>Footprint Summary</div>
+      <div class="ic-empty">No data yet — configure a cell and click Run.</div>
+      <div class="ic-content">
+        <div class="ic-row"><span class="ic-key">Total samples</span><span class="ic-val" id="ic-samples">—</span></div>
+        <div class="ic-row"><span class="ic-key">Total hexes</span><span class="ic-val" id="ic-hexes">—</span></div>
+        <div class="ic-row"><span class="ic-key">H3 resolution</span><span class="ic-val" id="ic-res">—</span></div>
+        <div class="ic-row"><span class="ic-key">Time window</span><span class="ic-val" id="ic-time">—</span></div>
+        <div class="ic-row"><span class="ic-key">Dominant tech</span><span class="ic-val" id="ic-tech">—</span></div>
+        <div class="ic-row"><span class="ic-key">Mean RSRP</span><span class="ic-val" id="ic-mean">—</span></div>
+        <div class="ic-row"><span class="ic-key">ECGI(s)</span><span class="ic-val" id="ic-ecgi" style="font-size:10px">—</span></div>
+      </div>
+    </div>
+
+    <div id="legend">
+      <div class="lg-title">RSRP (dBm)</div>
+      <div class="lg-item"><div class="lg-swatch" style="background:#ef4444"></div>&gt; -65</div>
+      <div class="lg-item"><div class="lg-swatch" style="background:#f59e0b"></div>-65 … -80</div>
+      <div class="lg-item"><div class="lg-swatch" style="background:#22c55e"></div>-80 … -95</div>
+      <div class="lg-item"><div class="lg-swatch" style="background:#3b82f6"></div>-95 … -110</div>
+      <div class="lg-item"><div class="lg-swatch" style="background:#1e3a5f"></div>&lt; -110</div>
+    </div>
+
+    <div id="toast"></div>
+
+    <div id="loader"><div class="loader-card"><div class="spinner"></div><span id="loader-text">Querying ClickHouse…</span></div></div>
+  </main>
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// CONNECTION (same shape as db-dashboard.html)
+// ══════════════════════════════════════════
+const CREDS_KEY = 'clickhouse_credentials';
+
+function toggleConnPanel() {
+  document.getElementById('conn-panel').classList.toggle('open');
+}
+
+function loadCredentials() {
+  const saved = localStorage.getItem(CREDS_KEY);
+  if (!saved) { document.getElementById('conn-panel').classList.add('open'); return; }
+  try {
+    const c = JSON.parse(saved);
+    if (c.host)     document.getElementById('db-host').value = c.host;
+    if (c.port)     document.getElementById('db-port').value = c.port;
+    if (c.database) document.getElementById('db-name').value = c.database;
+    if (c.user)     document.getElementById('db-user').value = c.user;
+    if (c.password) document.getElementById('db-pass').value = atob(c.password);
+    if (c.host && c.user && c.password) testConnection(true);
+  } catch (e) {
+    document.getElementById('conn-panel').classList.add('open');
+  }
+}
+
+function saveCredentials() {
+  const c = {
+    host:     document.getElementById('db-host').value.trim(),
+    port:     document.getElementById('db-port').value.trim() || '8443',
+    database: document.getElementById('db-name').value.trim() || 'default',
+    user:     document.getElementById('db-user').value.trim(),
+    password: btoa(document.getElementById('db-pass').value)
+  };
+  localStorage.setItem(CREDS_KEY, JSON.stringify(c));
+}
+
+function setConnStatus(state, label) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = 'conn-dot ' + state;
+  lbl.textContent = label;
+}
+
+function getCreds() {
+  return {
+    host:     document.getElementById('db-host').value.trim(),
+    port:     document.getElementById('db-port').value.trim() || '8443',
+    database: document.getElementById('db-name').value.trim() || 'default',
+    user:     document.getElementById('db-user').value.trim(),
+    password: document.getElementById('db-pass').value,
+  };
+}
+
+async function executeClickHouseQuery(sql) {
+  const c = getCreds();
+  if (!c.host || !c.user || !c.password) throw new Error('Fill in connection details first');
+  const url = `https://${c.host}:${c.port}/?database=${encodeURIComponent(c.database)}&default_format=JSON`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + btoa(`${c.user}:${c.password}`),
+      'Content-Type': 'text/plain',
+    },
+    body: sql,
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let errMsg = `HTTP ${resp.status}`;
+    try { const j = JSON.parse(errText); errMsg = j.exception || j.error?.message || errText; }
+    catch { errMsg = errText || errMsg; }
+    throw new Error(errMsg);
+  }
+  return resp.json();
+}
+
+async function testConnection(silent = false) {
+  setConnStatus('connecting', 'Connecting…');
+  try {
+    const r = await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
+    const ver = r.data?.[0]?.version || '';
+    setConnStatus('connected', `Connected ${ver ? '· v' + ver.split('.').slice(0,2).join('.') : ''}`);
+    saveCredentials();
+    if (!silent) document.getElementById('conn-panel').classList.remove('open');
+  } catch (e) {
+    setConnStatus('disconnected', 'Error: ' + e.message.substring(0, 60));
+    if (!silent) document.getElementById('conn-panel').classList.add('open');
+  }
+}
+
+// ══════════════════════════════════════════
+// MAP
+// ══════════════════════════════════════════
+let map = null;
+let hexLayer = null;
+let lastHexes = [];
+let currentMetric = 'p50_rsrp';
+
+function initMap() {
+  map = L.map('map', {
+    zoomControl: true, scrollWheelZoom: true,
+    attributionControl: false,
+    minZoom: 2, maxZoom: 19,
+  }).setView([20, 0], 3);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+  }).addTo(map);
+}
+
+function rsrpToColor(rsrp) {
+  if (rsrp == null) return '#64748b';
+  if (rsrp >= -65)  return '#ef4444';
+  if (rsrp >= -80)  return '#f59e0b';
+  if (rsrp >= -95)  return '#22c55e';
+  if (rsrp >= -110) return '#3b82f6';
+  return '#1e3a5f';
+}
+
+function clearHexes() {
+  if (hexLayer) { try { hexLayer.remove(); } catch(e){} hexLayer = null; }
+}
+
+function renderHexes(hexes, metric) {
+  clearHexes();
+  if (!hexes || !hexes.length) return;
+
+  const features = [];
+  hexes.forEach(hex => {
+    if (!hex.h3) return;
+    let boundary;
+    try { boundary = h3.cellToBoundary(hex.h3, true); }
+    catch (e) { return; }
+    // h3-js v4 returns [lng, lat] when 2nd arg is true; Leaflet wants [lat, lng]
+    const latlngs = boundary.map(([lng, lat]) => [lat, lng]);
+    const value = hex[metric];
+    const color = rsrpToColor(value);
+    const poly = L.polygon(latlngs, {
+      color, weight: 0.5,
+      fillColor: color, fillOpacity: 0.65,
+    });
+    poly.bindTooltip(
+      `<strong>${hex.samples.toLocaleString()} samples</strong><br/>` +
+      `P50: ${fmtDbm(hex.p50_rsrp)} · Avg: ${fmtDbm(hex.avg_rsrp)}<br/>` +
+      `Max: ${fmtDbm(hex.max_rsrp)} · P75: ${fmtDbm(hex.p75_rsrp)}<br/>` +
+      `σ: ${(hex.std_rsrp ?? 0).toFixed(1)} dB · Tech: ${hex.tech_dominant || '—'}`,
+      { className: 'hex-tooltip', sticky: true }
+    );
+    features.push(poly);
+  });
+
+  hexLayer = L.featureGroup(features).addTo(map);
+}
+
+function fitHexes() {
+  if (!hexLayer) return;
+  try {
+    const b = hexLayer.getBounds();
+    if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 17 });
+  } catch (e) {}
+}
+
+function fmtDbm(v) {
+  if (v == null || isNaN(v)) return '—';
+  const n = Number(v);
+  return (n.toFixed(n < 0 && n > -1 ? 2 : 1)) + ' dBm';
+}
+
+// ══════════════════════════════════════════
+// INPUT PARSING
+// ══════════════════════════════════════════
+function parseList(raw) {
+  return (raw || '').split(/[,\s\n]+/).map(s => s.trim()).filter(Boolean);
+}
+function parseInts(raw) {
+  return parseList(raw).filter(s => /^-?\d+$/.test(s)).map(s => parseInt(s, 10));
+}
+
+// ══════════════════════════════════════════
+// TOAST / LOADER
+// ══════════════════════════════════════════
+let toastTimer = null;
+function toast(msg, kind = 'error', durationMs = 6000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (kind === 'info' ? ' info' : '');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), durationMs);
+}
+function hideToast() {
+  const el = document.getElementById('toast');
+  el.classList.remove('show');
+  if (toastTimer) { clearTimeout(toastTimer); toastTimer = null; }
+}
+function setLoading(on, text) {
+  const l = document.getElementById('loader');
+  l.classList.toggle('show', !!on);
+  if (text) document.getElementById('loader-text').textContent = text;
+}
+
+// ══════════════════════════════════════════
+// INFO CARD
+// ══════════════════════════════════════════
+function updateInfoCard(payload) {
+  const card = document.getElementById('info-card');
+  if (!payload || !payload.hexes || !payload.hexes.length) {
+    card.classList.add('empty');
+    if (payload && payload.ok && payload.total_samples === 0) {
+      const empty = card.querySelector('.ic-empty');
+      empty.textContent = 'No measurements found for these inputs.';
+    }
+    return;
+  }
+  card.classList.remove('empty');
+  document.getElementById('ic-samples').textContent = payload.total_samples.toLocaleString();
+  document.getElementById('ic-hexes').textContent = payload.total_hexes.toLocaleString();
+  document.getElementById('ic-res').textContent = payload.h3_resolution;
+  document.getElementById('ic-time').textContent = humanHours(payload.time_window_hours);
+
+  // dominant tech across hexes (weighted by samples)
+  const techTally = {};
+  let rsrpSum = 0;
+  payload.hexes.forEach(h => {
+    const t = h.tech_dominant || '—';
+    techTally[t] = (techTally[t] || 0) + h.samples;
+    rsrpSum += (h.avg_rsrp || 0) * h.samples;
+  });
+  const domTech = Object.entries(techTally).sort((a, b) => b[1] - a[1])[0]?.[0] || '—';
+  const meanRsrp = payload.total_samples > 0 ? (rsrpSum / payload.total_samples) : null;
+  document.getElementById('ic-tech').textContent = domTech;
+  document.getElementById('ic-mean').textContent = meanRsrp == null ? '—' : meanRsrp.toFixed(1) + ' dBm';
+
+  const ecgis = payload.ecgi_resolved || [];
+  document.getElementById('ic-ecgi').textContent = ecgis.length
+    ? (ecgis.length <= 3 ? ecgis.join(', ') : `${ecgis.slice(0,3).join(', ')} +${ecgis.length-3} more`)
+    : '—';
+}
+
+function humanHours(h) {
+  if (!h) return '—';
+  if (h % 24 === 0) {
+    const d = h / 24;
+    return d + (d === 1 ? ' day' : ' days');
+  }
+  return h + ' hours';
+}
+
+// ══════════════════════════════════════════
+// RUN
+// ══════════════════════════════════════════
+async function runFootprint() {
+  hideToast();
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-icons">hourglass_top</span>Running…';
+  setLoading(true, 'Querying ClickHouse…');
+
+  try {
+    const enbs = parseInts(document.getElementById('in-enb').value);
+    const ecis = parseInts(document.getElementById('in-eci').value);
+    const ecgis = parseList(document.getElementById('in-ecgi').value);
+    const plmn = document.getElementById('in-plmn').value.trim();
+
+    if (!enbs.length && !ecis.length && !ecgis.length) {
+      throw new Error('Enter at least one eNB, ECI, or ECGI');
+    }
+    if ((enbs.length || ecis.length) && !plmn) {
+      throw new Error('PLMN required for ECI/eNB inputs');
+    }
+
+    const timeSel = document.getElementById('in-time').value;
+    let hours;
+    if (timeSel === 'custom') {
+      const from = document.getElementById('in-from').value;
+      const to   = document.getElementById('in-to').value;
+      if (!from || !to) throw new Error('Pick a custom date range (both From and To)');
+      const ms = new Date(to) - new Date(from);
+      if (!(ms > 0)) throw new Error('Custom range: From must be before To');
+      hours = Math.max(1, Math.ceil(ms / 3600000));
+    } else {
+      hours = parseInt(timeSel, 10);
+    }
+
+    const h3sel = document.getElementById('in-h3').value;
+    const h3_resolution = h3sel === '' ? null : parseInt(h3sel, 10);
+    const metric = document.getElementById('in-metric').value;
+    const min_samples = parseInt(document.getElementById('in-min-samples').value || '3', 10);
+    const result_limit = parseInt(document.getElementById('in-limit').value || '50000', 10);
+    const includeNsa = document.getElementById('in-nsa').checked;
+
+    const creds = getCreds();
+    if (!creds.host || !creds.user || !creds.password) {
+      document.getElementById('conn-panel').classList.add('open');
+      throw new Error('Configure ClickHouse credentials first');
+    }
+
+    const body = {
+      ecgis, ecis, enbs, plmn,
+      hours, h3_resolution, min_samples_per_hex: min_samples,
+      metric, result_limit,
+      include_nsa_synthesized: includeNsa,
+      ch: {
+        host: creds.host, port: creds.port, database: creds.database,
+        user: creds.user, password: creds.password,
+      },
+    };
+
+    const resp = await fetch('/query/cell-footprint', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const payload = await resp.json();
+
+    if (resp.status === 400) {
+      toast(payload.error || 'Bad request');
+      return;
+    }
+    if (!resp.ok || payload.error) {
+      const card = document.getElementById('info-card');
+      card.classList.add('empty');
+      card.querySelector('.ic-empty').textContent = payload.error || `Server error (HTTP ${resp.status})`;
+      toast(payload.error || `HTTP ${resp.status}`);
+      return;
+    }
+
+    currentMetric = metric;
+    setMetricPill(metric);
+    lastHexes = payload.hexes || [];
+    renderHexes(lastHexes, currentMetric);
+    updateInfoCard(payload);
+    if (lastHexes.length) fitHexes();
+
+    if (payload.ambiguous_inputs && payload.ambiguous_inputs.length) {
+      toast(`Heads up: ${payload.ambiguous_inputs.length} ECI(s) mapped to multiple ECGIs — all included.`, 'info', 8000);
+    }
+    if (payload.total_samples === 0) {
+      toast('No measurements found for these inputs in the chosen time window.', 'info', 6000);
+    }
+  } catch (e) {
+    toast(e.message || String(e));
+  } finally {
+    setLoading(false);
+    btn.disabled = false;
+    btn.innerHTML = '<span class="material-icons">play_arrow</span>Run Footprint';
+  }
+}
+
+// ══════════════════════════════════════════
+// METRIC PILLS
+// ══════════════════════════════════════════
+function setMetricPill(metric) {
+  document.querySelectorAll('.pill').forEach(p => {
+    p.classList.toggle('active', p.dataset.metric === metric);
+  });
+  document.getElementById('in-metric').value = metric;
+}
+
+document.querySelectorAll('.pill').forEach(p => {
+  p.addEventListener('click', () => {
+    const metric = p.dataset.metric;
+    currentMetric = metric;
+    setMetricPill(metric);
+    if (lastHexes.length) renderHexes(lastHexes, currentMetric);
+  });
+});
+
+// ══════════════════════════════════════════
+// TIME-RANGE TOGGLE
+// ══════════════════════════════════════════
+document.getElementById('in-time').addEventListener('change', (e) => {
+  document.getElementById('custom-range').style.display = e.target.value === 'custom' ? 'block' : 'none';
+});
+
+// ══════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════
+initMap();
+loadCredentials();
+</script>
+</body>
+</html>

@@ -86,6 +86,13 @@
     .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
     .btn .material-icons { font-size: 15px; }
 
+    /* ── Tool switcher (top of sidebar, sibling pages) ── */
+    .tool-switcher { display: flex; gap: 2px; padding: 8px 10px; border-bottom: 1px solid var(--card-border); background: var(--navy); flex-shrink: 0; }
+    .tool-switcher a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 6px; font-size: 10px; font-weight: 500; border-radius: 6px; color: var(--text-muted); text-decoration: none; transition: all .15s; }
+    .tool-switcher a .material-icons { font-size: 14px; }
+    .tool-switcher a:hover { background: rgba(59,130,246,.08); color: var(--text); }
+    .tool-switcher a.current { background: rgba(59,130,246,.15); color: var(--accent); font-weight: 600; }
+
     /* ── NAV ── */
     #nav-links { padding: 10px 14px; border-top: 1px solid var(--card-border); display: flex; gap: 7px; flex-shrink: 0; }
     #nav-links a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; flex-direction: column; padding: 7px 4px; border-radius: 8px; border: 1px solid var(--card-border); color: var(--text-muted); text-decoration: none; font-size: 10px; font-weight: 500; transition: all 0.2s; text-align: center; }
@@ -226,6 +233,12 @@
       <img src="fcic.png" alt="FCIC" onerror="this.style.display='none'">
       <h1><span class="material-icons">insights</span> DB Insight Dashboard</h1>
       <p>Live data overview from ClickHouse</p>
+    </div>
+
+    <div class="tool-switcher">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="nmf-viewer.html"><span class="material-icons">route</span>NMF Viewer</a>
+      <a href="cell-footprint.html"><span class="material-icons">hexagon</span>Cell Footprint</a>
     </div>
 
     <div id="sb-body">
