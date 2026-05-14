@@ -461,7 +461,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                     chosen_res = 10
                 else:
                     chosen_res = 9
-            chosen_res = max(8, min(12, int(chosen_res)))
+            chosen_res = max(8, min(15, int(chosen_res)))
 
             # ─── Main aggregation query ───
             main_sql = (
