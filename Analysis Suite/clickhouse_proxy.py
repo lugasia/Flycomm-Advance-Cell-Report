@@ -533,8 +533,19 @@ class ProxyHandler(SimpleHTTPRequestHandler):
         except Exception as e:
             self.send_json_error(f'Server error: {str(e)}', 500)
 
-    def _ch_query(self, host, port, database, user, password, sql, params=None):
+    def _ch_query(self, host, port, database, user, password, sql, params=None, settings=None):
         qs_parts = [f'database={urllib.parse.quote(database)}', 'default_format=JSON']
+        # Footprint queries scan large windows; bypass the per-user row-read cap
+        # and give the query a longer execution budget. Caller can override.
+        defaults = {
+            'max_rows_to_read': '0',
+            'max_result_rows': '0',
+            'max_bytes_to_read': '0',
+            'max_execution_time': '180',
+        }
+        merged = {**defaults, **(settings or {})}
+        for k, v in merged.items():
+            qs_parts.append(f'{k}=' + urllib.parse.quote(str(v), safe=''))
         if params:
             for k, v in params.items():
                 qs_parts.append(f'param_{k}=' + urllib.parse.quote(str(v), safe=''))
