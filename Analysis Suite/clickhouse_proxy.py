@@ -15,6 +15,7 @@ import base64
 import os
 import math
 import time
+import datetime
 
 # Try to import ML libraries (optional)
 try:
@@ -369,15 +370,20 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 if enbs_in:
                     clauses.append('cell_enb IN (' + ','.join(str(e) for e in enbs_in) + ')')
                 esc_plmn = plmn.replace("'", "''")
+                lookup_cutoff = (datetime.datetime.utcnow() - datetime.timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
                 lookup_sql = (
                     "SELECT DISTINCT cell_ecgi, cell_eci, cell_enb FROM measurements "
                     f"WHERE ({' OR '.join(clauses)}) "
                     f"AND network_PLMN = '{esc_plmn}' "
-                    "AND timestamp > now() - INTERVAL 30 DAY "
+                    "AND timestamp >= {cutoff:DateTime} "
+                    "AND toDate(timestamp) >= toDate({cutoff:DateTime}) "
                     "AND cell_ecgi IS NOT NULL AND cell_ecgi != '' "
                     "LIMIT 500 FORMAT JSON"
                 )
-                lookup = self._ch_query(host, port, database, user, password, lookup_sql)
+                lookup = self._ch_query(
+                    host, port, database, user, password, lookup_sql,
+                    params={'cutoff': lookup_cutoff}
+                )
                 seen = set(ecgis)
                 eci_to_ecgi = {}
                 for r in lookup.get('data', []):
@@ -426,19 +432,26 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 "'" + e.replace("'", "''") + "'" for e in ecgis
             ) + ']'
 
+            # Pre-compute the cutoff as a literal so the partition pruner can
+            # treat it as a constant. now() - INTERVAL X HOUR sometimes confuses
+            # the analyser and the full table gets read.
+            cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+            cutoff_str = cutoff.strftime('%Y-%m-%d %H:%M:%S')
+
             # ─── Adaptive H3 resolution ───
             chosen_res = h3_resolution
             pre_count = None
             if chosen_res is None:
                 count_sql = (
                     "SELECT count() AS n FROM measurements "
-                    "WHERE timestamp > now() - INTERVAL {hours:UInt32} HOUR "
+                    "WHERE timestamp >= {cutoff:DateTime} "
+                    "AND toDate(timestamp) >= toDate({cutoff:DateTime}) "
                     "AND (cell_ecgi IN {ecgis:Array(String)} OR cell_cgi IN {ecgis:Array(String)}) "
                     "AND signal_rsrp != 0 FORMAT JSON"
                 )
                 count_result = self._ch_query(
                     host, port, database, user, password, count_sql,
-                    params={'hours': str(hours), 'ecgis': ecgi_array_literal}
+                    params={'cutoff': cutoff_str, 'ecgis': ecgi_array_literal}
                 )
                 rows = count_result.get('data', [])
                 pre_count = int(rows[0].get('n', 0)) if rows else 0
@@ -462,7 +475,8 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 "  stddevPop(signal_rsrp) AS std_rsrp, "
                 "  anyHeavy(tech) AS tech_dominant "
                 "FROM measurements "
-                "WHERE timestamp > now() - INTERVAL {hours:UInt32} HOUR "
+                "WHERE timestamp >= {cutoff:DateTime} "
+                "  AND toDate(timestamp) >= toDate({cutoff:DateTime}) "
                 "  AND (cell_ecgi IN {ecgis:Array(String)} OR cell_cgi IN {ecgis:Array(String)}) "
                 "  AND signal_rsrp != 0 "
                 "  AND location_geo_coordinates.1 != 0 "
@@ -477,7 +491,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 host, port, database, user, password, main_sql,
                 params={
                     'h3_res': str(chosen_res),
-                    'hours': str(hours),
+                    'cutoff': cutoff_str,
                     'ecgis': ecgi_array_literal,
                     'min_samples': str(min_samples),
                     'result_limit': str(result_limit),
@@ -535,16 +549,11 @@ class ProxyHandler(SimpleHTTPRequestHandler):
 
     def _ch_query(self, host, port, database, user, password, sql, params=None, settings=None):
         qs_parts = [f'database={urllib.parse.quote(database)}', 'default_format=JSON']
-        # Footprint queries scan large windows; bypass the per-user row-read cap
-        # and give the query a longer execution budget. Caller can override.
-        defaults = {
-            'max_rows_to_read': '0',
-            'max_result_rows': '0',
-            'max_bytes_to_read': '0',
-            'max_execution_time': '180',
-        }
-        merged = {**defaults, **(settings or {})}
-        for k, v in merged.items():
+        # Only send settings that read-only profiles typically allow.
+        # max_rows_to_read is constrained on many ClickHouse Cloud accounts —
+        # rely on partition pruning instead.
+        defaults = {'max_execution_time': '180'}
+        for k, v in {**defaults, **(settings or {})}.items():
             qs_parts.append(f'{k}=' + urllib.parse.quote(str(v), safe=''))
         if params:
             for k, v in params.items():
