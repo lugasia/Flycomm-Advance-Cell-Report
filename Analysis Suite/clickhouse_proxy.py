@@ -372,7 +372,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 esc_plmn = plmn.replace("'", "''")
                 lookup_cutoff = (datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) - datetime.timedelta(days=30)).strftime('%Y-%m-%d %H:%M:%S')
                 lookup_sql = (
-                    "SELECT DISTINCT cell_ecgi, cell_eci, cell_enb FROM measurements "
+                    "SELECT DISTINCT cell_ecgi, cell_eci, cell_enb FROM measurements_year_geo "
                     f"WHERE ({' OR '.join(clauses)}) "
                     f"AND network_PLMN = '{esc_plmn}' "
                     "AND timestamp >= {cutoff:DateTime} "
@@ -443,7 +443,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
             pre_count = None
             if chosen_res is None:
                 count_sql = (
-                    "SELECT count() AS n FROM measurements "
+                    "SELECT count() AS n FROM measurements_year_geo "
                     "WHERE timestamp >= {cutoff:DateTime} "
                     "AND toDate(timestamp) >= toDate({cutoff:DateTime}) "
                     "AND (cell_ecgi IN {ecgis:Array(String)} OR cell_cgi IN {ecgis:Array(String)}) "
@@ -474,7 +474,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 "  quantileExact(0.75)(signal_rsrp) AS p75_rsrp, "
                 "  stddevPop(signal_rsrp) AS std_rsrp, "
                 "  anyHeavy(tech) AS tech_dominant "
-                "FROM measurements "
+                "FROM measurements_year_geo "
                 "WHERE timestamp >= {cutoff:DateTime} "
                 "  AND toDate(timestamp) >= toDate({cutoff:DateTime}) "
                 "  AND (cell_ecgi IN {ecgis:Array(String)} OR cell_cgi IN {ecgis:Array(String)}) "
