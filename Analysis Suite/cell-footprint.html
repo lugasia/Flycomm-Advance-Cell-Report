@@ -685,7 +685,27 @@ async function runFootprint() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
-    const payload = await resp.json();
+
+    // Detect "wrong server" — static HTTP servers reply 405 with HTML
+    const rawText = await resp.text();
+    const looksLikeHtml = rawText.trim().startsWith('<');
+    if (resp.status === 405 || looksLikeHtml) {
+      const msg = 'This page must be served by clickhouse_proxy.py, not a static HTTP server. ' +
+                  'Stop any python -m http.server / server.py on this port and run: ' +
+                  'python3 clickhouse_proxy.py';
+      const card = document.getElementById('info-card');
+      card.classList.add('empty');
+      card.querySelector('.ic-empty').textContent = msg;
+      toast(msg, 'error', 12000);
+      return;
+    }
+
+    let payload;
+    try { payload = JSON.parse(rawText); }
+    catch (e) {
+      toast(`Bad JSON from /query/cell-footprint: ${rawText.slice(0, 120)}`);
+      return;
+    }
 
     if (resp.status === 400) {
       toast(payload.error || 'Bad request');
