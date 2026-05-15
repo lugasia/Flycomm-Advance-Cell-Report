@@ -526,6 +526,48 @@ class ProxyHandler(SimpleHTTPRequestHandler):
 
             total_samples = sum(h['samples'] for h in hexes)
 
+            # ─── Site lookup from default.sites (for propagation model) ───
+            # For an LTE ECGI, the trailing 10 decimal digits are the ECI
+            # (28 bits, max 268,435,455 → 9 digits + 1 leading zero), and
+            # eNB = ECI // 256. We use that to find sites.site_id.
+            enb_set = set(enbs_in)
+            for ecgi in ecgis:
+                tail = ecgi[-10:] if len(ecgi) >= 10 else ecgi
+                try:
+                    eci_val = int(tail)
+                except ValueError:
+                    continue
+                enb_set.add(eci_val // 256)
+
+            sites = []
+            if enb_set:
+                enb_list_sql = ','.join(str(e) for e in sorted(enb_set))
+                sites_sql = (
+                    "SELECT id, lng, lat, site_id, tech, height, "
+                    "       max_distance_propagation, sectors "
+                    f"FROM sites FINAL "
+                    f"WHERE site_id IN ({enb_list_sql}) "
+                    "FORMAT JSON"
+                )
+                try:
+                    sites_result = self._ch_query(host, port, database, user, password, sites_sql)
+                    for r in sites_result.get('data', []):
+                        try:
+                            sites.append({
+                                'id': r.get('id'),
+                                'lng': float(r.get('lng')),
+                                'lat': float(r.get('lat')),
+                                'site_id': int(r.get('site_id') or 0),
+                                'tech': r.get('tech') or '',
+                                'height': r.get('height'),
+                                'max_distance_propagation': r.get('max_distance_propagation'),
+                                'sectors': r.get('sectors') or [],
+                            })
+                        except (TypeError, ValueError):
+                            continue
+                except Exception:
+                    sites = []
+
             # ─── Raw sample points (for visualising the actual distribution) ───
             samples = []
             if samples_limit > 0 and hexes:
@@ -573,6 +615,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
             response = {
                 'ok': True,
                 'ecgi_resolved': ecgis,
+                'enb_resolved': sorted(enb_set),
                 'h3_resolution': chosen_res,
                 'total_samples': total_samples,
                 'total_hexes': len(hexes),
@@ -581,6 +624,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 'hexes': hexes,
                 'samples': samples,
                 'samples_returned': len(samples),
+                'sites': sites,
                 'ambiguous_inputs': ambiguous,
                 'pre_count': pre_count,
             }

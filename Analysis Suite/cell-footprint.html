@@ -161,8 +161,8 @@
     }
     .pill:hover { color: var(--text); }
     .pill.active { background: var(--accent); color: #fff; }
-    #toggle-samples { border-left: 1px solid var(--card-border); margin-left: 4px; padding-left: 12px; }
-    #toggle-samples.on { color: var(--green); }
+    #toggle-coverage, #toggle-hexes, #toggle-samples { border-left: 1px solid var(--card-border); margin-left: 4px; padding-left: 12px; }
+    #toggle-coverage.on, #toggle-hexes.on, #toggle-samples.on { color: var(--green); }
 
     /* Toast (top-center) */
     #toast {
@@ -347,6 +347,8 @@
       <button class="pill" data-metric="avg_rsrp">Avg</button>
       <button class="pill" data-metric="max_rsrp">Max</button>
       <button class="pill" data-metric="p75_rsrp">P75</button>
+      <button class="pill" id="toggle-coverage" title="Predicted RSRP from propagation model + tower position">▦&nbsp;Coverage</button>
+      <button class="pill" id="toggle-hexes" title="Show H3 hex aggregation">⬢&nbsp;Hexes</button>
       <button class="pill" id="toggle-samples" title="Show raw measurement points">●&nbsp;Samples</button>
     </div>
 
@@ -475,10 +477,15 @@ async function testConnection(silent = false) {
 let map = null;
 let hexLayer = null;
 let sampleLayer = null;
+let coverageLayer = null;
+let towerLayer = null;
 let lastHexes = [];
 let lastSamples = [];
+let lastSites = [];
 let currentMetric = 'p50_rsrp';
 let showSamples = true;
+let showCoverage = true;
+let showHexes = true;
 
 function initMap() {
   map = L.map('map', {
@@ -507,6 +514,249 @@ function clearHexes() {
 function clearSamples() {
   if (sampleLayer) { try { sampleLayer.remove(); } catch(e){} sampleLayer = null; }
 }
+function clearCoverage() {
+  if (coverageLayer) { try { coverageLayer.remove(); } catch(e){} coverageLayer = null; }
+}
+function clearTowers() {
+  if (towerLayer) { try { towerLayer.remove(); } catch(e){} towerLayer = null; }
+}
+
+// ══════════════════════════════════════════
+// PROPAGATION MODEL
+// ══════════════════════════════════════════
+// COST-231 Hata for <= 2 GHz, extended for higher frequencies.
+// Returns path loss in dB. Inputs: distance in meters, frequency in MHz,
+// transmitter (antenna) and receiver heights in meters.
+function pathLossDb(distMeters, freqMHz, hBaseM, hMobileM) {
+  if (distMeters < 1) distMeters = 1;
+  const distKm = distMeters / 1000;
+  const f = Math.max(150, freqMHz);
+  const hb = Math.max(1, hBaseM);
+  const hm = Math.max(1, hMobileM);
+  const ahm = (1.1 * Math.log10(f) - 0.7) * hm - (1.56 * Math.log10(f) - 0.8);
+  let A, B;
+  if (f <= 1500) {
+    // Hata urban
+    A = 69.55 + 26.16 * Math.log10(f) - 13.82 * Math.log10(hb) - ahm;
+    B = 44.9 - 6.55 * Math.log10(hb);
+  } else {
+    // COST-231 Hata (1500–2000 MHz nominal)
+    A = 46.3 + 33.9 * Math.log10(f) - 13.82 * Math.log10(hb) - ahm;
+    B = 44.9 - 6.55 * Math.log10(hb);
+  }
+  let L = A + B * Math.log10(distKm);
+  // Crude extension above 2 GHz (e.g. LTE 2.6, NR n78 3.5)
+  if (f > 2000) L += 20 * Math.log10(f / 2000);
+  return Math.max(L, 30);
+}
+
+// 3GPP TR 36.814 horizontal antenna pattern.
+function antennaPatternDb(angleDegFromBoresight, halfPower) {
+  const hp = halfPower || 65;
+  const ratio = angleDegFromBoresight / hp;
+  return Math.min(12 * ratio * ratio, 25);
+}
+
+// Wrap a signed bearing difference to (-180, 180]
+function wrapBearing(deg) {
+  let d = ((deg + 180) % 360 + 360) % 360 - 180;
+  return d;
+}
+
+// Tech / band → fallback frequency (MHz) when sector.tx_frequency is missing.
+function freqFromBand(band, tech) {
+  const TABLE = {
+    1:2100, 2:1900, 3:1800, 4:2100, 5:850, 7:2600, 8:900,
+    12:700, 13:700, 14:700, 17:700, 20:800, 25:1900, 26:850, 28:700,
+    38:2600, 40:2300, 41:2500, 71:600, 66:2100,
+    77:3700, 78:3500, 79:4700,
+  };
+  if (TABLE[band]) return TABLE[band];
+  // Tech defaults
+  if (tech === 'NR' || tech === '5G') return 3500;
+  if (tech === 'LTE' || tech === '4G') return 1800;
+  if (tech === 'WCDMA' || tech === '3G') return 2100;
+  if (tech === 'GSM' || tech === '2G') return 900;
+  return 1800;
+}
+
+// ClickHouse JSON often serialises Tuple as an Array; sometimes as an object.
+// Normalise to {pci, sector_id, tx_frequency, sector_direction, band, tx_power, antenna_gain, antenna_technology}.
+function normaliseSector(s) {
+  if (!s) return null;
+  if (Array.isArray(s)) {
+    return {
+      pci:                s[0],
+      sector_id:          s[1],
+      tx_frequency:       Number(s[2]),
+      dl_frequency_code:  s[3],
+      sector_direction:   Number(s[4]),
+      band:               Number(s[5]),
+      tx_power:           Number(s[6]),
+      antenna_technology: s[7],
+      antenna_model:      s[8],
+      antenna_gain:       s[9] == null ? null : Number(s[9]),
+      location_code:      s[10],
+    };
+  }
+  return {
+    pci:                s.pci,
+    sector_id:           s.sector_id,
+    tx_frequency:        Number(s.tx_frequency),
+    dl_frequency_code:   s.dl_frequency_code,
+    sector_direction:    Number(s.sector_direction),
+    band:                Number(s.band),
+    tx_power:            Number(s.tx_power),
+    antenna_technology:  s.antenna_technology,
+    antenna_model:       s.antenna_model,
+    antenna_gain:        s.antenna_gain == null ? null : Number(s.antenna_gain),
+    location_code:       s.location_code,
+  };
+}
+
+// Predict RSRP at one (lat,lng) from one site, across its sectors. Returns
+// the best (strongest) RSRP across that site's sectors.
+function predictRsrpFromSite(lat, lng, site, hMobileM = 1.5) {
+  const tlat = site.lat, tlng = site.lng;
+  const dy = (lat - tlat) * 111320;
+  const dx = (lng - tlng) * 111320 * Math.cos(tlat * Math.PI / 180);
+  const distM = Math.sqrt(dx*dx + dy*dy);
+  const maxR = site.max_distance_propagation || 5000;
+  if (distM > maxR) return null;
+  const bearing = (Math.atan2(dx, dy) * 180 / Math.PI + 360) % 360;
+  const hb = site.height || 30;
+
+  let best = -Infinity;
+  for (const raw of (site.sectors || [])) {
+    const s = normaliseSector(raw);
+    if (!s) continue;
+    let f = s.tx_frequency;
+    if (!f || f < 100) f = freqFromBand(s.band, site.tech);
+    const txp = (s.tx_power != null && !isNaN(s.tx_power)) ? s.tx_power : 43; // dBm
+    const gain = (s.antenna_gain != null && !isNaN(s.antenna_gain)) ? s.antenna_gain : 15; // dBi
+    const sectorDir = s.sector_direction || 0;
+    const bearDiff = Math.abs(wrapBearing(bearing - sectorDir));
+    const antA = antennaPatternDb(bearDiff);
+    const pl = pathLossDb(distM, f, hb, hMobileM);
+    // RSRP ≈ EIRP - PL - (per-RB / RE adjustment). For LTE 20 MHz, the per-RE
+    // correction is roughly 10*log10(100*12) ≈ 30.8 dB below total tx_power
+    // (which is normally cell-wide). For visual coverage, subtract a flat
+    // ~32 dB so values land in the typical -60 to -130 dBm range.
+    const perRE = 32;
+    const rsrp = txp + gain - antA - pl - perRE;
+    if (rsrp > best) best = rsrp;
+  }
+  return best === -Infinity ? null : best;
+}
+
+function renderCoverage(sites) {
+  clearCoverage();
+  if (!sites || !sites.length || !showCoverage) return;
+
+  // Compute bounding box around all sites with their propagation radius.
+  const margin = 1.1;
+  let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+  for (const s of sites) {
+    const r = (s.max_distance_propagation || 5000) * margin;
+    const dLat = r / 111320;
+    const dLng = r / (111320 * Math.cos(s.lat * Math.PI / 180));
+    minLat = Math.min(minLat, s.lat - dLat);
+    maxLat = Math.max(maxLat, s.lat + dLat);
+    minLng = Math.min(minLng, s.lng - dLng);
+    maxLng = Math.max(maxLng, s.lng + dLng);
+  }
+  if (!isFinite(minLat)) return;
+
+  // Render to a 320x320 canvas — enough detail for street-level coverage
+  // without burning CPU. Each pixel ~= max_distance / 160 meters in size.
+  const W = 320, H = 320;
+  const canvas = document.createElement('canvas');
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  const img = ctx.createImageData(W, H);
+  const data = img.data;
+
+  function rsrpRgb(rsrp) {
+    if (rsrp == null) return [0, 0, 0, 0];
+    if (rsrp >= -65)  return [239, 68, 68, 200];
+    if (rsrp >= -80)  return [245, 158, 11, 180];
+    if (rsrp >= -95)  return [34, 197, 94, 160];
+    if (rsrp >= -110) return [59, 130, 246, 140];
+    if (rsrp >= -125) return [30, 58, 95, 110];
+    return [0, 0, 0, 0];
+  }
+
+  for (let py = 0; py < H; py++) {
+    const lat = maxLat - (py / (H - 1)) * (maxLat - minLat);
+    for (let px = 0; px < W; px++) {
+      const lng = minLng + (px / (W - 1)) * (maxLng - minLng);
+      let best = -Infinity;
+      for (const s of sites) {
+        const r = predictRsrpFromSite(lat, lng, s);
+        if (r != null && r > best) best = r;
+      }
+      const idx = (py * W + px) * 4;
+      const rgb = rsrpRgb(best === -Infinity ? null : best);
+      data[idx]   = rgb[0];
+      data[idx+1] = rgb[1];
+      data[idx+2] = rgb[2];
+      data[idx+3] = rgb[3];
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+
+  const bounds = [[minLat, minLng], [maxLat, maxLng]];
+  coverageLayer = L.imageOverlay(canvas.toDataURL(), bounds, {
+    opacity: 0.7, interactive: false,
+  }).addTo(map);
+}
+
+function renderTowers(sites) {
+  clearTowers();
+  if (!sites || !sites.length) return;
+
+  const features = [];
+  for (const site of sites) {
+    // Tower marker
+    const marker = L.circleMarker([site.lat, site.lng], {
+      radius: 6,
+      color: '#fff', weight: 2,
+      fillColor: '#0a1628', fillOpacity: 1,
+    });
+    const sectorSummary = (site.sectors || []).map((raw, i) => {
+      const s = normaliseSector(raw);
+      if (!s) return '';
+      return `<div style="margin-top:3px"><strong>S${i+1}</strong> ` +
+             `${s.tech || site.tech} · ${s.band ? 'B' + s.band : '—'} · ` +
+             `${(s.tx_frequency || freqFromBand(s.band, site.tech)).toFixed(0)} MHz · ` +
+             `Az ${s.sector_direction}° · ${s.tx_power} dBm · ${s.antenna_gain || 15} dBi</div>`;
+    }).join('');
+    marker.bindTooltip(
+      `<strong>Site ${site.site_id}</strong> · ${site.tech}<br/>` +
+      `${site.lat.toFixed(5)}, ${site.lng.toFixed(5)}<br/>` +
+      `Height ${site.height || '?'} m · max range ${site.max_distance_propagation || '?'} m` +
+      sectorSummary,
+      { className: 'hex-tooltip', direction: 'top', offset: [0, -6] }
+    );
+    features.push(marker);
+
+    // Sector direction lines (50 m each)
+    for (const raw of (site.sectors || [])) {
+      const s = normaliseSector(raw);
+      if (!s || s.sector_direction == null) continue;
+      const len = 50;
+      const dy = Math.cos(s.sector_direction * Math.PI / 180) * len / 111320;
+      const dx = Math.sin(s.sector_direction * Math.PI / 180) * len /
+                 (111320 * Math.cos(site.lat * Math.PI / 180));
+      const line = L.polyline([
+        [site.lat, site.lng],
+        [site.lat + dy, site.lng + dx],
+      ], { color: '#fff', weight: 2, opacity: 0.7 });
+      features.push(line);
+    }
+  }
+  towerLayer = L.featureGroup(features).addTo(map);
+}
 
 function renderSamples(samples) {
   clearSamples();
@@ -534,7 +784,7 @@ function renderSamples(samples) {
 
 function renderHexes(hexes, metric) {
   clearHexes();
-  if (!hexes || !hexes.length) return;
+  if (!hexes || !hexes.length || !showHexes) return;
 
   const features = [];
   hexes.forEach(hex => {
@@ -570,16 +820,21 @@ function renderHexes(hexes, metric) {
   hexLayer = L.featureGroup(features).addTo(map);
 }
 
-function fitHexes() {
-  // Fit to whichever layers we have — prefer samples + hexes union
+function fitAll() {
+  // Fit to the union of every active layer.
   const layers = [];
   if (hexLayer) layers.push(hexLayer);
   if (sampleLayer) layers.push(sampleLayer);
+  if (towerLayer) layers.push(towerLayer);
+  if (!layers.length && coverageLayer) {
+    // No vector layers, but we have a coverage raster — fit to it.
+    try { map.fitBounds(coverageLayer.getBounds(), { padding: [40,40], maxZoom: 17 }); } catch (e) {}
+    return;
+  }
   if (!layers.length) return;
   try {
-    const group = L.featureGroup(layers);
-    const b = group.getBounds();
-    if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 18 });
+    const b = L.featureGroup(layers).getBounds();
+    if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 17 });
   } catch (e) {}
 }
 
@@ -772,10 +1027,16 @@ async function runFootprint() {
     setMetricPill(metric);
     lastHexes = payload.hexes || [];
     lastSamples = payload.samples || [];
+    lastSites = payload.sites || [];
+    renderCoverage(lastSites);
+    renderTowers(lastSites);
     renderHexes(lastHexes, currentMetric);
     renderSamples(lastSamples);
     updateInfoCard(payload);
-    if (lastHexes.length || lastSamples.length) fitHexes();
+    if (lastHexes.length || lastSamples.length || lastSites.length) fitAll();
+    if (!lastSites.length) {
+      toast('No tower found in default.sites for this ECGI — coverage prediction skipped.', 'info', 6000);
+    }
 
     if (payload.ambiguous_inputs && payload.ambiguous_inputs.length) {
       toast(`Heads up: ${payload.ambiguous_inputs.length} ECI(s) mapped to multiple ECGIs — all included.`, 'info', 8000);
@@ -811,14 +1072,34 @@ document.querySelectorAll('.pill[data-metric]').forEach(p => {
   });
 });
 
-// Samples toggle
-const samplesBtn = document.getElementById('toggle-samples');
-samplesBtn.classList.toggle('on', showSamples);
+// Layer toggles
+const samplesBtn  = document.getElementById('toggle-samples');
+const coverageBtn = document.getElementById('toggle-coverage');
+const hexesBtn    = document.getElementById('toggle-hexes');
+
+samplesBtn.classList.toggle('on',  showSamples);
+coverageBtn.classList.toggle('on', showCoverage);
+hexesBtn.classList.toggle('on',    showHexes);
+
 samplesBtn.addEventListener('click', () => {
   showSamples = !showSamples;
   samplesBtn.classList.toggle('on', showSamples);
   if (showSamples) renderSamples(lastSamples);
   else clearSamples();
+});
+
+coverageBtn.addEventListener('click', () => {
+  showCoverage = !showCoverage;
+  coverageBtn.classList.toggle('on', showCoverage);
+  if (showCoverage) renderCoverage(lastSites);
+  else clearCoverage();
+});
+
+hexesBtn.addEventListener('click', () => {
+  showHexes = !showHexes;
+  hexesBtn.classList.toggle('on', showHexes);
+  if (showHexes) renderHexes(lastHexes, currentMetric);
+  else clearHexes();
 });
 
 // ══════════════════════════════════════════
