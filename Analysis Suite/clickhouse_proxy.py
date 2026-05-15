@@ -355,6 +355,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
             min_samples = max(1, int(data.get('min_samples_per_hex') or 3))
             metric = data.get('metric') or 'p50_rsrp'
             result_limit = max(1, int(data.get('result_limit') or 50000))
+            samples_limit = max(0, int(data.get('samples_limit') or 5000))
 
             if (ecis_in or enbs_in) and not plmn:
                 self.send_json_error('PLMN required for ECI/eNB inputs', 400)
@@ -421,6 +422,7 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 str(h3_resolution),
                 str(min_samples),
                 str(result_limit),
+                str(samples_limit),
             ])
             now_ts = time.monotonic()
             cached = _FOOTPRINT_CACHE.get(cache_key)
@@ -524,6 +526,50 @@ class ProxyHandler(SimpleHTTPRequestHandler):
 
             total_samples = sum(h['samples'] for h in hexes)
 
+            # ─── Raw sample points (for visualising the actual distribution) ───
+            samples = []
+            if samples_limit > 0 and hexes:
+                samples_sql = (
+                    "SELECT "
+                    "  location_geo_coordinates.1 AS lon, "
+                    "  location_geo_coordinates.2 AS lat, "
+                    "  signal_rsrp AS rsrp, "
+                    "  tech, "
+                    "  toString(timestamp) AS ts "
+                    "FROM measurements_year_geo "
+                    "WHERE timestamp >= {cutoff:DateTime} "
+                    "  AND toDate(timestamp) >= toDate({cutoff:DateTime}) "
+                    "  AND (cell_ecgi IN {ecgis:Array(String)} OR cell_cgi IN {ecgis:Array(String)}) "
+                    "  AND signal_rsrp != 0 "
+                    "  AND location_geo_coordinates.1 != 0 "
+                    "  AND location_geo_coordinates.2 != 0 "
+                    "LIMIT {samples_limit:UInt32} "
+                    "FORMAT JSON"
+                )
+                try:
+                    samples_result = self._ch_query(
+                        host, port, database, user, password, samples_sql,
+                        params={
+                            'cutoff': cutoff_str,
+                            'ecgis': ecgi_array_literal,
+                            'samples_limit': str(samples_limit),
+                        }
+                    )
+                    for r in samples_result.get('data', []):
+                        try:
+                            samples.append({
+                                'lon': float(r.get('lon')),
+                                'lat': float(r.get('lat')),
+                                'rsrp': float(r.get('rsrp')),
+                                'tech': r.get('tech') or '',
+                                'ts': r.get('ts') or '',
+                            })
+                        except (TypeError, ValueError):
+                            continue
+                except Exception:
+                    # Samples are a nice-to-have; don't fail the whole request
+                    samples = []
+
             response = {
                 'ok': True,
                 'ecgi_resolved': ecgis,
@@ -533,6 +579,8 @@ class ProxyHandler(SimpleHTTPRequestHandler):
                 'time_window_hours': hours,
                 'metric': metric,
                 'hexes': hexes,
+                'samples': samples,
+                'samples_returned': len(samples),
                 'ambiguous_inputs': ambiguous,
                 'pre_count': pre_count,
             }

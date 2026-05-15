@@ -161,6 +161,8 @@
     }
     .pill:hover { color: var(--text); }
     .pill.active { background: var(--accent); color: #fff; }
+    #toggle-samples { border-left: 1px solid var(--card-border); margin-left: 4px; padding-left: 12px; }
+    #toggle-samples.on { color: var(--green); }
 
     /* Toast (top-center) */
     #toast {
@@ -345,6 +347,7 @@
       <button class="pill" data-metric="avg_rsrp">Avg</button>
       <button class="pill" data-metric="max_rsrp">Max</button>
       <button class="pill" data-metric="p75_rsrp">P75</button>
+      <button class="pill" id="toggle-samples" title="Show raw measurement points">●&nbsp;Samples</button>
     </div>
 
     <div id="info-card" class="empty">
@@ -471,8 +474,11 @@ async function testConnection(silent = false) {
 // ══════════════════════════════════════════
 let map = null;
 let hexLayer = null;
+let sampleLayer = null;
 let lastHexes = [];
+let lastSamples = [];
 let currentMetric = 'p50_rsrp';
+let showSamples = true;
 
 function initMap() {
   map = L.map('map', {
@@ -497,6 +503,33 @@ function rsrpToColor(rsrp) {
 
 function clearHexes() {
   if (hexLayer) { try { hexLayer.remove(); } catch(e){} hexLayer = null; }
+}
+function clearSamples() {
+  if (sampleLayer) { try { sampleLayer.remove(); } catch(e){} sampleLayer = null; }
+}
+
+function renderSamples(samples) {
+  clearSamples();
+  if (!samples || !samples.length || !showSamples) return;
+  const renderer = L.canvas({ padding: 0.2 });
+  const features = [];
+  samples.forEach(s => {
+    if (s.lon == null || s.lat == null) return;
+    const color = rsrpToColor(s.rsrp);
+    const dot = L.circleMarker([s.lat, s.lon], {
+      renderer,
+      radius: 3,
+      color: '#0a1628', weight: 0.5,
+      fillColor: color, fillOpacity: 0.9,
+    });
+    dot.bindTooltip(
+      `<strong>${s.rsrp.toFixed(0)} dBm</strong> · ${s.tech || '—'}<br/>` +
+      `<span style="color:#94a3b8">${s.ts || ''}</span>`,
+      { className: 'hex-tooltip', direction: 'top', offset: [0, -3] }
+    );
+    features.push(dot);
+  });
+  sampleLayer = L.featureGroup(features).addTo(map);
 }
 
 function renderHexes(hexes, metric) {
@@ -538,10 +571,15 @@ function renderHexes(hexes, metric) {
 }
 
 function fitHexes() {
-  if (!hexLayer) return;
+  // Fit to whichever layers we have — prefer samples + hexes union
+  const layers = [];
+  if (hexLayer) layers.push(hexLayer);
+  if (sampleLayer) layers.push(sampleLayer);
+  if (!layers.length) return;
   try {
-    const b = hexLayer.getBounds();
-    if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 17 });
+    const group = L.featureGroup(layers);
+    const b = group.getBounds();
+    if (b.isValid()) map.fitBounds(b, { padding: [40, 40], maxZoom: 18 });
   } catch (e) {}
 }
 
@@ -683,6 +721,7 @@ async function runFootprint() {
       ecgis, ecis, enbs, plmn,
       hours, h3_resolution, min_samples_per_hex: min_samples,
       metric, result_limit,
+      samples_limit: 5000,
       include_nsa_synthesized: includeNsa,
       ch: {
         host: creds.host, port: creds.port, database: creds.database,
@@ -732,9 +771,11 @@ async function runFootprint() {
     currentMetric = metric;
     setMetricPill(metric);
     lastHexes = payload.hexes || [];
+    lastSamples = payload.samples || [];
     renderHexes(lastHexes, currentMetric);
+    renderSamples(lastSamples);
     updateInfoCard(payload);
-    if (lastHexes.length) fitHexes();
+    if (lastHexes.length || lastSamples.length) fitHexes();
 
     if (payload.ambiguous_inputs && payload.ambiguous_inputs.length) {
       toast(`Heads up: ${payload.ambiguous_inputs.length} ECI(s) mapped to multiple ECGIs — all included.`, 'info', 8000);
@@ -761,13 +802,23 @@ function setMetricPill(metric) {
   document.getElementById('in-metric').value = metric;
 }
 
-document.querySelectorAll('.pill').forEach(p => {
+document.querySelectorAll('.pill[data-metric]').forEach(p => {
   p.addEventListener('click', () => {
     const metric = p.dataset.metric;
     currentMetric = metric;
     setMetricPill(metric);
     if (lastHexes.length) renderHexes(lastHexes, currentMetric);
   });
+});
+
+// Samples toggle
+const samplesBtn = document.getElementById('toggle-samples');
+samplesBtn.classList.toggle('on', showSamples);
+samplesBtn.addEventListener('click', () => {
+  showSamples = !showSamples;
+  samplesBtn.classList.toggle('on', showSamples);
+  if (showSamples) renderSamples(lastSamples);
+  else clearSamples();
 });
 
 // ══════════════════════════════════════════
