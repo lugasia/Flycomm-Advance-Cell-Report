@@ -29,7 +29,7 @@ except ImportError:
     print("         Install with: pip install scikit-learn numpy")
 
 # ClickHouse connection settings (can be overridden by environment variables)
-CH_HOST = os.environ.get('CH_HOST', 'vusqo3wrfh.us-east-2.aws.clickhouse.cloud')
+CH_HOST = os.environ.get('CH_HOST', 'vusqo3wrfh.us-east-2.vpce.aws.clickhouse.cloud')
 CH_PORT = os.environ.get('CH_PORT', '443')
 CH_USER = os.environ.get('CH_USER', '')
 CH_PASS = os.environ.get('CH_PASS', '')
