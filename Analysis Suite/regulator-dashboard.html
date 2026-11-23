@@ -1,0 +1,1588 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" type="image/png" href="Favicon.png">
+  <title>Analysis Suite — Regulator Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy:        #0a1628;
+      --card:        #162038;
+      --card2:       #1a2744;
+      --card-border: #1e3a5f;
+      --accent:      #3b82f6;
+      --accent2:     #60a5fa;
+      --red:         #ef4444;
+      --orange:      #f59e0b;
+      --green:       #22c55e;
+      --cyan:        #06b6d4;
+      --purple:      #a78bfa;
+      --text:        #e2e8f0;
+      --text-muted:  #94a3b8;
+      --text-dim:    #64748b;
+    }
+
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--navy); color: var(--text); overflow: hidden; }
+
+    /* ── LAYOUT ── */
+    #app { display: flex; height: 100vh; }
+
+    /* ── SIDEBAR ── */
+    aside {
+      width: 480px; min-width: 480px;
+      background: var(--card);
+      border-right: 1px solid var(--card-border);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+    #sb-header { padding: 16px 20px; border-bottom: 1px solid var(--card-border); flex-shrink: 0; }
+    #sb-header img { height: 32px; max-width: 100%; object-fit: contain; opacity: 0.85; display: block; margin-bottom: 6px; }
+    #sb-header h1 { font-size: 15px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; margin-top: 0; }
+    #sb-header h1 .material-icons { font-size: 20px; color: var(--accent); }
+    #sb-header p { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+
+    #sb-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+    #sb-body::-webkit-scrollbar { width: 4px; }
+    #sb-body::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 2px; }
+    .sb-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 7px; }
+
+    /* ── Connection bar ── */
+    #conn-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--card-border); cursor: pointer; background: rgba(255,255,255,0.02); transition: all 0.15s; }
+    #conn-bar:hover { border-color: rgba(59,130,246,0.4); }
+    .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex-shrink: 0; transition: background 0.3s; }
+    .conn-dot.connected { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .conn-dot.connecting { background: var(--orange); }
+    #conn-label { flex: 1; font-size: 12px; color: var(--text-muted); }
+    #conn-panel { display: none; padding: 12px; background: var(--navy); border-radius: 8px; border: 1px solid var(--card-border); margin-top: 6px; }
+    #conn-panel.open { display: block; }
+    .field-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; margin-top: 10px; }
+    .field-label:first-child { margin-top: 0; }
+    input.db-inp { width: 100%; background: var(--card); border: 1px solid var(--card-border); border-radius: 6px; padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'JetBrains Mono', monospace; outline: none; }
+    input.db-inp:focus { border-color: var(--accent); }
+    select.db-sel {
+      width: 100%; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px;
+      padding: 7px 9px; color: var(--text); font-size: 12px; font-family: 'Inter', sans-serif;
+      outline: none; cursor: pointer; appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2394a3b8'><path d='M7 10l5 5 5-5z'/></svg>");
+      background-repeat: no-repeat; background-position: right 6px center; background-size: 16px; padding-right: 26px;
+    }
+    select.db-sel:focus { border-color: var(--accent); }
+    select.db-sel option { background: var(--card); color: var(--text); }
+
+    /* ── Source checkbox list ── */
+    .sb-label .sb-action { float: right; font-weight: 500; font-size: 10px; letter-spacing: 0; text-transform: none; color: var(--accent); cursor: pointer; }
+    .sb-label .sb-action:hover { text-decoration: underline; }
+    .src-actions { display: flex; gap: 5px; margin-bottom: 6px; }
+    .src-actions button { flex: 1; padding: 4px 6px; background: var(--navy); border: 1px solid var(--card-border); border-radius: 5px; color: var(--text-muted); font-size: 10px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; }
+    .src-actions button:hover { border-color: var(--accent); color: var(--accent); }
+    #src-list { max-height: 190px; overflow-y: auto; border: 1px solid var(--card-border); border-radius: 6px; background: var(--navy); padding: 4px; }
+    #src-list::-webkit-scrollbar { width: 4px; }
+    #src-list::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 2px; }
+    .src-row { display: flex; align-items: center; gap: 7px; padding: 5px 7px; border-radius: 5px; cursor: pointer; font-size: 11px; }
+    .src-row:hover { background: rgba(59,130,246,0.07); }
+    .src-row input { accent-color: var(--accent); cursor: pointer; margin: 0; flex-shrink: 0; }
+    .src-row .nm { flex: 1; color: var(--text); font-family: 'JetBrains Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .src-row .ct { color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 10px; }
+    .sb-hint { font-size: 10px; color: var(--text-dim); line-height: 1.5; margin-top: 5px; }
+    .sb-warn { font-size: 10px; color: var(--orange); line-height: 1.5; margin-top: 5px; }
+
+    /* ── Top-bar chips ── */
+    .chip { font-size: 10px; font-weight: 600; padding: 3px 8px; border-radius: 20px; border: 1px solid var(--card-border); color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; white-space: nowrap; }
+    .chip.valid { border-color: rgba(34,197,94,0.4);  color: var(--green); background: rgba(34,197,94,0.08); }
+    .chip.bad   { border-color: rgba(239,68,68,0.4);  color: var(--red);   background: rgba(239,68,68,0.08); }
+    .chip.both  { border-color: rgba(245,158,11,0.4); color: var(--orange);background: rgba(245,158,11,0.08); }
+    .chip.src   { border-color: rgba(6,182,212,0.4);  color: var(--cyan);  background: rgba(6,182,212,0.08); font-family: 'JetBrains Mono', monospace; text-transform: none; }
+    input[type=datetime-local] { width: 100%; background: var(--navy); border: 1px solid var(--card-border); border-radius: 6px; padding: 6px 8px; color: var(--text); font-size: 11px; font-family: 'Inter', sans-serif; outline: none; }
+    input[type=datetime-local]:focus { border-color: var(--accent); }
+    input[type=datetime-local]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
+
+    .time-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .param-label { font-size: 10px; color: var(--text-muted); margin-bottom: 4px; }
+    .preset-row { display: flex; gap: 5px; margin-bottom: 8px; }
+    .preset-btn { flex: 1; padding: 5px 4px; background: var(--navy); border: 1px solid var(--card-border); border-radius: 5px; color: var(--text-muted); font-size: 10px; font-weight: 600; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.15s; }
+    .preset-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .preset-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 14px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; font-family: 'Inter', sans-serif; transition: all 0.15s; width: 100%; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #2563eb; }
+    .btn-primary:disabled { background: var(--card-border); color: var(--text-muted); cursor: not-allowed; }
+    .btn-secondary { background: var(--navy); color: var(--text); border: 1px solid var(--card-border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn .material-icons { font-size: 15px; }
+
+    /* ── Tool switcher ── */
+    .tool-switcher { display: flex; flex-wrap: wrap; gap: 2px; padding: 8px 10px; border-bottom: 1px solid var(--card-border); background: var(--navy); flex-shrink: 0; }
+    .tool-switcher a { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 4px; padding: 6px 6px; font-size: 10px; font-weight: 500; border-radius: 6px; color: var(--text-muted); text-decoration: none; transition: all .15s; }
+    .tool-switcher a .material-icons { font-size: 14px; }
+    .tool-switcher a:hover { background: rgba(59,130,246,.08); color: var(--text); }
+    .tool-switcher a.current { background: rgba(59,130,246,.15); color: var(--accent); font-weight: 600; }
+
+    /* ── NAV ── */
+    #nav-links { padding: 10px 14px; border-top: 1px solid var(--card-border); display: flex; gap: 7px; flex-shrink: 0; }
+    #nav-links a { flex: 1; display: flex; align-items: center; justify-content: center; gap: 3px; flex-direction: column; padding: 7px 4px; border-radius: 8px; border: 1px solid var(--card-border); color: var(--text-muted); text-decoration: none; font-size: 10px; font-weight: 500; transition: all 0.2s; text-align: center; }
+    #nav-links a .material-icons { font-size: 17px; }
+    #nav-links a:hover { border-color: var(--accent); background: rgba(59,130,246,0.1); color: var(--text); }
+    #nav-links a.current { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
+
+    /* ── MAIN ── */
+    #main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+    #top-bar {
+      padding: 12px 20px; border-bottom: 1px solid var(--card-border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0; background: var(--card);
+    }
+    #top-bar h2 { font-size: 14px; font-weight: 700; color: var(--text); display: flex; align-items: center; gap: 8px; }
+    #top-bar h2 .material-icons { font-size: 18px; color: var(--accent); }
+    #top-bar h2 .crumb-sep { color: var(--text-dim); font-weight: 400; margin: 0 2px; }
+    #top-bar h2 .country { color: var(--accent2); font-weight: 700; }
+    #top-bar h2 .mcc { color: var(--text-muted); font-weight: 500; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+    #top-bar-right { display: flex; align-items: center; gap: 10px; }
+    #last-refresh { font-size: 11px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
+    #loading-bar { height: 3px; background: linear-gradient(90deg, var(--accent), var(--cyan)); width: 0%; transition: width 0.3s; flex-shrink: 0; }
+
+    #content { flex: 1; overflow-y: auto; padding: 20px; }
+
+    /* ── EMPTY STATE ── */
+    #empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; color: var(--text-muted); }
+    #empty-state .material-icons { font-size: 56px; color: var(--text-dim); }
+    #empty-state h3 { font-size: 16px; font-weight: 600; }
+    #empty-state p { font-size: 13px; text-align: center; max-width: 360px; line-height: 1.6; }
+
+    /* ── KPI CARDS ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(185px, 1fr)); gap: 14px; margin-bottom: 20px; }
+    .kpi-card {
+      background: var(--card); border: 1px solid var(--card-border); border-radius: 12px;
+      padding: 20px 22px; display: flex; flex-direction: column; gap: 2px;
+      transition: border-color 0.2s;
+    }
+    .kpi-card:hover { border-color: rgba(59,130,246,0.4); }
+    .kpi-icon-wrap {
+      width: 38px; height: 38px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 14px; flex-shrink: 0;
+    }
+    .kpi-icon-wrap .material-icons { font-size: 20px; }
+    .kpi-val { font-size: 34px; font-weight: 700; line-height: 1; letter-spacing: -0.5px; font-family: 'JetBrains Mono', monospace; }
+    .kpi-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 6px; font-weight: 600; }
+    .kpi-sub { font-size: 10px; color: var(--text-dim); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+
+    /* ── SECTION GRID ── */
+    .dash-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+    .dash-grid.full { grid-template-columns: 1fr; }
+
+    .dash-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 12px; padding: 18px; }
+    .dash-card-title {
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+    }
+    .dash-card-title .material-icons { font-size: 16px; }
+    .dash-card-title .right { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+    .toggle-btn {
+      padding: 4px 9px; background: var(--navy); border: 1px solid var(--card-border);
+      border-radius: 5px; color: var(--text-muted); font-size: 10px; font-weight: 600;
+      cursor: pointer; font-family: 'Inter', sans-serif; transition: all .15s;
+      text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    .toggle-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .toggle-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,0.08); }
+
+    /* ── TABLES ── */
+    .dash-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .dash-table th { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--card-border); color: var(--text-muted); font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .dash-table th.num { text-align: right; }
+    .dash-table td { padding: 10px 10px; border-bottom: 1px solid rgba(255,255,255,0.04); color: var(--text); vertical-align: middle; }
+    .dash-table td.num { text-align: right; }
+    .dash-table tr:last-child td { border-bottom: none; }
+    .dash-table tbody tr:hover td { background: rgba(59,130,246,0.05); }
+    .dash-table tfoot td { border-top: 1px solid var(--card-border); border-bottom: none; color: var(--text-muted); font-weight: 600; padding-top: 11px; }
+    .mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); }
+    .mono.strong { color: var(--text); font-weight: 500; }
+
+    .bar-track { height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 3px; transition: width 0.7s cubic-bezier(.4,0,.2,1); background: var(--accent); }
+    .inline-bar-cell { min-width: 160px; }
+    .inline-bar-cell .row { display: flex; align-items: center; gap: 8px; }
+    .inline-bar-cell .row .bar-track { flex: 1; }
+    .inline-bar-cell .pct { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-muted); min-width: 44px; text-align: right; }
+
+    /* ── DAILY CHART ── */
+    .chart-wrap { display: flex; align-items: flex-end; gap: 2px; height: 180px; padding-top: 8px; }
+    .chart-bar {
+      flex: 1; border-radius: 2px 2px 0 0; min-height: 2px;
+      background: var(--accent); opacity: 0.7; transition: opacity 0.15s;
+      cursor: default; position: relative;
+    }
+    .chart-bar.users  { background: var(--accent); }
+    .chart-bar.samples { background: var(--cyan); }
+    .chart-bar:hover { opacity: 1; }
+    .chart-bar:hover::after {
+      content: attr(data-tip);
+      position: absolute; bottom: calc(100% + 18px); left: 50%; transform: translateX(-50%);
+      background: #1e3a5f; color: var(--text); font-size: 10px; padding: 4px 8px;
+      border-radius: 4px; white-space: nowrap; pointer-events: none;
+      border: 1px solid var(--card-border); z-index: 5;
+    }
+    .bar-value-label {
+      position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%);
+      font-size: 10px; font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted); padding-bottom: 3px;
+      white-space: nowrap; pointer-events: none; font-weight: 500;
+    }
+    .chart-y-grid {
+      position: relative; padding-left: 42px;
+    }
+    .chart-y-grid .y-line {
+      position: absolute; left: 42px; right: 0; height: 1px; background: rgba(255,255,255,0.04);
+    }
+    .chart-y-grid .y-label {
+      position: absolute; left: 0; width: 38px; text-align: right; font-size: 10px;
+      color: var(--text-dim); font-family: 'JetBrains Mono', monospace;
+      transform: translateY(-50%);
+    }
+    .chart-labels { display: flex; justify-content: space-between; margin-top: 8px; font-size: 10px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; padding-left: 42px; }
+    .chart-meta { display: flex; gap: 16px; font-size: 11px; color: var(--text-muted); margin-bottom: 10px; padding-left: 42px; }
+    .chart-meta .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+
+    /* ── ERROR ── */
+    .error-msg { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #ef4444; margin-bottom: 14px; }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--card-border); border-radius: 3px; }
+
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  </style>
+<script src="suite-nav.js" defer></script>
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside>
+    <div id="sb-header">
+      <img src="fcic.png" alt="FCIC" onerror="this.style.display='none'">
+      <h1><span class="material-icons">account_balance</span> Regulator Dashboard</h1>
+      <p>Executive view — country-level network activity</p>
+    </div>
+
+    <div class="tool-switcher">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="db-dashboard.html"><span class="material-icons">insights</span>Dashboard</a>
+      <a href="nmf-viewer.html"><span class="material-icons">route</span>NMF</a>
+      <a href="cell-footprint.html"><span class="material-icons">hexagon</span>Footprint</a>
+      <a href="regulator-dashboard.html" class="current"><span class="material-icons">account_balance</span>Regulator</a>
+      <a href="roaming.html"><span class="material-icons">flight_takeoff</span>Roaming</a>
+      <a href="network-graph.html"><span class="material-icons">hub</span>Graph</a>
+    </div>
+
+    <div id="sb-body">
+
+      <!-- Connection -->
+      <div>
+        <div class="sb-label">Database</div>
+        <div id="conn-bar" onclick="toggleConnPanel()">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Not connected — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="conn-panel">
+          <div class="field-label">Host</div>
+          <input class="db-inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <div class="field-label">Port</div>
+          <input class="db-inp" type="text" id="db-port" placeholder="8443" style="width:100px">
+          <div class="field-label">Database</div>
+          <input class="db-inp" type="text" id="db-name" value="default">
+          <div class="field-label">Username</div>
+          <input class="db-inp" type="text" id="db-user" placeholder="default">
+          <div class="field-label">Password</div>
+          <input class="db-inp" type="password" id="db-pass" placeholder="••••••••">
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+              <span class="material-icons" style="font-size:14px">sync</span> Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scope -->
+      <div>
+        <div class="sb-label">Scope</div>
+        <select class="db-sel" id="mcc-select" onchange="onScopeChange()"></select>
+        <input class="db-inp" type="text" id="mcc-custom" placeholder="MCC, e.g. 655"
+               style="display:none;margin-top:6px" oninput="onCustomMcc()">
+        <div class="sb-warn" id="scope-warn" style="display:none">
+          Whole-database scope scans every country. Keep the time range tight or the query may hit ClickHouse row limits.
+        </div>
+      </div>
+
+      <!-- Data Set -->
+      <div>
+        <div class="sb-label">Data Set</div>
+        <div class="preset-row" style="margin-bottom:0">
+          <button class="preset-btn active" id="ds-valid" onclick="setDataset('valid')" title="measurements_year_geo only">Valid</button>
+          <button class="preset-btn" id="ds-bad"   onclick="setDataset('bad')"   title="bad_measurements only">Rejected</button>
+          <button class="preset-btn" id="ds-both"  onclick="setDataset('both')"  title="both tables, UNION ALL">Both</button>
+        </div>
+        <div class="sb-hint" id="ds-hint">Valid rows only — <code>measurements_year_geo</code>.</div>
+      </div>
+
+      <!-- Data Sources -->
+      <div>
+        <div class="sb-label">
+          Data Sources
+          <span class="sb-action" onclick="discoverSources()">discover</span>
+        </div>
+        <div class="src-actions">
+          <button onclick="setAllSources(true)">All</button>
+          <button onclick="setAllSources(false)">None</button>
+        </div>
+        <div id="src-list">
+          <div class="sb-hint" style="padding:6px 7px;margin:0">
+            Not listed yet — click <strong>discover</strong>, or just load the dashboard once and the
+            sources found in the window will appear here.
+          </div>
+        </div>
+        <div class="sb-hint" id="src-hint">No filter — counting every source.</div>
+      </div>
+
+      <!-- Time Range -->
+      <div>
+        <div class="sb-label">Time Range</div>
+        <div class="preset-row" id="time-presets">
+          <button class="preset-btn" id="preset-24h" onclick="setPreset(1,'preset-24h')">24h</button>
+          <button class="preset-btn" id="preset-7d"  onclick="setPreset(7,'preset-7d')">7d</button>
+          <button class="preset-btn active" id="preset-30d" onclick="setPreset(30,'preset-30d')">30d</button>
+          <button class="preset-btn" id="preset-90d" onclick="setPreset(90,'preset-90d')">90d</button>
+          <button class="preset-btn" id="preset-all" onclick="clearDates('preset-all')" title="Last 365 days (table is too large to scan unbounded)">1y</button>
+        </div>
+        <div class="time-row">
+          <div>
+            <div class="param-label">From</div>
+            <input type="datetime-local" id="time-from">
+          </div>
+          <div>
+            <div class="param-label">To</div>
+            <input type="datetime-local" id="time-to">
+          </div>
+        </div>
+      </div>
+
+      <!-- Load -->
+      <button class="btn btn-primary" id="btn-load" onclick="loadDashboard()">
+        <span class="material-icons">refresh</span>Load Dashboard
+      </button>
+
+    </div><!-- /sb-body -->
+
+    <div id="nav-links">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="db-dashboard.html"><span class="material-icons">insights</span>Dashboard</a>
+      <a href="regulator-dashboard.html" class="current"><span class="material-icons">account_balance</span>Regulator</a>
+    </div>
+  </aside>
+
+  <!-- ═══════════════ MAIN ═══════════════ -->
+  <main id="main">
+    <div id="top-bar">
+      <h2>
+        <span class="material-icons">account_balance</span>
+        Regulator Dashboard
+        <span class="crumb-sep">›</span>
+        <span class="country" id="target-country">DR Congo</span>
+        <span class="mcc" id="target-mcc">MCC 630</span>
+      </h2>
+      <div id="top-bar-right">
+        <span class="chip valid" id="chip-dataset">Valid</span>
+        <span class="chip src"   id="chip-sources">all sources</span>
+        <span id="last-refresh"></span>
+        <button class="btn btn-secondary" style="width:auto;padding:6px 12px;font-size:11px" onclick="loadDashboard()" id="btn-refresh" disabled>
+          <span class="material-icons" style="font-size:13px">refresh</span>Refresh
+        </button>
+      </div>
+    </div>
+    <div id="loading-bar"></div>
+
+    <div id="content">
+      <div id="empty-state">
+        <span class="material-icons">account_balance</span>
+        <h3>No data loaded</h3>
+        <p>Configure your ClickHouse connection in the sidebar, pick a time range, and click <strong>Load Dashboard</strong> to view country-level network activity for <span id="empty-target">DR Congo (MCC 630)</span>.</p>
+      </div>
+      <div id="dashboard" style="display:none"></div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+// ══════════════════════════════════════════
+// TABLES
+//   GOOD_TABLE — accepted rows.
+//   BAD_TABLE  — rejected records. Separate table, NOT a column: it keeps the
+//                original payload as `raw_record` JSON plus a `reason`. Every
+//                logical field therefore has two expressions (column vs. JSON),
+//                resolved at runtime from system.columns — see fieldExprs().
+// ══════════════════════════════════════════
+const GOOD_TABLE = 'measurements_year_geo';
+const BAD_TABLE  = 'bad_measurements';
+
+const DEFAULT_MCC = '630';
+const PREFS_KEY   = 'regulator_dashboard_prefs';
+
+// ── MCC → country (copied from roaming.html / sql-builder.html) ──
+const MCC_TABLE = {
+  '425':'Israel','416':'Jordan','602':'Egypt','420':'Saudi Arabia','418':'Iraq','419':'Kuwait',
+  '417':'Syria','415':'Lebanon','421':'Yemen','424':'UAE','427':'Qatar','426':'Bahrain',
+  '422':'Oman','432':'Iran','423':'Palestine','603':'Algeria','604':'Morocco','605':'Tunisia',
+  '606':'Libya','607':'Gambia','608':'Senegal','612':'Ivory Coast','620':'Ghana','621':'Nigeria',
+  '630':'DR Congo','639':'Kenya','640':'Tanzania','655':'South Africa','262':'Germany','208':'France',
+  '234':'United Kingdom','222':'Italy','214':'Spain','204':'Netherlands','206':'Belgium','228':'Switzerland',
+  '232':'Austria','260':'Poland','226':'Romania','230':'Czech Republic','231':'Slovakia','240':'Sweden',
+  '242':'Norway','244':'Finland','246':'Lithuania','247':'Latvia','248':'Estonia','255':'Ukraine',
+  '250':'Russia','257':'Belarus','202':'Greece','219':'Croatia','284':'Bulgaria','216':'Hungary',
+  '286':'Turkey','293':'Slovenia','220':'Serbia','270':'Luxembourg','272':'Ireland','274':'Iceland',
+  '276':'Albania','278':'Malta','280':'Cyprus','282':'Georgia','283':'Armenia','292':'San Marino',
+  '294':'North Macedonia','295':'Liechtenstein','297':'Montenegro','310':'United States','311':'United States',
+  '312':'United States','302':'Canada','334':'Mexico','724':'Brazil','722':'Argentina','730':'Chile',
+  '732':'Colombia','716':'Peru','734':'Venezuela','440':'Japan','441':'Japan','450':'South Korea',
+  '460':'China','461':'China','466':'Taiwan','470':'Bangladesh','510':'Indonesia','515':'Philippines',
+  '520':'Thailand','525':'Singapore','528':'Brunei','530':'New Zealand','505':'Australia','404':'India',
+  '405':'India','410':'Pakistan','413':'Sri Lanka','452':'Vietnam','455':'Macau','454':'Hong Kong',
+  '456':'Cambodia','457':'Laos','001':'Test Network','000':'Unknown/Invalid',
+};
+function mccName(mcc) { return MCC_TABLE[String(mcc)] || null; }
+
+// ══════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════
+let _scope    = DEFAULT_MCC;   // '630' | 'ALL'
+let _dataset  = 'valid';       // 'valid' | 'bad' | 'both'
+let _sources  = [];            // [{ name, samples }] discovered from the DB
+let _selected = null;          // null = no filter (all sources); else array of names
+let _schema   = null;          // { good:Set, bad:Set, types:{}, badExists:bool }
+
+// ── Scope <select> ──
+(function buildScopeSelect() {
+  const sel = document.getElementById('mcc-select');
+  const entries = Object.entries(MCC_TABLE)
+    .map(([mcc, name]) => ({ mcc, name }))
+    .sort((a, b) => a.name.localeCompare(b.name) || a.mcc.localeCompare(b.mcc));
+  sel.innerHTML =
+    `<option value="ALL">All countries — whole database</option>` +
+    `<option value="CUSTOM">Custom MCC…</option>` +
+    `<optgroup label="Country">` +
+    entries.map(e => `<option value="${e.mcc}">${escapeHtml(e.name)} — ${e.mcc}</option>`).join('') +
+    `</optgroup>`;
+})();
+
+// ══════════════════════════════════════════
+// CONNECTION (copied verbatim from db-dashboard.html)
+// ══════════════════════════════════════════
+const CREDS_KEY = 'clickhouse_credentials';
+let isConnected = false;
+
+function toggleConnPanel() {
+  document.getElementById('conn-panel').classList.toggle('open');
+}
+
+function loadCredentials() {
+  const saved = localStorage.getItem(CREDS_KEY);
+  if (!saved) { document.getElementById('conn-panel').classList.add('open'); return; }
+  try {
+    const c = JSON.parse(saved);
+    if (c.host)     document.getElementById('db-host').value = c.host;
+    if (c.port)     document.getElementById('db-port').value = c.port;
+    if (c.database) document.getElementById('db-name').value = c.database;
+    if (c.user)     document.getElementById('db-user').value = c.user;
+    if (c.password) document.getElementById('db-pass').value = atob(c.password);
+    if (c.host && c.user && c.password) testConnection(true);
+  } catch (e) { document.getElementById('conn-panel').classList.add('open'); }
+}
+
+function saveCredentials() {
+  const c = {
+    host:     document.getElementById('db-host').value.trim(),
+    port:     document.getElementById('db-port').value.trim() || '8443',
+    database: document.getElementById('db-name').value.trim() || 'default',
+    user:     document.getElementById('db-user').value.trim(),
+    password: btoa(document.getElementById('db-pass').value)
+  };
+  localStorage.setItem(CREDS_KEY, JSON.stringify(c));
+}
+
+function setConnStatus(state, label) {
+  const dot = document.getElementById('conn-dot');
+  const lbl = document.getElementById('conn-label');
+  dot.className = 'conn-dot ' + state;
+  lbl.textContent = label;
+  isConnected = (state === 'connected');
+}
+
+async function executeClickHouseQuery(sql) {
+  const host = document.getElementById('db-host').value.trim();
+  const port = document.getElementById('db-port').value.trim() || '8443';
+  const db   = document.getElementById('db-name').value.trim() || 'default';
+  const user = document.getElementById('db-user').value.trim();
+  const pass = document.getElementById('db-pass').value;
+  if (!host || !user || !pass) throw new Error('Fill in connection details first');
+  const url = `https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Basic ' + btoa(`${user}:${pass}`),
+      'Content-Type': 'text/plain',
+      'Accept-Encoding': 'gzip, deflate'
+    },
+    body: sql
+  });
+  if (!resp.ok) {
+    const errText = await resp.text();
+    let errMsg = `HTTP ${resp.status}`;
+    try { const j = JSON.parse(errText); errMsg = j.exception || j.error?.message || errText; } catch { errMsg = errText || errMsg; }
+    throw new Error(errMsg);
+  }
+  const json = await resp.json();
+  if (json.exception) throw new Error(json.exception);
+  return json;
+}
+
+async function testConnection(silent = false) {
+  setConnStatus('connecting', 'Connecting…');
+  try {
+    const r = await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
+    const ver = r.data?.[0]?.version || '';
+    setConnStatus('connected', `Connected ${ver ? '· v' + ver.split('.').slice(0,2).join('.') : ''}`);
+    saveCredentials();
+    if (!silent) document.getElementById('conn-panel').classList.remove('open');
+  } catch (e) {
+    setConnStatus('disconnected', 'Error: ' + e.message.substring(0, 50));
+    if (!silent) document.getElementById('conn-panel').classList.add('open');
+  }
+}
+
+async function runQuery(sql) {
+  const result = await executeClickHouseQuery(sql);
+  return result.data || [];
+}
+
+function setPreset(days, btnId) {
+  // Scoped to the time row — the Data Set toggle reuses .preset-btn.
+  document.querySelectorAll('#time-presets .preset-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(btnId).classList.add('active');
+  const to = new Date();
+  const from = new Date(to - days * 86400000);
+  document.getElementById('time-from').value = from.toISOString().slice(0,16);
+  document.getElementById('time-to').value   = to.toISOString().slice(0,16);
+}
+function clearDates(btnId) {
+  // Scoped to the time row — the Data Set toggle reuses .preset-btn.
+  document.querySelectorAll('#time-presets .preset-btn').forEach(b => b.classList.remove('active'));
+  if (btnId) document.getElementById(btnId).classList.add('active');
+  document.getElementById('time-from').value = '';
+  document.getElementById('time-to').value = '';
+}
+
+function setProgress(p) {
+  document.getElementById('loading-bar').style.width = p + '%';
+}
+
+function escSql(s) { return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+
+// ══════════════════════════════════════════
+// SCOPE / DATASET / SOURCES — controls
+// ══════════════════════════════════════════
+
+// Returns the MCC to filter on as a digit string, or null for whole-database scope.
+function currentMcc() {
+  if (_scope === 'ALL') return null;
+  return /^\d{1,3}$/.test(_scope) ? _scope : null;
+}
+
+function scopeLabel() {
+  const m = currentMcc();
+  if (!m) return 'All countries';
+  return mccName(m) || `MCC ${m}`;
+}
+
+function onScopeChange() {
+  const sel  = document.getElementById('mcc-select');
+  const cust = document.getElementById('mcc-custom');
+  if (sel.value === 'CUSTOM') {
+    cust.style.display = 'block';
+    _scope = cust.value.trim() || DEFAULT_MCC;
+  } else {
+    cust.style.display = 'none';
+    _scope = sel.value;
+  }
+  // The discovered source list is scope-specific — invalidate it so a stale
+  // "flycomm only" list from one country isn't reused as if it were global.
+  _sources = [];
+  _selected = null;
+  renderSourceList();
+  syncScopeUI();
+  savePrefs();
+}
+
+function onCustomMcc() {
+  const v = document.getElementById('mcc-custom').value.trim();
+  if (/^\d{1,3}$/.test(v)) { _scope = v; syncScopeUI(); savePrefs(); }
+}
+
+function syncScopeUI() {
+  const m     = currentMcc();
+  const label = scopeLabel();
+  document.getElementById('target-country').textContent = label;
+  document.getElementById('target-mcc').textContent     = m ? `MCC ${m}` : 'whole DB';
+  document.getElementById('empty-target').textContent   = m ? `${label} (MCC ${m})` : 'the entire database';
+  document.getElementById('scope-warn').style.display   = m ? 'none' : 'block';
+  document.title = `Analysis Suite — Regulator Dashboard · ${label}`;
+}
+
+function setDataset(mode) {
+  if ((mode === 'bad' || mode === 'both') && _schema && !_schema.badExists) {
+    alert(`Table \`${BAD_TABLE}\` does not exist in this database — only "Valid" is available.`);
+    return;
+  }
+  _dataset = mode;
+  ['valid','bad','both'].forEach(m =>
+    document.getElementById('ds-' + m).classList.toggle('active', m === mode));
+  document.getElementById('ds-hint').innerHTML =
+      mode === 'valid' ? `Valid rows only — <code>${GOOD_TABLE}</code>.`
+    : mode === 'bad'   ? `Rejected rows only — <code>${BAD_TABLE}</code>.`
+    :                    `Both tables combined (UNION ALL). Unique devices are de-duplicated across the two.`;
+  const chip = document.getElementById('chip-dataset');
+  chip.className = 'chip ' + mode;
+  chip.textContent = mode === 'valid' ? 'Valid' : mode === 'bad' ? 'Rejected' : 'Valid + Rejected';
+  // Source counts differ per table, so the discovered list is dataset-specific too.
+  _sources = [];
+  renderSourceList();
+  savePrefs();
+}
+
+function sourcesAreFiltered() {
+  return Array.isArray(_selected) && _sources.length > 0 && _selected.length !== _sources.length;
+}
+
+function renderSourceList() {
+  const host = document.getElementById('src-list');
+  const hint = document.getElementById('src-hint');
+  const chip = document.getElementById('chip-sources');
+
+  if (!_sources.length) {
+    host.innerHTML = `<div class="sb-hint" style="padding:6px 7px;margin:0">
+      Not listed yet — click <strong>discover</strong>, or just load the dashboard once and the
+      sources found in the window will appear here.</div>`;
+    hint.textContent = 'No filter — counting every source.';
+    chip.textContent = 'all sources';
+    return;
+  }
+
+  const sel = _selected;
+  host.innerHTML = _sources.map((s, i) => {
+    const on = !sel || sel.includes(s.name);
+    return `<label class="src-row">
+      <input type="checkbox" ${on ? 'checked' : ''} data-src-idx="${i}" onchange="toggleSource(${i}, this.checked)">
+      <span class="nm">${escapeHtml(s.name === '' ? '(blank)' : s.name)}</span>
+      <span class="ct">${fmt(s.samples)}</span>
+    </label>`;
+  }).join('');
+
+  const n = sel ? sel.length : _sources.length;
+  if (!sourcesAreFiltered()) {
+    hint.textContent = `No filter — all ${_sources.length} source${_sources.length === 1 ? '' : 's'}.`;
+    chip.textContent = 'all sources';
+  } else if (n === 0) {
+    hint.innerHTML = '<span style="color:var(--orange)">No source selected — nothing will be counted.</span>';
+    chip.textContent = 'no sources';
+  } else {
+    hint.textContent = `${n} of ${_sources.length} sources selected.`;
+    chip.textContent = n === 1 ? (sel[0] === '' ? '(blank)' : sel[0]) : `${n} sources`;
+  }
+}
+
+function toggleSource(idx, on) {
+  const name = _sources[idx].name;
+  if (!Array.isArray(_selected)) _selected = _sources.map(s => s.name);
+  if (on) { if (!_selected.includes(name)) _selected.push(name); }
+  else    { _selected = _selected.filter(n => n !== name); }
+  renderSourceList();
+  savePrefs();
+}
+
+function setAllSources(on) {
+  if (!_sources.length) return;
+  _selected = on ? null : [];
+  renderSourceList();
+  savePrefs();
+}
+
+// Explicit source discovery — one grouped scan over the current scope + window,
+// deliberately ignoring the current source selection so unchecking a source can
+// never make it disappear from the list.
+async function discoverSources() {
+  const hint = document.getElementById('src-hint');
+  hint.textContent = 'Discovering sources…';
+  try {
+    await loadSchema();
+    if (!_schema.hasSource) {
+      hint.innerHTML = `<span style="color:var(--orange)">No <code>source</code> column on <code>${GOOD_TABLE}</code> — source filtering is unavailable.</span>`;
+      return;
+    }
+    const rel  = relation(['src'], { ignoreSource: true });
+    const rows = await runQuery(`SELECT src AS source, count() AS samples FROM ${rel} GROUP BY src ORDER BY samples DESC LIMIT 60`);
+    applyDiscoveredSources(rows.map(r => ({ name: r.source ?? '', samples: Number(r.samples) || 0 })));
+  } catch (e) {
+    hint.innerHTML = `<span style="color:var(--red)">${escapeHtml(e.message.substring(0, 120))}</span>`;
+  }
+}
+
+// Merge a freshly seen source list into the sidebar, preserving the user's
+// current selection for names that still exist.
+function applyDiscoveredSources(list) {
+  const prev = Array.isArray(_selected) ? _selected.slice() : null;
+  _sources  = list;
+  _selected = prev ? prev.filter(n => list.some(s => s.name === n)) : null;
+  if (prev && _selected.length === list.length) _selected = null;
+  renderSourceList();
+  savePrefs();
+}
+
+// ══════════════════════════════════════════
+// PREFS
+// ══════════════════════════════════════════
+function savePrefs() {
+  try {
+    // The discovered source list is persisted alongside the selection, so a saved
+    // "flycomm only" filter is actually in force on the first load after a reload
+    // instead of quietly counting everything until the list is rediscovered.
+    localStorage.setItem(PREFS_KEY, JSON.stringify({
+      scope: _scope, dataset: _dataset, selected: _selected, sources: _sources
+    }));
+  } catch (e) { /* storage full / disabled — non-fatal */ }
+}
+
+function loadPrefs() {
+  let p = {};
+  try { p = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}'); } catch (e) { p = {}; }
+
+  _scope = p.scope || DEFAULT_MCC;
+  const sel  = document.getElementById('mcc-select');
+  const cust = document.getElementById('mcc-custom');
+  if (_scope === 'ALL' || MCC_TABLE[_scope]) {
+    sel.value = _scope;
+  } else if (/^\d{1,3}$/.test(_scope)) {
+    sel.value = 'CUSTOM';
+    cust.style.display = 'block';
+    cust.value = _scope;
+  } else {
+    _scope = DEFAULT_MCC;
+    sel.value = DEFAULT_MCC;
+  }
+
+  // setDataset() clears the source list (it is dataset-specific), so restore the
+  // saved list *after* it runs.
+  setDataset(p.dataset === 'bad' || p.dataset === 'both' ? p.dataset : 'valid');
+  _sources  = Array.isArray(p.sources) ? p.sources : [];
+  _selected = Array.isArray(p.selected) ? p.selected : null;
+
+  syncScopeUI();
+  renderSourceList();
+}
+
+// ══════════════════════════════════════════
+// SCHEMA PROBE
+// Metadata-only (system.columns) — does not scan either table, so it works even
+// when max_rows_to_read would block a `SELECT … LIMIT 1` without a partition
+// predicate. Everything downstream adapts to what actually exists.
+// ══════════════════════════════════════════
+async function loadSchema(force) {
+  if (_schema && !force) return _schema;
+  const rows = await runQuery(`
+    SELECT table, name, type
+    FROM system.columns
+    WHERE database = currentDatabase()
+      AND table IN ('${GOOD_TABLE}', '${BAD_TABLE}')`);
+
+  const good = new Set(), bad = new Set(), types = {};
+  rows.forEach(r => {
+    if (r.table === GOOD_TABLE) { good.add(r.name); types[r.name] = r.type; }
+    else if (r.table === BAD_TABLE) bad.add(r.name);
+  });
+
+  if (!good.size) {
+    throw new Error(`Table \`${GOOD_TABLE}\` was not found in database \`${document.getElementById('db-name').value.trim() || 'default'}\`.`);
+  }
+  // Per spec: require the new deviceId column — never silently fall back to
+  // deviceInfo_deviceId, which would produce a different (wrong) device count.
+  if (!good.has('deviceId')) {
+    throw new Error(
+      `Column 'deviceId' is not present on ${GOOD_TABLE} in this database. ` +
+      `This dashboard requires the new deviceId column — it will not silently fall back to deviceInfo_deviceId.`);
+  }
+
+  _schema = {
+    good, bad, types,
+    badExists: bad.size > 0,
+    hasSource: good.has('source'),
+    badHasReason: bad.has('reason'),
+  };
+
+  // Reflect availability in the Data Set toggle.
+  ['bad','both'].forEach(m => {
+    const b = document.getElementById('ds-' + m);
+    b.disabled = !_schema.badExists;
+    b.style.opacity = _schema.badExists ? '' : '0.4';
+    b.title = _schema.badExists ? b.title : `Table ${BAD_TABLE} not found in this database`;
+  });
+  if (!_schema.badExists && _dataset !== 'valid') setDataset('valid');
+
+  return _schema;
+}
+
+// ══════════════════════════════════════════
+// SQL BUILDING
+// ══════════════════════════════════════════
+
+// Per-logical-field expressions for each side of the union. The bad table stores
+// the original payload as JSON, so its expressions fall back to JSONExtract when
+// a real column is absent. Everything is cast to String so the two SELECT lists
+// stay type-compatible under UNION ALL.
+function fieldExprs() {
+  const g = _schema.good, b = _schema.bad;
+  const S    = e => `ifNull(toString(${e}), '')`;
+  const json = (...path) => `JSONExtractString(raw_record, ${path.map(p => `'${p}'`).join(', ')})`;
+  // Prefer a real column on bad_measurements; else dig it out of raw_record; else empty.
+  const badF = (cols, jsonPath) => {
+    const hit = cols.find(c => b.has(c));
+    if (hit) return S(hit);
+    return b.has('raw_record') ? json(...jsonPath) : `''`;
+  };
+
+  return {
+    // A bad_measurements row without a timestamp can't be placed in time at all;
+    // such a table gets a zero epoch here and is exempted from the time predicate
+    // in relation(), rather than failing the whole query with "unknown identifier".
+    ts:       { good: 'timestamp',              bad: b.has('timestamp') ? 'timestamp' : 'toDateTime(0)' },
+    device:   { good: S('deviceId'),            bad: badF(['deviceId','deviceInfo_deviceId'], ['deviceInfo','deviceId']) },
+    mcc:      { good: S('network_mcc'),         bad: badF(['network_mcc'],      ['network','mcc']) },
+    mnc:      { good: S('network_mnc'),         bad: badF(['network_mnc'],      ['network','mnc']) },
+    plmn:     { good: S('network_PLMN'),        bad: badF(['network_PLMN'],     ['network','PLMN']) },
+    operator: { good: S('network_operator'),    bad: badF(['network_operator'], ['network','operator']) },
+    src:      { good: g.has('source') ? S('source') : `''`, bad: badF(['source'], ['source']) },
+    reason:   { good: `''`,                     bad: b.has('reason') ? S('reason') : `''` },
+    is_bad:   { good: 'toUInt8(0)',             bad: 'toUInt8(1)' },
+  };
+}
+
+// Time window. measurements_year_geo is partitioned by toMonday(toDate(timestamp)),
+// so a WHERE-level timestamp predicate is what enables partition pruning. Without
+// one, even an MCC-only query scans the full table and trips max_rows_to_read.
+// With neither end set we anchor to the last 365 days as a safety floor.
+function timeClauses(daily) {
+  const f = document.getElementById('time-from').value;
+  const t = document.getElementById('time-to').value;
+  const c = daily ? ['toDate(timestamp) >= today() - INTERVAL 90 DAY'] : [];
+  if (f) c.push(`timestamp >= '${f.replace('T',' ')}:00'`);
+  if (t) c.push(`timestamp <= '${t.replace('T',' ')}:00'`);
+  if (!daily && !f && !t) c.push('toDate(timestamp) >= today() - INTERVAL 365 DAY');
+  return c;
+}
+
+function mccClause(side, exprs) {
+  const m = currentMcc();
+  if (!m) return null;
+  if (side === 'good') {
+    // Compare against the native column type so the index/partition can be used.
+    const numeric = /Int|Float|Decimal/i.test(_schema.types['network_mcc'] || '');
+    return numeric ? `network_mcc = ${Number(m)}` : `network_mcc = '${escSql(m)}'`;
+  }
+  return `${exprs.mcc.bad} = '${escSql(m)}'`;
+}
+
+function sourceClause(side, exprs) {
+  if (!sourcesAreFiltered()) return null;
+  const expr = exprs.src[side];
+  if (expr === `''`) return null;  // no source information on this side — don't filter it away
+  if (_selected.length === 0) return '0';   // explicit "none selected" → empty result
+  return `${expr} IN (${_selected.map(s => `'${escSql(s)}'`).join(', ')})`;
+}
+
+// Builds a derived table over the selected dataset(s), projecting only the
+// logical fields a given query needs (columnar I/O — don't read what you
+// won't aggregate). Predicates live inside each branch's WHERE so partition
+// pruning still applies.
+function relation(fields, opts = {}) {
+  const exprs = fieldExprs();
+  const parts = [];
+
+  const branch = (side, table) => {
+    const sel   = fields.map(f => `${exprs[f][side]} AS ${f}`).join(', ');
+    const hasTs = side === 'good' || _schema.bad.has('timestamp');
+    const where = hasTs ? timeClauses(opts.daily) : [];
+    const mc = mccClause(side, exprs);   if (mc) where.push(mc);
+    if (!opts.ignoreSource) { const sc = sourceClause(side, exprs); if (sc) where.push(sc); }
+    const whereSql = where.length ? `\n  WHERE ${where.join(' AND ')}` : '';
+    return `  SELECT ${sel}\n  FROM ${table}${whereSql}`;
+  };
+
+  if (_dataset !== 'bad') parts.push(branch('good', GOOD_TABLE));
+  if (_dataset !== 'valid' && _schema.badExists) parts.push(branch('bad', BAD_TABLE));
+  if (!parts.length) throw new Error(`No table available for the selected data set.`);
+
+  return `(\n${parts.join('\n  UNION ALL\n')}\n)`;
+}
+
+function includesBad() { return _dataset !== 'valid' && !!(_schema && _schema.badExists); }
+
+// Initialize: default to 30d preset, restore prefs, load saved credentials
+setPreset(30, 'preset-30d');
+loadPrefs();
+loadCredentials();
+
+// ══════════════════════════════════════════
+// LOAD ALL
+// ══════════════════════════════════════════
+let _lastDaily  = [];
+let _dailyMode  = 'users';   // 'users' | 'samples' | 'bad'
+let _lastRender = null;
+
+async function loadDashboard() {
+  const btn = document.getElementById('btn-load');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="material-icons" style="font-size:15px;animation:spin 1s linear infinite">refresh</span>Loading…';
+  document.getElementById('btn-refresh').disabled = true;
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'none';
+  setProgress(5);
+  setConnStatus('connecting', 'Connecting…');
+
+  try {
+    setProgress(15);
+    await loadSchema();
+
+    const scoped  = !!currentMcc();      // single-country scope vs. whole database
+    const withBad = includesBad();
+    if (_dailyMode === 'bad' && !withBad) _dailyMode = 'users';
+
+    setProgress(25);
+    function safe(p) { return p.catch(e => { console.warn(e.message); return []; }); }
+
+    // A — KPI totals. uniq() runs across the whole window, so a device is counted
+    // once regardless of how many days it was active. In "Both" mode the two tables
+    // are aggregated as a single relation, so a device present in both counts once.
+    const qKpi = runQuery(`SELECT
+        count()                                        AS total_samples,
+        uniqIf(device, device != '')                   AS unique_devices,
+        uniqExactIf(concat(mcc, '-', mnc), mnc != '')  AS active_mnos,
+        uniqExactIf(mcc, mcc != '')                    AS active_countries,
+        uniqExact(src)                                 AS active_sources,
+        countIf(is_bad = 1)                            AS bad_samples,
+        min(toDate(ts))                                AS first_day,
+        max(toDate(ts))                                AS last_day
+      FROM ${relation(['ts','device','mcc','mnc','src','is_bad'])}`);
+
+    // B — Daily activity, anchored to the last 90 days so the chart never renders
+    // 1970 rows. Per-day uniques are independent (DAU semantics): a device active on
+    // N days contributes to N bars, so the daily sum exceeds the window total.
+    const qDaily = safe(runQuery(`SELECT
+        toDate(ts)                    AS day,
+        count()                       AS samples,
+        uniqIf(device, device != '')  AS users,
+        countIf(is_bad = 1)           AS bad
+      FROM ${relation(['ts','device','is_bad'], { daily: true })}
+      GROUP BY day
+      ORDER BY day ASC`));
+
+    // C — Per-source breakdown. Also what seeds the sidebar checkbox list on an
+    // unfiltered load.
+    const qSource = safe(runQuery(`SELECT
+        src                           AS source,
+        count()                       AS samples,
+        uniqIf(device, device != '')  AS devices,
+        countIf(is_bad = 1)           AS bad
+      FROM ${relation(['device','src','is_bad'])}
+      GROUP BY src
+      ORDER BY samples DESC
+      LIMIT 60`));
+
+    // D — Per-MNO. devices_seen is a plain uniq per MNO, so a device that touched
+    // several networks appears under each; the primary-MNO query below is what makes
+    // the device column sum to the KPI total.
+    const qMno = safe(runQuery(`SELECT
+        mcc, mnc,
+        anyHeavy(plmn)                AS plmn,
+        anyHeavy(operator)            AS operator,
+        count()                       AS samples,
+        uniqIf(device, device != '')  AS devices_seen,
+        countIf(is_bad = 1)           AS bad
+      FROM ${relation(['mcc','mnc','plmn','operator','device','is_bad'])}
+      WHERE mnc != ''
+      GROUP BY mcc, mnc
+      ORDER BY samples DESC
+      LIMIT ${scoped ? 200 : 60}`));
+
+    // E — PRIMARY-MNO attribution: each device is assigned to the single MNO where it
+    // has the most samples, so per-MNO device counts sum to the KPI total. Only run
+    // under a single-country scope — across the whole DB the device × network grouping
+    // is large enough to risk a memory limit.
+    const qPrimary = scoped ? safe(runQuery(`SELECT
+        primary_key                   AS key,
+        count()                       AS unique_devices
+      FROM (
+        SELECT device, argMax(k, n) AS primary_key
+        FROM (
+          SELECT device, concat(mcc, '-', mnc) AS k, count() AS n
+          FROM ${relation(['device','mcc','mnc'])}
+          WHERE device != '' AND mnc != ''
+          GROUP BY device, k
+        )
+        GROUP BY device
+      )
+      GROUP BY primary_key`)) : Promise.resolve([]);
+
+    // F — Per-country breakdown, only meaningful in whole-database scope.
+    const qCountry = !scoped ? safe(runQuery(`SELECT
+        mcc,
+        count()                        AS samples,
+        uniqIf(device, device != '')   AS devices,
+        uniqExactIf(mnc, mnc != '')    AS mnos,
+        countIf(is_bad = 1)            AS bad
+      FROM ${relation(['mcc','mnc','device','is_bad'])}
+      GROUP BY mcc
+      ORDER BY samples DESC
+      LIMIT 60`)) : Promise.resolve([]);
+
+    // G — Why records were rejected. Only when bad rows are in scope.
+    const qReason = withBad ? safe(runQuery(`SELECT
+        reason, count() AS samples
+      FROM ${relation(['reason','is_bad'])}
+      WHERE is_bad = 1
+      GROUP BY reason
+      ORDER BY samples DESC
+      LIMIT 30`)) : Promise.resolve([]);
+
+    const [kpi, daily, bySource, byMno, byPrimary, byCountry, byReason] =
+      await Promise.all([qKpi, qDaily, qSource, qMno, qPrimary, qCountry, qReason]);
+
+    setProgress(90);
+    setConnStatus('connected', 'Connected');
+
+    _lastDaily = (daily || []).map(r => ({
+      day:     r.day,
+      users:   Number(r.users)   || 0,
+      samples: Number(r.samples) || 0,
+      bad:     Number(r.bad)     || 0,
+    }));
+
+    const sourceRows = (bySource || []).map(r => ({
+      source:  r.source ?? '',
+      samples: Number(r.samples) || 0,
+      devices: Number(r.devices) || 0,
+      bad:     Number(r.bad)     || 0,
+    }));
+
+    // Seed the sidebar list from this load only when no source filter was applied —
+    // a filtered load sees only the sources it was told to look at, so reusing it
+    // would silently shrink the list.
+    if (_schema.hasSource && !sourcesAreFiltered() && sourceRows.length) {
+      applyDiscoveredSources(sourceRows.map(r => ({ name: r.source, samples: r.samples })));
+    }
+
+    // ── Merge per-MNO samples with primary-MNO device counts on mcc-mnc ──
+    const primaryByKey = {};
+    (byPrimary || []).forEach(r => { primaryByKey[r.key] = Number(r.unique_devices) || 0; });
+
+    const mnoRows = (byMno || []).map(r => ({
+      mcc: r.mcc, mnc: r.mnc, plmn: r.plmn, operator: r.operator,
+      samples:        Number(r.samples)      || 0,
+      devices_seen:   Number(r.devices_seen) || 0,
+      bad:            Number(r.bad)          || 0,
+      unique_devices: primaryByKey[`${r.mcc}-${r.mnc}`],   // undefined when not computed
+    }));
+
+    renderDashboard({
+      kpi:       (kpi && kpi[0]) || {},
+      daily:     _lastDaily,
+      bySource:  sourceRows,
+      byMno:     mnoRows,
+      byCountry: (byCountry || []).map(r => ({
+        mcc:     r.mcc,
+        samples: Number(r.samples) || 0,
+        devices: Number(r.devices) || 0,
+        mnos:    Number(r.mnos)    || 0,
+        bad:     Number(r.bad)     || 0,
+      })),
+      byReason:  (byReason || []).map(r => ({ reason: r.reason ?? '', samples: Number(r.samples) || 0 })),
+      scoped, withBad,
+      hasPrimary: scoped && (byPrimary || []).length > 0,
+    });
+
+    document.getElementById('last-refresh').textContent = 'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('btn-refresh').disabled = false;
+    setProgress(100);
+    setTimeout(() => setProgress(0), 600);
+
+  } catch (e) {
+    setConnStatus('disconnected', 'Error: ' + e.message.substring(0, 60));
+    document.getElementById('conn-panel').classList.add('open');
+    document.getElementById('empty-state').style.display = 'flex';
+    document.getElementById('empty-state').innerHTML = `
+      <span class="material-icons" style="color:var(--red)">error_outline</span>
+      <h3>Query Error</h3><p style="color:var(--red);max-width:560px">${escapeHtml(e.message)}</p>`;
+    setProgress(0);
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '<span class="material-icons">refresh</span>Load Dashboard';
+}
+
+// ══════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════
+function fmt(n) {
+  if (n == null || n === '') return '—';
+  const num = typeof n === 'string' ? parseFloat(n) : n;
+  if (isNaN(num)) return n;
+  if (num >= 1_000_000) return (num/1_000_000).toFixed(2).replace(/\.?0+$/, '') + 'M';
+  if (num >= 1_000)     return (num/1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return num.toLocaleString();
+}
+function fmtInt(n) {
+  if (n == null || n === '') return '—';
+  const num = typeof n === 'string' ? parseInt(n, 10) : n;
+  if (isNaN(num)) return n;
+  return num.toLocaleString();
+}
+function pct(a, b) { return b > 0 ? ((a/b)*100).toFixed(1) + '%' : '—'; }
+function escapeHtml(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function daysBetween(a, b) {
+  if (!a || !b) return 0;
+  const d1 = new Date(a + 'T00:00:00Z');
+  const d2 = new Date(b + 'T00:00:00Z');
+  return Math.round((d2 - d1) / 86400000) + 1;
+}
+
+// ══════════════════════════════════════════
+// RENDER
+// ══════════════════════════════════════════
+function renderDashboard(d) {
+  _lastRender = d;
+
+  // ── Nothing matched the current scope + window + filters ──
+  const total = Number(d.kpi.total_samples) || 0;
+  if (total === 0) {
+    document.getElementById('dashboard').style.display = 'none';
+    const empty = document.getElementById('empty-state');
+    const where = d.scoped
+      ? `for <strong>${escapeHtml(scopeLabel())} (MCC ${currentMcc()})</strong>`
+      : `anywhere in the database`;
+    const tables = _dataset === 'valid' ? `<code>${GOOD_TABLE}</code>`
+                 : _dataset === 'bad'   ? `<code>${BAD_TABLE}</code>`
+                 : `<code>${GOOD_TABLE}</code> or <code>${BAD_TABLE}</code>`;
+    const srcNote = sourcesAreFiltered()
+      ? (_selected.length === 0
+          ? ' No data source is selected — tick at least one in the sidebar.'
+          : ` Source filter is active (${_selected.length} of ${_sources.length}).`)
+      : '';
+    empty.style.display = 'flex';
+    empty.innerHTML = `
+      <span class="material-icons" style="color:var(--orange)">inbox</span>
+      <h3>No measurements found</h3>
+      <p>No rows in ${tables} ${where} in the selected time window.${escapeHtml(srcNote)} Try widening the date range.</p>`;
+    return;
+  }
+
+  const first       = d.kpi.first_day || '';
+  const last        = d.kpi.last_day  || '';
+  const daysCovered = daysBetween(first, last);
+  const dateRange   = (first && last) ? `${first} → ${last}` : '';
+  const badSamples  = Number(d.kpi.bad_samples) || 0;
+  const badPct      = total > 0 ? (badSamples / total * 100) : 0;
+  const datasetName = _dataset === 'valid' ? 'valid rows' : _dataset === 'bad' ? 'rejected rows' : 'valid + rejected';
+
+  // ── KPI tiles ──
+  const kpiCards = [
+    {
+      icon: 'storage', color: '#3b82f6', bg: 'rgba(59,130,246,0.12)',
+      val: fmt(total), label: 'Total Samples', sub: datasetName
+    },
+    {
+      icon: 'devices', color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',
+      val: fmt(d.kpi.unique_devices), label: 'Unique Devices', sub: 'distinct deviceId'
+    },
+    d.scoped ? {
+      icon: 'business', color: '#a78bfa', bg: 'rgba(167,139,250,0.12)',
+      val: fmtInt(d.kpi.active_mnos), label: 'Active MNOs', sub: `MCC ${currentMcc()}`
+    } : {
+      icon: 'public', color: '#a78bfa', bg: 'rgba(167,139,250,0.12)',
+      val: fmtInt(d.kpi.active_countries), label: 'Countries',
+      sub: `${fmtInt(d.kpi.active_mnos)} MNOs`
+    },
+    {
+      icon: 'hub', color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',
+      val: _schema.hasSource ? fmtInt(d.kpi.active_sources) : '—',
+      label: 'Data Sources',
+      sub: _schema.hasSource
+        ? (d.bySource.length ? `top: ${d.bySource[0].source === '' ? '(blank)' : d.bySource[0].source}` : '—')
+        : 'no source column'
+    },
+    {
+      icon: 'event', color: '#22c55e', bg: 'rgba(34,197,94,0.12)',
+      val: fmtInt(daysCovered), label: 'Days Covered', sub: dateRange || '—'
+    },
+  ];
+
+  if (d.withBad) {
+    kpiCards.push({
+      icon: 'report', color: '#ef4444', bg: 'rgba(239,68,68,0.12)',
+      val: fmt(badSamples), label: 'Rejected Records',
+      sub: `${badPct.toFixed(2)}% of rows in view`
+    });
+  }
+
+  const kpiHTML = kpiCards.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-icon-wrap" style="background:${k.bg}">
+        <span class="material-icons" style="color:${k.color}">${k.icon}</span>
+      </div>
+      <div class="kpi-val" style="color:${k.color}">${k.val}</div>
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-sub">${escapeHtml(k.sub)}</div>
+    </div>`).join('');
+
+  // ── Shared bar-cell renderer: bar width is relative to the largest row so the
+  //    long tail stays visible; the printed number is the true share of the total.
+  const barCell = (share, maxShare, color) => `
+    <td class="inline-bar-cell">
+      <div class="row">
+        <div class="bar-track"><div class="bar-fill" style="width:${(maxShare > 0 ? share / maxShare * 100 : 0).toFixed(1)}%;background:${color}"></div></div>
+        <span class="pct">${share.toFixed(1)}%</span>
+      </div>
+    </td>`;
+
+  // ══════════ SOURCE BREAKDOWN ══════════
+  const srcList    = d.bySource || [];
+  const srcSum     = srcList.reduce((s, r) => s + r.samples, 0) || 1;
+  const srcMaxPct  = Math.max(...srcList.map(r => r.samples / srcSum * 100), 1);
+  const srcDevSum  = srcList.reduce((s, r) => s + r.devices, 0);
+  const srcBadSum  = srcList.reduce((s, r) => s + r.bad, 0);
+
+  const srcTableHTML = !_schema.hasSource
+    ? `<p style="color:var(--text-dim);font-size:12px;padding:8px 0">
+         Table <code>${GOOD_TABLE}</code> has no <code>source</code> column, so provenance cannot be broken out.</p>`
+    : !srcList.length
+    ? '<p style="color:var(--text-dim);font-size:12px;padding:8px 0">No source data for this window.</p>'
+    : `<table class="dash-table">
+        <thead><tr>
+          <th>Source</th>
+          <th class="num">Samples</th>
+          <th>% of Samples</th>
+          <th class="num">Unique Devices</th>
+          ${d.withBad ? '<th class="num">Rejected</th><th class="num">Reject %</th>' : ''}
+        </tr></thead>
+        <tbody>${srcList.map(r => {
+          const share = r.samples / srcSum * 100;
+          return `<tr>
+            <td class="mono strong" style="font-weight:600">${escapeHtml(r.source === '' ? '(blank)' : r.source)}</td>
+            <td class="num mono strong">${fmtInt(r.samples)}</td>
+            ${barCell(share, srcMaxPct, 'var(--orange)')}
+            <td class="num mono strong">${fmtInt(r.devices)}</td>
+            ${d.withBad ? `<td class="num mono strong">${fmtInt(r.bad)}</td>
+                           <td class="num"><span class="pct">${(r.samples > 0 ? r.bad / r.samples * 100 : 0).toFixed(2)}%</span></td>` : ''}
+          </tr>`;
+        }).join('')}</tbody>
+        <tfoot><tr>
+          <td>Total · ${srcList.length} source${srcList.length === 1 ? '' : 's'}</td>
+          <td class="num mono strong">${fmtInt(srcSum)}</td>
+          <td class="inline-bar-cell"><div class="row"><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--card-border)"></div></div><span class="pct">100.0%</span></div></td>
+          <td class="num mono strong">${fmtInt(srcDevSum)}</td>
+          ${d.withBad ? `<td class="num mono strong">${fmtInt(srcBadSum)}</td>
+                         <td class="num"><span class="pct">${badPct.toFixed(2)}%</span></td>` : ''}
+        </tr></tfoot>
+      </table>
+      <p class="kpi-sub" style="margin-top:10px">
+        Unique devices are counted per source, so a device that reported through two SDKs
+        appears under each — the column deliberately sums to more than the KPI total.
+      </p>`;
+
+  // ══════════ COUNTRY BREAKDOWN (whole-DB scope only) ══════════
+  const ctyList   = d.byCountry || [];
+  const ctySum    = ctyList.reduce((s, r) => s + r.samples, 0) || 1;
+  const ctyMaxPct = Math.max(...ctyList.map(r => r.samples / ctySum * 100), 1);
+
+  const countryCardHTML = d.scoped || !ctyList.length ? '' : `
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <div class="dash-card-title">
+          <span class="material-icons" style="color:var(--green)">public</span>
+          Country Breakdown — whole database
+          <span class="right" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim)">
+            top ${ctyList.length} by samples
+          </span>
+        </div>
+        <table class="dash-table">
+          <thead><tr>
+            <th>Country</th><th>MCC</th>
+            <th class="num">Samples</th><th>% of Samples</th>
+            <th class="num">Devices</th><th class="num">MNOs</th>
+            ${d.withBad ? '<th class="num">Rejected</th>' : ''}
+          </tr></thead>
+          <tbody>${ctyList.map(r => {
+            const share = r.samples / ctySum * 100;
+            const name  = mccName(r.mcc);
+            return `<tr>
+              <td style="font-weight:600">${escapeHtml(name || 'Unknown')}</td>
+              <td class="mono strong">${escapeHtml(r.mcc === '' ? '—' : r.mcc)}</td>
+              <td class="num mono strong">${fmtInt(r.samples)}</td>
+              ${barCell(share, ctyMaxPct, 'var(--green)')}
+              <td class="num mono strong">${fmtInt(r.devices)}</td>
+              <td class="num mono strong">${fmtInt(r.mnos)}</td>
+              ${d.withBad ? `<td class="num mono strong">${fmtInt(r.bad)}</td>` : ''}
+            </tr>`;
+          }).join('')}</tbody>
+        </table>
+      </div>
+    </div>`;
+
+  // ══════════ MNO BREAKDOWN ══════════
+  // Under a single-country scope devices are attributed to their PRIMARY MNO (the one
+  // with the most samples), so the column sums to the KPI total. In whole-DB scope that
+  // attribution query is skipped, and the column falls back to a plain per-MNO uniq —
+  // which double-counts multi-network devices. The footnote says which one is in play.
+  const mnoList         = d.byMno || [];
+  const sumSamples      = mnoList.reduce((s, r) => s + r.samples, 0) || 1;
+  const mnoMaxPct       = Math.max(...mnoList.map(r => r.samples / sumSamples * 100), 1);
+  const devOf           = r => (d.hasPrimary && r.unique_devices !== undefined) ? r.unique_devices : r.devices_seen;
+  const sumMnoDevices   = mnoList.reduce((s, r) => s + devOf(r), 0);
+  const kpiDevicesTotal = Number(d.kpi.unique_devices) || 0;
+  const devicesDenom    = d.hasPrimary ? (kpiDevicesTotal || sumMnoDevices || 1) : (sumMnoDevices || 1);
+  const sumMnoBad       = mnoList.reduce((s, r) => s + r.bad, 0);
+
+  const mnoTableHTML = !mnoList.length
+    ? '<p style="color:var(--text-dim);font-size:12px;padding:8px 0">No MNO data for this window.</p>'
+    : `<table class="dash-table">
+        <thead><tr>
+          <th>MNO</th>
+          <th>PLMN</th>
+          ${d.scoped ? '' : '<th>Country</th>'}
+          <th class="num">Samples</th>
+          <th>% of Samples</th>
+          <th class="num">${d.hasPrimary ? 'Unique Devices' : 'Devices Seen'}</th>
+          <th class="num">% of Devices</th>
+          ${d.withBad ? '<th class="num">Rejected</th>' : ''}
+        </tr></thead>
+        <tbody>${mnoList.map(r => {
+          const share = r.samples / sumSamples * 100;
+          const dev   = devOf(r);
+          const pDev  = devicesDenom > 0 ? (dev / devicesDenom * 100) : 0;
+          const plmn  = r.plmn || `${r.mcc}-${String(r.mnc).padStart(2, '0')}`;
+          return `<tr>
+            <td style="font-weight:600">${escapeHtml(r.operator || '—')}</td>
+            <td class="mono strong">${escapeHtml(plmn)}</td>
+            ${d.scoped ? '' : `<td class="mono">${escapeHtml(mccName(r.mcc) || r.mcc || '—')}</td>`}
+            <td class="num mono strong">${fmtInt(r.samples)}</td>
+            ${barCell(share, mnoMaxPct, 'var(--accent)')}
+            <td class="num mono strong">${fmtInt(dev)}</td>
+            <td class="num"><span class="pct">${pDev.toFixed(1)}%</span></td>
+            ${d.withBad ? `<td class="num mono strong">${fmtInt(r.bad)}</td>` : ''}
+          </tr>`;
+        }).join('')}</tbody>
+        <tfoot><tr>
+          <td colspan="${d.scoped ? 2 : 3}">Total · ${mnoList.length} MNO${mnoList.length === 1 ? '' : 's'}</td>
+          <td class="num mono strong">${fmtInt(sumSamples)}</td>
+          <td class="inline-bar-cell"><div class="row"><div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--card-border)"></div></div><span class="pct">100.0%</span></div></td>
+          <td class="num mono strong">${fmtInt(sumMnoDevices)}${
+            d.hasPrimary && sumMnoDevices !== kpiDevicesTotal && kpiDevicesTotal > 0
+              ? ` <span class="mono" style="color:var(--text-dim);font-weight:400">(KPI ${fmtInt(kpiDevicesTotal)})</span>` : ''}</td>
+          <td class="num"><span class="pct">${(devicesDenom > 0 ? sumMnoDevices / devicesDenom * 100 : 0).toFixed(1)}%</span></td>
+          ${d.withBad ? `<td class="num mono strong">${fmtInt(sumMnoBad)}</td>` : ''}
+        </tr></tfoot>
+      </table>
+      <p class="kpi-sub" style="margin-top:10px">${
+        d.hasPrimary
+          ? 'Each device is attributed to its primary MNO (most samples), so the device column sums to the KPI total.'
+          : 'Whole-database scope: primary-MNO attribution is skipped (too large to compute safely), so a device that used several networks is counted under each.'
+      }</p>`;
+
+  // ══════════ REJECTION REASONS ══════════
+  const reasons    = d.byReason || [];
+  const reasonSum  = reasons.reduce((s, r) => s + r.samples, 0) || 1;
+  const reasonMax  = Math.max(...reasons.map(r => r.samples / reasonSum * 100), 1);
+  const reasonCardHTML = !d.withBad ? '' : `
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <div class="dash-card-title">
+          <span class="material-icons" style="color:var(--red)">report</span>
+          Rejection Reasons — <code>${BAD_TABLE}</code>
+          <span class="right" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim)">
+            ${fmt(badSamples)} rejected · ${badPct.toFixed(2)}% of rows in view
+          </span>
+        </div>
+        ${!reasons.length
+          ? `<p style="color:var(--text-dim);font-size:12px;padding:8px 0">${
+              _schema.badHasReason
+                ? 'No rejected records in this window.'
+                : `Table <code>${BAD_TABLE}</code> has no <code>reason</code> column in this database.`}</p>`
+          : `<table class="dash-table">
+              <thead><tr><th>Reason</th><th class="num">Records</th><th>% of Rejected</th></tr></thead>
+              <tbody>${reasons.map(r => {
+                const share = r.samples / reasonSum * 100;
+                return `<tr>
+                  <td class="mono strong">${escapeHtml(r.reason === '' ? '(blank)' : r.reason)}</td>
+                  <td class="num mono strong">${fmtInt(r.samples)}</td>
+                  ${barCell(share, reasonMax, 'var(--red)')}
+                </tr>`;
+              }).join('')}</tbody>
+            </table>`}
+      </div>
+    </div>`;
+
+  // ══════════ SHELL ══════════
+  const dash = document.getElementById('dashboard');
+  dash.innerHTML = `
+    <div class="kpi-grid">${kpiHTML}</div>
+
+    <!-- DAILY CHART -->
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <div class="dash-card-title">
+          <span class="material-icons" style="color:var(--accent)">show_chart</span>
+          Daily Activity — anchored to last 90 days
+          <span class="right" id="daily-toggles">
+            <button class="toggle-btn" data-mode="users"   onclick="setDailyMode('users')">Unique Devices</button>
+            <button class="toggle-btn" data-mode="samples" onclick="setDailyMode('samples')">Samples</button>
+            ${d.withBad ? `<button class="toggle-btn" data-mode="bad" onclick="setDailyMode('bad')">Rejected</button>` : ''}
+          </span>
+        </div>
+        <div id="daily-chart-host"></div>
+      </div>
+    </div>
+
+    <!-- SOURCE BREAKDOWN -->
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <div class="dash-card-title">
+          <span class="material-icons" style="color:var(--orange)">hub</span>
+          Data Source Breakdown
+          <span class="right" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim)">
+            ${sourcesAreFiltered() ? `filtered · ${_selected.length} of ${_sources.length} selected` : 'all sources'}
+          </span>
+        </div>
+        ${srcTableHTML}
+      </div>
+    </div>
+
+    ${countryCardHTML}
+
+    <!-- MNO BREAKDOWN -->
+    <div class="dash-grid full">
+      <div class="dash-card">
+        <div class="dash-card-title">
+          <span class="material-icons" style="color:var(--purple)">business</span>
+          MNO Breakdown — ${escapeHtml(scopeLabel())}
+          <span class="right" style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;color:var(--text-dim)">
+            sorted by samples${d.scoped ? '' : ` · top ${mnoList.length}`}
+          </span>
+        </div>
+        ${mnoTableHTML}
+      </div>
+    </div>
+
+    ${reasonCardHTML}
+  `;
+
+  dash.style.display = 'block';
+  setDailyMode(_dailyMode);
+}
+
+function setDailyMode(mode) {
+  _dailyMode = mode;
+  document.querySelectorAll('#daily-toggles .toggle-btn')
+    .forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  renderDailyChart();
+}
+
+function renderDailyChart() {
+  const host = document.getElementById('daily-chart-host');
+  if (!host) return;
+  const rows = _lastDaily || [];
+  if (!rows.length) {
+    host.innerHTML = '<p style="color:var(--text-dim);font-size:12px;padding:8px 0">No daily data in the 90-day window.</p>';
+    return;
+  }
+  const MODES = {
+    users:   { key: 'users',   color: 'var(--accent)', label: 'Unique Devices per Day', unit: 'unique devices' },
+    samples: { key: 'samples', color: 'var(--cyan)',   label: 'Samples',                unit: 'samples' },
+    bad:     { key: 'bad',     color: 'var(--red)',    label: 'Rejected Records',       unit: 'rejected' },
+  };
+  const m        = MODES[_dailyMode] || MODES.users;
+  const key      = m.key;
+  const colorVar = m.color;
+  const labelTxt = m.label;
+  const tipUnit  = m.unit;
+  const max      = Math.max(...rows.map(r => Number(r[key])), 0);
+
+  // y-axis ticks: 0, 25%, 50%, 75%, 100%
+  const ticks = [1, 0.75, 0.5, 0.25, 0];
+  const tickHTML = ticks.map(t => {
+    const yPct = (1 - t) * 100;
+    const v = max * t;
+    return `
+      <div class="y-line"  style="top:${yPct}%"></div>
+      <div class="y-label" style="top:${yPct}%">${fmt(Math.round(v))}</div>`;
+  }).join('');
+
+  // Per-bar labels are only legible when the bar count is small enough.
+  // Above ~31 bars (one month) the columns get too narrow to read horizontal numbers.
+  const showLabels = rows.length <= 31;
+
+  const bars = rows.map(r => {
+    const v = Number(r[key]) || 0;
+    const h = max > 0 ? Math.max(2, Math.round((v / max) * 100)) : 2;
+    const tip = `${r.day} · ${fmt(v)} ${tipUnit}`;
+    const labelHTML = (showLabels && v > 0)
+      ? `<span class="bar-value-label">${fmt(v)}</span>`
+      : '';
+    return `<div class="chart-bar ${key}" style="height:${h}%;background:${colorVar}" data-tip="${escapeHtml(tip)}">${labelHTML}</div>`;
+  }).join('');
+
+  const firstDay = rows[0]?.day || '';
+  const lastDay  = rows[rows.length - 1]?.day || '';
+  const totalForLegend = rows.reduce((s, r) => s + Number(r[key] || 0), 0);
+  const peak = rows.reduce((mx, r) => Math.max(mx, Number(r[key] || 0)), 0);
+
+  // In users mode the per-day uniques will sum to MORE than the KPI's Unique Devices,
+  // because a device active on multiple days is counted on each of those days (DAU). Show
+  // an average instead of a "total" so we don't imply the sum is meaningful.
+  // Row counts (samples, rejected) are additive across days, so a total is meaningful.
+  const avgPerDay = rows.length > 0 ? totalForLegend / rows.length : 0;
+  const days      = `${rows.length} day${rows.length === 1 ? '' : 's'}`;
+  const rightMeta = (_dailyMode === 'samples' || _dailyMode === 'bad')
+    ? `Peak ${fmt(peak)} · ${days} · Total ${fmt(totalForLegend)}`
+    : `Peak ${fmt(peak)} · ${days} · Avg ${fmt(Math.round(avgPerDay))}/day`;
+
+  host.innerHTML = `
+    <div class="chart-meta">
+      <span><span class="swatch" style="background:${colorVar}"></span>${labelTxt}</span>
+      <span style="color:var(--text-dim)">${rightMeta}</span>
+    </div>
+    <div class="chart-y-grid" style="height:180px">
+      ${tickHTML}
+      <div class="chart-wrap" style="position:relative;z-index:1">${bars}</div>
+    </div>
+    <div class="chart-labels"><span>${firstDay}</span><span>${lastDay}</span></div>
+  `;
+}
+</script>
+</body>
+</html>

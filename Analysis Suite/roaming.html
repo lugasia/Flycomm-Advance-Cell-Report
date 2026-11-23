@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" type="image/png" href="Favicon.png">
+  <title>Analysis Suite — Roaming SLA</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="basemap.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/h3-js/4.1.0/h3-js.umd.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:#0a1628; --card:#162038; --card2:#1a2744; --card-border:#1e3a5f;
+      --accent:#3b82f6; --accent2:#60a5fa; --red:#ef4444; --orange:#f59e0b;
+      --green:#22c55e; --cyan:#06b6d4; --purple:#a78bfa;
+      --text:#e2e8f0; --text-muted:#94a3b8; --text-dim:#64748b;
+    }
+    html, body { height:100%; font-family:'Inter',sans-serif; background:var(--navy); color:var(--text); overflow:hidden; }
+    #app { display:flex; height:100vh; }
+
+    /* SIDEBAR */
+    aside { width:340px; min-width:340px; background:var(--card); border-right:1px solid var(--card-border); display:flex; flex-direction:column; overflow:hidden; }
+    #sb-header { padding:14px 18px; border-bottom:1px solid var(--card-border); flex-shrink:0; }
+    #sb-header img { height:28px; max-width:100%; object-fit:contain; opacity:.85; display:block; margin-bottom:6px; }
+    #sb-header h1 { font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; }
+    #sb-header h1 .material-icons { font-size:19px; color:var(--accent); }
+    #sb-header p { font-size:11px; color:var(--text-muted); margin-top:3px; }
+    #sb-body { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; }
+    #sb-body::-webkit-scrollbar { width:4px; }
+    #sb-body::-webkit-scrollbar-thumb { background:var(--card-border); border-radius:2px; }
+    .sb-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:7px; }
+
+    #conn-bar { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; border:1px solid var(--card-border); cursor:pointer; background:rgba(255,255,255,.02); transition:all .15s; }
+    #conn-bar:hover { border-color:rgba(59,130,246,.4); }
+    .conn-dot { width:8px; height:8px; border-radius:50%; background:var(--text-muted); flex-shrink:0; transition:background .3s; }
+    .conn-dot.connected { background:var(--green); box-shadow:0 0 6px var(--green); }
+    .conn-dot.connecting { background:var(--orange); }
+    #conn-label { flex:1; font-size:12px; color:var(--text-muted); }
+    #conn-panel { display:none; padding:12px; background:var(--navy); border-radius:8px; border:1px solid var(--card-border); margin-top:6px; }
+    #conn-panel.open { display:block; }
+    .field-label { font-size:11px; color:var(--text-muted); margin-bottom:4px; margin-top:10px; }
+    .field-label:first-child { margin-top:0; }
+    input.db-inp, select.db-inp { width:100%; background:var(--card); border:1px solid var(--card-border); border-radius:6px; padding:7px 9px; color:var(--text); font-size:12px; font-family:'JetBrains Mono',monospace; outline:none; }
+    input.db-inp:focus, select.db-inp:focus { border-color:var(--accent); }
+    select.db-inp { font-family:'Inter',sans-serif; cursor:pointer; }
+
+    input[type=datetime-local] { width:100%; background:var(--navy); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; color:var(--text); font-size:11px; outline:none; }
+    input[type=datetime-local]:focus { border-color:var(--accent); }
+    input[type=datetime-local]::-webkit-calendar-picker-indicator { filter:invert(.7); cursor:pointer; }
+
+    .time-row { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .param-label { font-size:10px; color:var(--text-muted); margin-bottom:4px; }
+    .preset-row { display:flex; gap:5px; margin-bottom:8px; }
+    .preset-btn { flex:1; padding:5px 4px; background:var(--navy); border:1px solid var(--card-border); border-radius:5px; color:var(--text-muted); font-size:10px; font-weight:600; cursor:pointer; transition:all .15s; }
+    .preset-btn:hover { border-color:var(--accent); color:var(--accent); }
+    .preset-btn.active { border-color:var(--accent); color:var(--accent); background:rgba(59,130,246,.08); }
+
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:9px 14px; border-radius:8px; border:none; cursor:pointer; font-size:13px; font-weight:500; font-family:'Inter',sans-serif; transition:all .15s; width:100%; }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-primary:hover:not(:disabled) { background:#2563eb; }
+    .btn-primary:disabled { background:var(--card-border); color:var(--text-muted); cursor:not-allowed; }
+    .btn-secondary { background:var(--navy); color:var(--text); border:1px solid var(--card-border); }
+    .btn-secondary:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+    .btn-secondary:disabled { opacity:.5; cursor:not-allowed; }
+    .btn .material-icons { font-size:15px; }
+
+    .tool-switcher { display:flex; flex-wrap:wrap; gap:2px; padding:8px 10px; border-bottom:1px solid var(--card-border); background:var(--navy); flex-shrink:0; }
+    .tool-switcher a { flex:1 1 0; min-width:0; display:flex; align-items:center; justify-content:center; gap:4px; padding:6px 6px; font-size:10px; font-weight:500; border-radius:6px; color:var(--text-muted); text-decoration:none; transition:all .15s; }
+    .tool-switcher a .material-icons { font-size:14px; }
+    .tool-switcher a:hover { background:rgba(59,130,246,.08); color:var(--text); }
+    .tool-switcher a.current { background:rgba(59,130,246,.15); color:var(--accent); font-weight:600; }
+
+    /* Mode toggle */
+    .mode-toggle { display:flex; gap:4px; background:var(--navy); border:1px solid var(--card-border); border-radius:8px; padding:3px; }
+    .mode-toggle button { flex:1; padding:8px 6px; border:none; background:transparent; color:var(--text-muted); font-size:11px; font-weight:600; border-radius:6px; cursor:pointer; font-family:'Inter',sans-serif; transition:all .15s; }
+    .mode-toggle button.active { background:var(--accent); color:#fff; }
+
+    /* chips */
+    .chips-input { display:flex; flex-wrap:wrap; gap:4px; padding:6px; background:var(--card); border:1px solid var(--card-border); border-radius:6px; }
+    .chip { display:inline-flex; align-items:center; gap:4px; padding:2px 7px; background:rgba(59,130,246,.15); color:var(--accent2); border-radius:12px; font-size:11px; font-family:'JetBrains Mono',monospace; }
+    .chip .x { cursor:pointer; font-size:13px; opacity:.7; }
+    .chip .x:hover { opacity:1; }
+    .chips-input input { border:none; background:transparent; color:var(--text); font-size:11px; outline:none; flex:1; min-width:60px; font-family:'JetBrains Mono',monospace; }
+
+    .multi-list { max-height:120px; overflow-y:auto; border:1px solid var(--card-border); border-radius:6px; background:var(--navy); padding:4px; }
+    .multi-list label { display:flex; align-items:center; gap:6px; padding:4px 6px; font-size:11px; border-radius:4px; cursor:pointer; }
+    .multi-list label:hover { background:rgba(255,255,255,.03); }
+    .multi-list input { accent-color:var(--accent); }
+
+    .filter-grid { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+    .num-row { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+    .num-row label { font-size:11px; color:var(--text-muted); }
+    .num-row input { width:70px; background:var(--card); border:1px solid var(--card-border); border-radius:6px; padding:5px 7px; color:var(--text); font-size:12px; font-family:'JetBrains Mono',monospace; text-align:right; }
+    .toggle-row { display:flex; align-items:center; gap:8px; font-size:11px; color:var(--text-muted); margin-bottom:6px; cursor:pointer; }
+    .toggle-row input { accent-color:var(--accent); }
+
+    details.collapsible { border:1px solid var(--card-border); border-radius:8px; background:var(--navy); }
+    details.collapsible summary { padding:9px 11px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); cursor:pointer; list-style:none; display:flex; align-items:center; justify-content:space-between; }
+    details.collapsible summary::-webkit-details-marker { display:none; }
+    details.collapsible[open] summary { border-bottom:1px solid var(--card-border); }
+    .sla-body { padding:10px 11px; display:flex; flex-direction:column; gap:5px; }
+    .sla-row { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .sla-row label { font-size:11px; color:var(--text-muted); flex:1; }
+    .sla-row input { width:64px; background:var(--card); border:1px solid var(--card-border); border-radius:5px; padding:4px 6px; color:var(--text); font-size:11px; font-family:'JetBrains Mono',monospace; text-align:right; }
+
+    #nav-links { padding:10px 14px; border-top:1px solid var(--card-border); display:flex; gap:7px; flex-shrink:0; }
+    #nav-links a { flex:1; display:flex; align-items:center; justify-content:center; gap:3px; flex-direction:column; padding:7px 4px; border-radius:8px; border:1px solid var(--card-border); color:var(--text-muted); text-decoration:none; font-size:10px; font-weight:500; transition:all .2s; text-align:center; }
+    #nav-links a .material-icons { font-size:17px; }
+    #nav-links a:hover { border-color:var(--accent); background:rgba(59,130,246,.1); color:var(--text); }
+
+    /* MAIN */
+    #main { flex:1; display:flex; flex-direction:column; overflow:hidden; }
+    #top-bar { padding:12px 20px; border-bottom:1px solid var(--card-border); display:flex; align-items:center; justify-content:space-between; flex-shrink:0; background:var(--card); }
+    #top-bar h2 { font-size:14px; font-weight:700; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    #top-bar h2 .material-icons { font-size:18px; color:var(--accent); }
+    #top-bar h2 .crumb-sep { color:var(--text-dim); font-weight:400; margin:0 2px; }
+    #top-bar h2 .home { color:var(--green); font-weight:700; }
+    #top-bar h2 .visited { color:var(--accent2); font-weight:700; }
+    #top-bar h2 .mono { color:var(--text-muted); font-weight:500; font-family:'JetBrains Mono',monospace; font-size:12px; }
+    #top-bar h2 .meta { color:var(--text-dim); font-weight:500; font-size:12px; }
+    #loading-bar { height:3px; background:linear-gradient(90deg,var(--accent),var(--cyan)); width:0%; transition:width .3s; flex-shrink:0; }
+    #content { flex:1; overflow-y:auto; padding:20px; }
+
+    #empty-state, #zero-state { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; gap:14px; color:var(--text-muted); text-align:center; padding:0 40px; }
+    #empty-state .material-icons, #zero-state .material-icons { font-size:52px; color:var(--text-dim); }
+    #empty-state p, #zero-state p { max-width:520px; font-size:13px; line-height:1.6; }
+
+    .section { margin-bottom:22px; }
+    .section-title { font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted); margin-bottom:12px; display:flex; align-items:center; gap:7px; }
+    .section-title .material-icons { font-size:16px; color:var(--accent); }
+    .section-title .hint { font-size:10px; font-weight:500; text-transform:none; letter-spacing:0; color:var(--text-dim); margin-left:auto; }
+
+    .kpi-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; }
+    .kpi { background:var(--card); border:1px solid var(--card-border); border-radius:10px; padding:14px 16px; }
+    .kpi .label { font-size:10px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted); margin-bottom:6px; }
+    .kpi .value { font-size:26px; font-weight:600; font-family:'JetBrains Mono',monospace; line-height:1; }
+    .kpi .sub { font-size:11px; color:var(--text-dim); margin-top:5px; }
+    .kpi.pass .value { color:var(--green); } .kpi.warn .value { color:var(--orange); } .kpi.fail .value { color:var(--red); }
+
+    .card { background:var(--card); border:1px solid var(--card-border); border-radius:10px; padding:16px; }
+    table.grid { width:100%; border-collapse:collapse; font-size:12px; }
+    table.grid th { text-align:right; padding:8px 9px; color:var(--text-muted); font-weight:600; font-size:10px; text-transform:uppercase; letter-spacing:.03em; border-bottom:1px solid var(--card-border); white-space:nowrap; }
+    table.grid th:first-child, table.grid td:first-child { text-align:left; }
+    table.grid td { padding:8px 9px; border-bottom:1px solid rgba(30,58,95,.4); font-family:'JetBrains Mono',monospace; text-align:right; white-space:nowrap; }
+    table.grid tr:hover td { background:rgba(255,255,255,.02); }
+    table.grid td.plmn { color:var(--accent2); font-weight:600; }
+    table.grid td.op { font-family:'Inter',sans-serif; color:var(--text); }
+    .cell-val { display:inline-flex; align-items:center; gap:5px; justify-content:flex-end; }
+    .chip-sla { font-size:9px; font-weight:700; padding:1px 5px; border-radius:8px; text-transform:uppercase; letter-spacing:.03em; }
+    .chip-sla.pass { background:rgba(34,197,94,.15); color:var(--green); }
+    .chip-sla.warn { background:rgba(245,158,11,.15); color:var(--orange); }
+    .chip-sla.fail { background:rgba(239,68,68,.15); color:var(--red); }
+    .chip-sla.na { background:rgba(100,116,139,.15); color:var(--text-dim); }
+    .insuff { color:var(--text-dim); font-style:italic; font-family:'Inter',sans-serif; }
+    .composite { font-weight:700; }
+    .composite.pass { color:var(--green); } .composite.warn { color:var(--orange); } .composite.fail { color:var(--red); }
+    .score-pill { display:inline-block; min-width:34px; text-align:center; padding:3px 8px; border-radius:8px; font-weight:700; font-size:13px; background:rgba(100,116,139,.15); color:var(--text-muted); }
+    .score-pill.pass { background:rgba(34,197,94,.18); color:var(--green); }
+    .score-pill.warn { background:rgba(245,158,11,.18); color:var(--orange); }
+    .score-pill.fail { background:rgba(239,68,68,.18); color:var(--red); }
+    /* keep Partner + Score columns visible while the KPI columns scroll */
+    table.grid.sticky-first th:nth-child(-n+3), table.grid.sticky-first td:nth-child(-n+3) { position:sticky; background:var(--card); z-index:2; }
+    table.grid.sticky-first th:nth-child(1), table.grid.sticky-first td:nth-child(1) { left:0; }
+    table.grid.sticky-first th:nth-child(2), table.grid.sticky-first td:nth-child(2) { left:70px; }
+    table.grid.sticky-first th:nth-child(3), table.grid.sticky-first td:nth-child(3) { left:210px; box-shadow:2px 0 6px rgba(0,0,0,.35); }
+    .chart-empty { display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-dim); font-size:13px; font-style:italic; text-align:center; padding:0 20px; }
+    .map-empty-note { position:absolute; top:10px; left:50px; right:10px; z-index:500; background:rgba(22,32,56,.92); border:1px solid var(--card-border); border-radius:8px; padding:8px 12px; font-size:12px; color:var(--text-muted); pointer-events:none; }
+
+    .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    @media(max-width:1100px){ .grid2 { grid-template-columns:1fr; } }
+    .chart-box { position:relative; height:280px; }
+    #map { height:420px; border-radius:10px; border:1px solid var(--card-border); }
+    .leaflet-container { background:#0a1628; }
+    .map-tiles { filter:brightness(1.6) contrast(1.1) saturate(1.1); }
+
+    .footnote { font-size:11px; color:var(--text-dim); margin-top:8px; line-height:1.5; }
+    .banner { padding:10px 14px; border-radius:8px; font-size:12px; margin-bottom:16px; line-height:1.5; }
+    .banner.warn { background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.3); color:#fbbf24; }
+    .banner.err { background:rgba(239,68,68,.1); border:1px solid rgba(239,68,68,.3); color:#fca5a5; font-family:'JetBrains Mono',monospace; }
+    .dq-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; }
+    .dq { background:var(--navy); border:1px solid var(--card-border); border-radius:8px; padding:10px 12px; }
+    .dq .k { font-size:10px; color:var(--text-muted); text-transform:uppercase; }
+    .dq .v { font-size:18px; font-weight:600; font-family:'JetBrains Mono',monospace; margin-top:4px; }
+    .legend-row { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--text-muted); margin-top:10px; }
+    .legend-row span { display:inline-flex; align-items:center; gap:5px; }
+    .swatch { width:11px; height:11px; border-radius:3px; display:inline-block; }
+    a.link { color:var(--accent2); cursor:pointer; text-decoration:underline; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+  </style>
+<script src="suite-nav.js" defer></script>
+</head>
+<body>
+<div id="app">
+  <!-- ═══════════ SIDEBAR ═══════════ -->
+  <aside>
+    <div id="sb-header">
+      <img src="fcic.png" alt="FCIC" onerror="this.style.display='none'">
+      <h1><span class="material-icons">flight_takeoff</span> Roaming SLA</h1>
+      <p>Roaming service-quality &amp; fairness analysis</p>
+    </div>
+
+    <div class="tool-switcher">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="db-dashboard.html"><span class="material-icons">insights</span>Dashboard</a>
+      <a href="nmf-viewer.html"><span class="material-icons">route</span>NMF</a>
+      <a href="cell-footprint.html"><span class="material-icons">hexagon</span>Footprint</a>
+      <a href="regulator-dashboard.html"><span class="material-icons">account_balance</span>Regulator</a>
+      <a href="roaming.html" class="current"><span class="material-icons">flight_takeoff</span>Roaming</a>
+      <a href="network-graph.html"><span class="material-icons">hub</span>Graph</a>
+    </div>
+
+    <div id="sb-body">
+      <!-- Connection -->
+      <div>
+        <div class="sb-label">Database</div>
+        <div id="conn-bar" onclick="toggleConnPanel()">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Not connected — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="conn-panel">
+          <div class="field-label">Host</div>
+          <input class="db-inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <div class="field-label">Port</div>
+          <input class="db-inp" type="text" id="db-port" placeholder="8443" style="width:100px">
+          <div class="field-label">Database</div>
+          <input class="db-inp" type="text" id="db-name" value="default">
+          <div class="field-label">Username</div>
+          <input class="db-inp" type="text" id="db-user" placeholder="default">
+          <div class="field-label">Password</div>
+          <input class="db-inp" type="password" id="db-pass" placeholder="••••••••">
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+              <span class="material-icons" style="font-size:14px">sync</span> Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode -->
+      <div>
+        <div class="sb-label">Mode</div>
+        <div class="mode-toggle">
+          <button id="mode-outbound" class="active" onclick="setMode('outbound')">Outbound</button>
+          <button id="mode-inbound" onclick="setMode('inbound')">Inbound</button>
+          <button id="mode-presence" onclick="setMode('presence')">Presence</button>
+        </div>
+        <div id="mode-desc" style="font-size:10px;color:var(--text-dim);margin-top:6px;line-height:1.4"></div>
+      </div>
+
+      <!-- Home operator (outbound) / Host network (inbound) -->
+      <div id="home-block">
+        <div class="sb-label" id="home-label">Home operator (the SIM)</div>
+        <div class="field-label">Country</div>
+        <select class="db-inp" id="home-country" onchange="onHomeCountryChange()"></select>
+        <div class="field-label" style="display:flex;justify-content:space-between;align-items:center">
+          <span id="home-mnc-label">Operator (MNC)</span>
+          <span class="material-icons" title="Detect operators present in the data" style="font-size:15px;cursor:pointer;color:var(--text-muted)" onclick="detectHomeOperators()">refresh</span>
+        </div>
+        <select class="db-inp" id="home-mnc"><option value="">All operators (whole country)</option></select>
+      </div>
+
+      <!-- Visited / Host country -->
+      <div id="visited-block">
+        <div class="sb-label" id="visited-label">Visited country</div>
+        <div class="field-label">Country</div>
+        <select class="db-inp" id="visited-country"></select>
+        <div id="host-mnc-wrap" style="display:none">
+          <div class="field-label" style="display:flex;justify-content:space-between;align-items:center">
+            <span>Host operator (MNC)</span>
+            <span class="material-icons" title="Detect host operators present in the data" style="font-size:15px;cursor:pointer;color:var(--text-muted)" onclick="detectHostOperators()">refresh</span>
+          </div>
+          <select class="db-inp" id="host-mnc"><option value="">All host operators</option></select>
+        </div>
+      </div>
+
+      <!-- Partner filter -->
+      <div>
+        <div class="sb-label">Partners <span style="font-weight:400;text-transform:none;color:var(--text-dim)">(populated after a run)</span></div>
+        <div class="multi-list" id="partner-list"><label style="color:var(--text-dim)">Run analysis to list partners</label></div>
+        <div class="field-label">Preferred partners (SLA-named PLMNs)</div>
+        <div class="chips-input" id="pref-chips" onclick="document.getElementById('pref-input').focus()">
+          <input id="pref-input" placeholder="e.g. 202-01  ↵" onkeydown="prefKey(event)">
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div>
+        <div class="sb-label">Filters</div>
+        <div class="field-label">Technology</div>
+        <div class="filter-grid" id="tech-filter">
+          <label class="toggle-row"><input type="checkbox" value="NR" checked>NR (5G)</label>
+          <label class="toggle-row"><input type="checkbox" value="LTE" checked>LTE (4G)</label>
+          <label class="toggle-row"><input type="checkbox" value="WCDMA" checked>WCDMA (3G)</label>
+          <label class="toggle-row"><input type="checkbox" value="GSM" checked>GSM (2G)</label>
+        </div>
+        <label class="toggle-row" style="margin-top:6px"><input type="checkbox" id="excl-modem" checked>Exclude fixed-wireless routers</label>
+        <label class="toggle-row"><input type="checkbox" id="excl-manip" checked>Exclude app-manipulated rows</label>
+        <div class="num-row" style="margin-top:8px"><label>Min samples / cell</label><input type="number" id="min-samples" value="30" min="1"></div>
+        <div class="num-row"><label>Min devices (k-anon)</label><input type="number" id="min-devices" value="5" min="1"></div>
+      </div>
+
+      <!-- Time -->
+      <div>
+        <div class="sb-label">Time Range</div>
+        <div class="preset-row">
+          <button class="preset-btn" id="preset-24h" onclick="setPreset(1,'preset-24h')">24h</button>
+          <button class="preset-btn" id="preset-7d" onclick="setPreset(7,'preset-7d')">7d</button>
+          <button class="preset-btn active" id="preset-30d" onclick="setPreset(30,'preset-30d')">30d</button>
+          <button class="preset-btn" id="preset-90d" onclick="setPreset(90,'preset-90d')">90d</button>
+        </div>
+        <div class="time-row">
+          <div><div class="param-label">From</div><input type="datetime-local" id="time-from"></div>
+          <div><div class="param-label">To</div><input type="datetime-local" id="time-to"></div>
+        </div>
+      </div>
+
+      <!-- SLA targets -->
+      <details class="collapsible" id="sla-panel">
+        <summary>SLA Targets <span class="material-icons" style="font-size:15px">tune</span></summary>
+        <div class="sla-body" id="sla-body"></div>
+        <div style="padding:0 11px 11px"><button class="btn btn-secondary" style="font-size:11px;padding:6px" onclick="resetSlaTargets()">Reset to defaults</button></div>
+      </details>
+
+      <button class="btn btn-primary" id="btn-run" onclick="runAnalysis()"><span class="material-icons">play_arrow</span>Run Analysis</button>
+      <button class="btn btn-secondary" id="btn-export" onclick="exportReport()" disabled><span class="material-icons">description</span>Export SLA Report</button>
+    </div>
+
+    <div id="nav-links">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="db-dashboard.html"><span class="material-icons">insights</span>Workbench</a>
+      <a href="roaming.html" class="current" style="border-color:var(--accent);color:var(--accent);background:rgba(59,130,246,.08)"><span class="material-icons">flight_takeoff</span>Roaming</a>
+      <a href="regulator-dashboard.html"><span class="material-icons">account_balance</span>Dashboard</a>
+    </div>
+  </aside>
+
+  <!-- ═══════════ MAIN ═══════════ -->
+  <main id="main">
+    <div id="top-bar">
+      <h2 id="crumb"><span class="material-icons">flight_takeoff</span> Roaming SLA</h2>
+      <div id="top-bar-right"><span id="last-refresh" style="font-size:11px;color:var(--text-dim);font-family:'JetBrains Mono',monospace"></span></div>
+    </div>
+    <div id="loading-bar"></div>
+    <div id="content">
+      <div id="empty-state">
+        <span class="material-icons">flight_takeoff</span>
+        <h3>No analysis loaded</h3>
+        <p>Configure your ClickHouse connection, choose a <strong>home operator</strong> (its SIM) and a <strong>visited country</strong>, then click <strong>Run Analysis</strong>. The tool measures the service roaming subscribers actually receive on each partner network, and compares it against the visited network's own local subscribers on the same cells.</p>
+      </div>
+      <div id="zero-state" style="display:none"></div>
+      <div id="results" style="display:none"></div>
+    </div>
+  </main>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE 0 FINDINGS — 2026-07-13 (probes run live against measurements_year_geo)
+   ---------------------------------------------------------------------------
+   ROAMING PREDICATE CHOSEN:  sim_mcc != network_mcc   (SIM = home, serving = visited)
+   Rationale: it is the ONLY predicate that can name the *home* operator, which
+   the whole report hinges on. network_isRoaming is used as corroboration only.
+
+   Fill rates (last 7d, per source — cap max_rows_to_read=400M blocks 90d global scans):
+     • sim_mcc / sim_mnc populated ONLY on the SDK source at ~93.5%; 0% on all
+       other sources. Where present it is reliable, so the SIM predicate is sound.
+     • network_isRoaming flag is 100% *set*, ~2.3% *true*, but carries NO home-
+       operator identity → corroboration only, never the primary key.
+     • DEVICE KEY: the spec's `deviceId` is ~0% filled on roaming rows. We use
+       `deviceInfo_deviceId` (String, 100% filled) instead — guarded `!= ''`,
+       ONLY inside uniq*() (k-anonymity). This matches the project's canonical
+       device-count guidance.
+     • Throughput (internet_downloadMbps>0) is ~0% on roaming rows today; DL/UL
+       KPIs are kept but sample counts are shown loudly and fall to
+       "insufficient data" below the floor. Latency ~13-23% filled; RSRP/tech OK.
+
+   DATA REALITY: real cross-border roaming volume is small today (the reference
+   Cellcom 425-02 → Greece 202 corridor had 0 samples in 90d). The tool is built
+   to work for ANY MNO / ANY corridor worldwide — corridors with no data render
+   the zero-roamer state with a top-corridors picker. Data will grow over time.
+
+   PRIVACY / GUARDRAILS:
+     • The `source` column (data provenance) is NEVER exposed in the UI or report.
+       An MNO is identified only by MCC-MNC or its derived operator name.
+     • No IMSI/IMEI/personalId is ever selected, logged or displayed.
+     • No fabricated commercial/penalty figures. Measured KPIs vs. user targets only.
+   ════════════════════════════════════════════════════════════════════════ */
+
+// ── MCC → country (copied from sql-builder.html) ──
+const MCC_TABLE = {
+  '425':{country:'il',name:'Israel'},'416':{country:'jo',name:'Jordan'},'602':{country:'eg',name:'Egypt'},
+  '420':{country:'sa',name:'Saudi Arabia'},'418':{country:'iq',name:'Iraq'},'419':{country:'kw',name:'Kuwait'},
+  '417':{country:'sy',name:'Syria'},'415':{country:'lb',name:'Lebanon'},'421':{country:'ye',name:'Yemen'},
+  '424':{country:'ae',name:'UAE'},'427':{country:'qa',name:'Qatar'},'426':{country:'bh',name:'Bahrain'},
+  '422':{country:'om',name:'Oman'},'432':{country:'ir',name:'Iran'},'423':{country:'ps',name:'Palestine'},
+  '603':{country:'dz',name:'Algeria'},'604':{country:'ma',name:'Morocco'},'605':{country:'tn',name:'Tunisia'},
+  '606':{country:'ly',name:'Libya'},'607':{country:'gm',name:'Gambia'},'608':{country:'sn',name:'Senegal'},
+  '612':{country:'ci',name:'Ivory Coast'},'620':{country:'gh',name:'Ghana'},'621':{country:'ng',name:'Nigeria'},
+  '630':{country:'cd',name:'DR Congo'},'639':{country:'ke',name:'Kenya'},'640':{country:'tz',name:'Tanzania'},
+  '655':{country:'za',name:'South Africa'},'262':{country:'de',name:'Germany'},'208':{country:'fr',name:'France'},
+  '234':{country:'gb',name:'United Kingdom'},'222':{country:'it',name:'Italy'},'214':{country:'es',name:'Spain'},
+  '204':{country:'nl',name:'Netherlands'},'206':{country:'be',name:'Belgium'},'228':{country:'ch',name:'Switzerland'},
+  '232':{country:'at',name:'Austria'},'260':{country:'pl',name:'Poland'},'226':{country:'ro',name:'Romania'},
+  '230':{country:'cz',name:'Czech Republic'},'231':{country:'sk',name:'Slovakia'},'240':{country:'se',name:'Sweden'},
+  '242':{country:'no',name:'Norway'},'244':{country:'fi',name:'Finland'},'246':{country:'lt',name:'Lithuania'},
+  '247':{country:'lv',name:'Latvia'},'248':{country:'ee',name:'Estonia'},'255':{country:'ua',name:'Ukraine'},
+  '250':{country:'ru',name:'Russia'},'257':{country:'by',name:'Belarus'},'202':{country:'gr',name:'Greece'},
+  '219':{country:'hr',name:'Croatia'},'284':{country:'bg',name:'Bulgaria'},'216':{country:'hu',name:'Hungary'},
+  '286':{country:'tr',name:'Turkey'},'293':{country:'si',name:'Slovenia'},'220':{country:'rs',name:'Serbia'},
+  '270':{country:'lu',name:'Luxembourg'},'272':{country:'ie',name:'Ireland'},'274':{country:'is',name:'Iceland'},
+  '276':{country:'al',name:'Albania'},'278':{country:'mt',name:'Malta'},'280':{country:'cy',name:'Cyprus'},
+  '282':{country:'ge',name:'Georgia'},'283':{country:'am',name:'Armenia'},'292':{country:'sm',name:'San Marino'},
+  '294':{country:'mk',name:'North Macedonia'},'295':{country:'li',name:'Liechtenstein'},'297':{country:'me',name:'Montenegro'},
+  '310':{country:'us',name:'United States'},'311':{country:'us',name:'United States'},'312':{country:'us',name:'United States'},
+  '302':{country:'ca',name:'Canada'},'334':{country:'mx',name:'Mexico'},'724':{country:'br',name:'Brazil'},
+  '722':{country:'ar',name:'Argentina'},'730':{country:'cl',name:'Chile'},'732':{country:'co',name:'Colombia'},
+  '716':{country:'pe',name:'Peru'},'734':{country:'ve',name:'Venezuela'},'440':{country:'jp',name:'Japan'},
+  '441':{country:'jp',name:'Japan'},'450':{country:'kr',name:'South Korea'},'460':{country:'cn',name:'China'},
+  '461':{country:'cn',name:'China'},'466':{country:'tw',name:'Taiwan'},'470':{country:'bd',name:'Bangladesh'},
+  '510':{country:'id',name:'Indonesia'},'515':{country:'ph',name:'Philippines'},'520':{country:'th',name:'Thailand'},
+  '525':{country:'sg',name:'Singapore'},'528':{country:'bn',name:'Brunei'},'530':{country:'nz',name:'New Zealand'},
+  '505':{country:'au',name:'Australia'},'404':{country:'in',name:'India'},'405':{country:'in',name:'India'},
+  '410':{country:'pk',name:'Pakistan'},'413':{country:'lk',name:'Sri Lanka'},'452':{country:'vn',name:'Vietnam'},
+  '455':{country:'mo',name:'Macau'},'454':{country:'hk',name:'Hong Kong'},'456':{country:'kh',name:'Cambodia'},
+  '457':{country:'la',name:'Laos'},'001':{country:'xx',name:'Test Network'},'000':{country:'xx',name:'Unknown/Invalid'},
+};
+
+// ── Country bounding boxes [latMin, latMax, lonMin, lonMax] ──
+// Prune the leading PK cols (bin_lat,bin_lon) so queries don't scan a year of
+// a 500M+ row table. Fall back to no-bbox (MCC filter only) when a country is
+// absent — correctness first; the UI warns to narrow the window in that case.
+const COUNTRY_BBOX = {
+  '202':[34.5,41.9,19.2,29.9],  '425':[29.4,33.4,34.2,35.9],  '416':[29.1,33.4,34.9,39.3],
+  '602':[22.0,31.7,24.7,36.9],  '420':[16.0,32.2,34.5,55.7],  '214':[35.9,43.8,-9.4,4.4],
+  '208':[41.3,51.1,-5.2,9.6],   '262':[47.2,55.1,5.8,15.1],   '222':[36.6,47.1,6.6,18.6],
+  '234':[49.8,60.9,-8.7,1.8],   '204':[50.7,53.6,3.3,7.2],    '228':[45.8,47.8,5.9,10.5],
+  '232':[46.3,49.1,9.5,17.2],   '260':[49.0,54.9,14.1,24.2],  '226':[43.6,48.3,20.2,29.7],
+  '240':[55.3,69.1,11.0,24.2],  '242':[57.9,71.2,4.6,31.3],   '244':[59.7,70.1,20.5,31.6],
+  '272':[51.4,55.4,-10.5,-6.0], '280':[34.5,35.7,32.2,34.6],  '278':[35.8,36.1,14.1,14.6],
+  '286':[35.8,42.2,25.6,44.8],  '284':[41.2,44.2,22.3,28.6],  '216':[45.7,48.6,16.1,22.9],
+  '297':[41.8,43.6,18.4,20.4],  '220':[42.2,46.2,18.8,23.0],  '294':[40.8,42.4,20.4,23.0],
+  '276':[39.6,42.7,19.2,21.1],  '310':[24.4,49.4,-125.0,-66.9],'311':[24.4,49.4,-125.0,-66.9],
+  '312':[24.4,49.4,-125.0,-66.9],'302':[41.6,70.0,-141.0,-52.6],'404':[6.5,35.6,68.1,97.4],
+  '334':[14.5,32.7,-117.1,-86.7],'405':[6.5,35.6,68.1,97.4],   '424':[22.6,26.1,51.5,56.4],   '427':[24.5,26.2,50.7,51.7],
+  '454':[22.1,22.6,113.8,114.5],'525':[1.2,1.5,103.6,104.1],   '505':[-43.7,-10.1,113.1,153.7],
+  '724':[-33.8,5.3,-73.9,-34.8],'286':[35.8,42.2,25.6,44.8],
+};
+
+// ── Defaults & SLA targets ──
+const DEFAULTS = { mode:'outbound', homeMcc:425, homeMnc:2, visitedMcc:202, days:30, minSamples:30, minDevices:5, excludeModem:true, excludeManipulated:true };
+const SLA_DEFAULTS = {
+  tech4gPlusSharePct:95, legacyFallbackPct:2, noServicePct:1, rsrpP50Dbm:-105, rsrpPoorPct:10,
+  dlP50Mbps:10, dlBelow2MbpsPct:5, latencyP50Ms:80, jitterP50Ms:30, fairnessRatioPct:70, preferredPartnerPct:90
+};
+let SLA_TARGETS = {...SLA_DEFAULTS};
+
+// KPI definitions drive the scorecard + client-side scoring (re-scores w/o re-query).
+// dir: 'gte' = higher is better (measured >= target), 'lte' = lower is better.
+const SLA_KPIS = [
+  { key:'pct_4g_plus',    label:'4G+ %',      unit:'%',   target:'tech4gPlusSharePct', dir:'gte', weight:1.5, fmt:v=>v.toFixed(0)+'%' },
+  { key:'pct_legacy',     label:'Legacy %',   unit:'%',   target:'legacyFallbackPct',  dir:'lte', weight:1,   fmt:v=>v.toFixed(1)+'%' },
+  { key:'no_service_pct', label:'No-svc %',   unit:'%',   target:'noServicePct',       dir:'lte', weight:1,   fmt:v=>v.toFixed(1)+'%' },
+  { key:'rsrp_p50',       label:'RSRP p50',   unit:'dBm', target:'rsrpP50Dbm',         dir:'gte', weight:1.5, fmt:v=>v.toFixed(0) },
+  { key:'pct_rsrp_poor',  label:'RSRP poor %',unit:'%',   target:'rsrpPoorPct',        dir:'lte', weight:1,   fmt:v=>v.toFixed(1)+'%' },
+  { key:'dl_p50',         label:'DL p50',     unit:'Mbps',target:'dlP50Mbps',          dir:'gte', weight:1.5, fmt:v=>v.toFixed(1), needsTest:'dl_tests' },
+  { key:'dl_below2_pct',  label:'DL<2 %',     unit:'%',   target:'dlBelow2MbpsPct',    dir:'lte', weight:1,   fmt:v=>v.toFixed(1)+'%', needsTest:'dl_tests' },
+  { key:'lat_p50',        label:'Lat p50',    unit:'ms',  target:'latencyP50Ms',       dir:'lte', weight:1,   fmt:v=>v.toFixed(0), needsTest:'lat_tests' },
+  { key:'jit_p50',        label:'Jitter p50', unit:'ms',  target:'jitterP50Ms',        dir:'lte', weight:0.5, fmt:v=>v.toFixed(0), needsTest:'lat_tests' },
+  { key:'fairness_ratio', label:'Fairness',   unit:'%',   target:'fairnessRatioPct',   dir:'gte', weight:1.5, fmt:v=>v.toFixed(0)+'%' },
+  { key:'preferred_share',label:'Preferred %',unit:'%',   target:'preferredPartnerPct',dir:'gte', weight:0.5, fmt:v=>v.toFixed(0)+'%' },
+];
+const SLA_LABELS = {
+  tech4gPlusSharePct:'4G+ share ≥', legacyFallbackPct:'Legacy (2G/3G) ≤', noServicePct:'No-service ≤',
+  rsrpP50Dbm:'RSRP p50 ≥', rsrpPoorPct:'RSRP<-110 ≤', dlP50Mbps:'DL p50 ≥', dlBelow2MbpsPct:'DL<2Mbps ≤',
+  latencyP50Ms:'Latency p50 ≤', jitterP50Ms:'Jitter p50 ≤', fairnessRatioPct:'Fairness ratio ≥', preferredPartnerPct:'Preferred partner ≥'
+};
+
+// ══════════════ CONNECTION (verbatim pattern from regulator-dashboard.html) ══════════════
+const CREDS_KEY = 'clickhouse_credentials';
+let isConnected = false;
+function toggleConnPanel(){ document.getElementById('conn-panel').classList.toggle('open'); }
+function loadCredentials(){
+  const saved = localStorage.getItem(CREDS_KEY);
+  if(!saved){ document.getElementById('conn-panel').classList.add('open'); return; }
+  try{
+    const c = JSON.parse(saved);
+    if(c.host) document.getElementById('db-host').value=c.host;
+    if(c.port) document.getElementById('db-port').value=c.port;
+    if(c.database) document.getElementById('db-name').value=c.database;
+    if(c.user) document.getElementById('db-user').value=c.user;
+    if(c.password) document.getElementById('db-pass').value=atob(c.password);
+    if(c.host&&c.user&&c.password) testConnection(true);
+  }catch(e){ document.getElementById('conn-panel').classList.add('open'); }
+}
+function saveCredentials(){
+  const c = {
+    host:document.getElementById('db-host').value.trim(),
+    port:document.getElementById('db-port').value.trim()||'8443',
+    database:document.getElementById('db-name').value.trim()||'default',
+    user:document.getElementById('db-user').value.trim(),
+    password:btoa(document.getElementById('db-pass').value)
+  };
+  localStorage.setItem(CREDS_KEY, JSON.stringify(c));
+}
+function setConnStatus(state,label){
+  document.getElementById('conn-dot').className='conn-dot '+state;
+  document.getElementById('conn-label').textContent=label;
+  isConnected=(state==='connected');
+}
+async function executeClickHouseQuery(sql){
+  const host=document.getElementById('db-host').value.trim();
+  const port=document.getElementById('db-port').value.trim()||'8443';
+  const db=document.getElementById('db-name').value.trim()||'default';
+  const user=document.getElementById('db-user').value.trim();
+  const pass=document.getElementById('db-pass').value;
+  if(!host||!user||!pass) throw new Error('Fill in connection details first');
+  const url=`https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`;
+  const resp=await fetch(url,{method:'POST',headers:{'Authorization':'Basic '+btoa(`${user}:${pass}`),'Content-Type':'text/plain','Accept-Encoding':'gzip, deflate'},body:sql});
+  if(!resp.ok){ const t=await resp.text(); let m=`HTTP ${resp.status}`; try{const j=JSON.parse(t); m=j.exception||j.error?.message||t;}catch{m=t||m;} throw new Error(m); }
+  const json=await resp.json();
+  if(json.exception) throw new Error(json.exception);
+  return json;
+}
+async function testConnection(silent=false){
+  setConnStatus('connecting','Connecting…');
+  try{
+    const r=await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
+    const ver=r.data?.[0]?.version||'';
+    setConnStatus('connected',`Connected ${ver?'· v'+ver.split('.').slice(0,2).join('.'):''}`);
+    saveCredentials();
+    if(!silent) document.getElementById('conn-panel').classList.remove('open');
+  }catch(e){
+    setConnStatus('disconnected','Error: '+e.message.substring(0,50));
+    if(!silent) document.getElementById('conn-panel').classList.add('open');
+  }
+}
+async function runQuery(sql){ const r=await executeClickHouseQuery(sql); return r.data||[]; }
+
+// ── Time presets ──
+function setPreset(days,btnId){
+  document.querySelectorAll('.preset-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById(btnId).classList.add('active');
+  const to=new Date(); const from=new Date(to-days*86400000);
+  document.getElementById('time-from').value=from.toISOString().slice(0,16);
+  document.getElementById('time-to').value=to.toISOString().slice(0,16);
+}
+function windowDays(){
+  const f=document.getElementById('time-from').value, t=document.getElementById('time-to').value;
+  if(!f||!t) return DEFAULTS.days;
+  return Math.max(1, Math.round((new Date(t)-new Date(f))/86400000));
+}
+// Every query carries a WHERE-level timestamp predicate → weekly partition pruning.
+function timeWhere(){
+  const f=document.getElementById('time-from').value, t=document.getElementById('time-to').value;
+  const c=[];
+  if(f) c.push(`timestamp >= '${f.replace('T',' ')}:00'`);
+  if(t) c.push(`timestamp <= '${t.replace('T',' ')}:00'`);
+  if(!f&&!t) c.push('toDate(timestamp) >= today() - INTERVAL 30 DAY');
+  return ' AND '+c.join(' AND ');
+}
+function setProgress(p){ document.getElementById('loading-bar').style.width=p+'%'; }
+
+// ══════════════ UI STATE / SETUP ══════════════
+let MODE='outbound';
+let PREFERRED=[];        // preferred partner PLMNs (chips)
+let PARTNER_SEL=new Set();// selected partner PLMNs (from multi-list)
+let LAST=null;           // last full result payload (for export + re-score)
+
+function fillCountrySelect(id, selMcc){
+  const sel=document.getElementById(id);
+  const opts=Object.entries(MCC_TABLE)
+    .filter(([mcc])=>!['000','001'].includes(mcc))
+    .sort((a,b)=>a[1].name.localeCompare(b[1].name));
+  sel.innerHTML=opts.map(([mcc,info])=>`<option value="${mcc}" ${(+mcc===selMcc)?'selected':''}>${info.name} (${mcc})</option>`).join('');
+}
+function setMode(m){
+  MODE=m;
+  ['outbound','inbound','presence'].forEach(x=>document.getElementById('mode-'+x).classList.toggle('active',m===x));
+  // Home-operator selector is only meaningful for outbound (needs sim_mcc).
+  document.getElementById('home-block').style.display = (m==='outbound')?'block':'none';
+  document.getElementById('host-mnc-wrap').style.display = (m==='inbound')?'block':'none';
+  document.getElementById('visited-label').textContent =
+    m==='outbound' ? 'Visited country' : m==='inbound' ? 'Host country (my network)' : 'Country (where roamers are)';
+  document.getElementById('mode-desc').textContent = {
+    outbound:'My subscribers abroad. Home operator (SIM) → visited network. Names the home operator — needs sim_mcc.',
+    inbound:'Foreign visitors on my network, grouped by their home country / operator.',
+    presence:'All roamers detected on a network (network_isRoaming flag), grouped by host operator. No home-operator attribution and no download SLA — but works wherever the flag is set.'
+  }[m];
+}
+function buildSlaPanel(){
+  const b=document.getElementById('sla-body');
+  b.innerHTML=Object.keys(SLA_DEFAULTS).map(k=>`
+    <div class="sla-row"><label>${SLA_LABELS[k]}</label>
+    <input type="number" step="any" id="sla-${k}" value="${SLA_TARGETS[k]}" oninput="onSlaEdit('${k}',this.value)"></div>`).join('');
+}
+function onSlaEdit(k,v){ const n=parseFloat(v); if(!isNaN(n)){ SLA_TARGETS[k]=n; if(LAST) rescore(); } }
+function resetSlaTargets(){ SLA_TARGETS={...SLA_DEFAULTS}; buildSlaPanel(); if(LAST) rescore(); }
+
+function prefKey(e){
+  if(e.key==='Enter'||e.key===','){ e.preventDefault(); const v=e.target.value.trim().replace(/[^0-9-]/g,''); if(v && !PREFERRED.includes(v)){ PREFERRED.push(v); renderPrefChips(); } e.target.value=''; }
+}
+function renderPrefChips(){
+  const box=document.getElementById('pref-chips');
+  box.querySelectorAll('.chip').forEach(c=>c.remove());
+  const input=document.getElementById('pref-input');
+  PREFERRED.forEach(p=>{
+    const c=document.createElement('span'); c.className='chip';
+    c.innerHTML=`${p}<span class="x" title="remove">×</span>`;
+    c.querySelector('.x').onclick=()=>{ PREFERRED=PREFERRED.filter(x=>x!==p); renderPrefChips(); if(LAST) rescore(); };
+    box.insertBefore(c,input);
+  });
+  if(LAST) rescore();
+}
+
+// ══════════════ WHERE builders ══════════════
+function selectedTech(){ return [...document.querySelectorAll('#tech-filter input:checked')].map(i=>i.value); }
+function exclusionsWhere(){
+  let s='';
+  if(document.getElementById('excl-manip').checked) s+=` AND (appManipulated IS NULL OR appManipulated = false)`;
+  if(document.getElementById('excl-modem').checked)  s+=` AND source != 'modem'`; // fixed routers; source never displayed
+  const tech=selectedTech();
+  if(tech.length && tech.length<4) s+=` AND tech IN (${tech.map(t=>`'${t}'`).join(',')})`;
+  return s;
+}
+function bboxWhere(mcc){
+  const b=COUNTRY_BBOX[String(mcc)];
+  if(!b) return '';
+  return ` AND bin_lat BETWEEN ${b[0]} AND ${b[1]} AND bin_lon BETWEEN ${b[2]} AND ${b[3]}`;
+}
+// Shared roaming WHERE fragment for the current selection.
+function buildWhere(cfg){
+  const tw=timeWhere(), ex=exclusionsWhere();
+  if(cfg.mode==='outbound'){
+    let w=`sim_mcc = ${cfg.homeMcc} AND network_mcc = ${cfg.visitedMcc}`;
+    if(cfg.homeMnc!=='') w+=` AND sim_mnc = ${cfg.homeMnc}`;
+    return w+tw+bboxWhere(cfg.visitedMcc)+ex;
+  } else if(cfg.mode==='presence'){
+    // Flag-based: every sample the modem reports as roaming, on the chosen network.
+    // No home-operator identity — grouped by the HOST PLMN (named by MCC-MNC).
+    let w=`network_mcc = ${cfg.visitedMcc} AND network_isRoaming = true`;
+    return w+tw+bboxWhere(cfg.visitedMcc)+ex;
+  } else {
+    let w=`network_mcc = ${cfg.hostMcc} AND sim_mcc IS NOT NULL AND sim_mcc != ${cfg.hostMcc}`;
+    if(cfg.hostMnc!=='') w+=` AND network_mnc = ${cfg.hostMnc}`;
+    return w+tw+bboxWhere(cfg.hostMcc)+ex;
+  }
+}
+const DEV=`uniqIf(deviceInfo_deviceId, deviceInfo_deviceId != '')`; // 100%-filled device key (see Phase 0)
+
+function currentConfig(){
+  return {
+    mode:MODE,
+    homeMcc:+document.getElementById('home-country').value,
+    homeMnc:document.getElementById('home-mnc').value,
+    visitedMcc:+document.getElementById('visited-country').value,
+    hostMcc:+document.getElementById('visited-country').value,
+    hostMnc:document.getElementById('host-mnc').value,
+    minSamples:Math.max(1,+document.getElementById('min-samples').value||30),
+    minDevices:Math.max(1,+document.getElementById('min-devices').value||5),
+    days:windowDays()
+  };
+}
+
+// ══════════════ OPERATOR DETECTION (populate dropdowns from data) ══════════════
+async function detectHomeOperators(){
+  if(!isConnected){ await testConnection(true); }
+  const mcc=+document.getElementById('home-country').value;
+  const sel=document.getElementById('home-mnc');
+  try{
+    // Operators seen as a SIM on their own home network (domestic rows) — labels from anyHeavy(operator).
+    const rows=await runQuery(`SELECT sim_mnc AS mnc, anyHeavy(network_operator) AS op, count() AS n
+      FROM measurements_year_geo
+      WHERE toDate(timestamp) >= today() - INTERVAL 30 DAY${bboxWhere(mcc)}
+        AND sim_mcc = ${mcc} AND network_mcc = ${mcc} AND sim_mnc IS NOT NULL
+      GROUP BY mnc ORDER BY n DESC LIMIT 40`);
+    const cur=sel.value;
+    sel.innerHTML=`<option value="">All operators (whole country)</option>`+
+      rows.map(r=>`<option value="${r.mnc}">${(r.op||'MNO').trim()||'MNO'} — ${mcc}-${String(r.mnc).padStart(2,'0')} (${(+r.n).toLocaleString()})</option>`).join('');
+    if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
+  }catch(e){ console.warn('detectHomeOperators',e.message); }
+}
+async function detectHostOperators(){
+  if(!isConnected){ await testConnection(true); }
+  const mcc=+document.getElementById('visited-country').value;
+  const sel=document.getElementById('host-mnc');
+  try{
+    const rows=await runQuery(`SELECT network_mnc AS mnc, anyHeavy(network_operator) AS op, count() AS n
+      FROM measurements_year_geo
+      WHERE toDate(timestamp) >= today() - INTERVAL 30 DAY${bboxWhere(mcc)}
+        AND network_mcc = ${mcc} AND network_mnc IS NOT NULL
+      GROUP BY mnc ORDER BY n DESC LIMIT 40`);
+    sel.innerHTML=`<option value="">All host operators</option>`+
+      rows.map(r=>`<option value="${r.mnc}">${(r.op||'MNO').trim()||'MNO'} — ${mcc}-${String(r.mnc).padStart(2,'0')} (${(+r.n).toLocaleString()})</option>`).join('');
+  }catch(e){ console.warn('detectHostOperators',e.message); }
+}
+function onHomeCountryChange(){ const s=document.getElementById('home-mnc'); s.innerHTML='<option value="">All operators (whole country)</option>'; }
+
+// ══════════════ RUN ══════════════
+function fmtPlmn(mcc,mnc){ return `${mcc}-${String(mnc).padStart(2,'0')}`; }
+function countryName(mcc){ return MCC_TABLE[String(mcc)]?.name || `MCC ${mcc}`; }
+
+async function runAnalysis(){
+  const btn=document.getElementById('btn-run');
+  btn.disabled=true; btn.innerHTML='<span class="material-icons" style="animation:spin 1s linear infinite">refresh</span>Running…';
+  document.getElementById('btn-export').disabled=true;
+  document.getElementById('empty-state').style.display='none';
+  document.getElementById('zero-state').style.display='none';
+  document.getElementById('results').style.display='none';
+  setProgress(6); setConnStatus('connecting','Connecting…');
+
+  const cfg=currentConfig();
+  if(cfg.mode==='outbound' && cfg.homeMcc===cfg.visitedMcc){
+    showError('Home country and visited country are the same — that is not roaming. Pick a different visited country.');
+    resetRunBtn(); return;
+  }
+  const W=buildWhere(cfg);
+  const noBbox=!COUNTRY_BBOX[String(cfg.mode==='outbound'?cfg.visitedMcc:cfg.hostMcc)];
+
+  try{
+    await testConnection(true);
+    if(!isConnected) throw new Error('Not connected. Configure the ClickHouse connection first.');
+    setProgress(12);
+    function safe(p){ return p.catch(e=>{ console.warn(e.message); return {__err:e.message}; }); }
+
+    // Grouping entity: OUTBOUND & PRESENCE group by the serving/host PLMN;
+    // INBOUND (Q9) regroups by the visiting home operator (sim_mcc-sim_mnc).
+    const GROUP = cfg.mode==='inbound'
+      ? `concat(toString(sim_mcc),'-',leftPad(toString(sim_mnc),2,'0'))`
+      : 'network_PLMN';
+
+    // Q1 — corridor header
+    const q1 = runQuery(`SELECT count() AS samples, ${DEV} AS devices,
+        uniqExact(network_PLMN) AS partners, countIf(internet_downloadMbps>0) AS dl_tests,
+        countIf(internet_latency>0) AS lat_tests,
+        min(toDate(timestamp)) AS first_day, max(toDate(timestamp)) AS last_day
+      FROM measurements_year_geo WHERE ${W}`);
+
+    // Q2 — partner scorecard (core). No HAVING here; suppression is applied client-side so
+    // sub-threshold partners can be counted in the footnote rather than silently dropped.
+    const q2 = runQuery(`SELECT
+        ${GROUP} AS plmn, anyHeavy(network_operator) AS operator,
+        count() AS samples, ${DEV} AS devices,
+        round(100*countIf(tech IN ('LTE','NR'))/count(),1) AS pct_4g_plus,
+        round(100*countIf(tech IN ('GSM','WCDMA'))/count(),1) AS pct_legacy,
+        round(100*countIf(signal_rsrp=0 AND signal_rscp IS NULL)/count(),1) AS no_service_pct,
+        round(quantileIf(0.5)(signal_rsrp, signal_rsrp!=0),1) AS rsrp_p50,
+        round(100*countIf(signal_rsrp!=0 AND signal_rsrp < -110)/nullIf(countIf(signal_rsrp!=0),0),1) AS pct_rsrp_poor,
+        countIf(internet_downloadMbps>0) AS dl_tests,
+        round(quantileIf(0.5)(internet_downloadMbps, internet_downloadMbps>0),2) AS dl_p50,
+        round(quantileIf(0.1)(internet_downloadMbps, internet_downloadMbps>0),2) AS dl_p10,
+        round(100*countIf(internet_downloadMbps>0 AND internet_downloadMbps<2)/nullIf(countIf(internet_downloadMbps>0),0),1) AS dl_below2_pct,
+        round(quantileIf(0.5)(internet_uploadMbps, internet_uploadMbps>0),2) AS ul_p50,
+        countIf(internet_latency>0) AS lat_tests,
+        round(quantileIf(0.5)(internet_latency, internet_latency>0),0) AS lat_p50,
+        round(quantileIf(0.9)(internet_latency, internet_latency>0),0) AS lat_p90,
+        round(quantileIf(0.5)(internet_jitter, internet_jitter>0),0) AS jit_p50
+      FROM measurements_year_geo WHERE ${W}
+      GROUP BY plmn ORDER BY samples DESC LIMIT 200`);
+
+    // Q3 — tech + roamer-side per (group,tech) medians (feeds tech mix + fairness roamer side)
+    const q3 = runQuery(`SELECT ${GROUP} AS plmn, tech, count() AS samples, ${DEV} AS devices,
+        round(quantileIf(0.5)(signal_rsrp, signal_rsrp!=0),1) AS rsrp_p50,
+        countIf(internet_downloadMbps>0) AS dl_tests,
+        round(quantileIf(0.5)(internet_downloadMbps, internet_downloadMbps>0),2) AS dl_p50,
+        round(quantileIf(0.5)(internet_latency, internet_latency>0),0) AS lat_p50
+      FROM measurements_year_geo WHERE ${W} GROUP BY plmn, tech`);
+
+    // Q6 — daily trend per partner (anchored window is the selected window)
+    const q6 = runQuery(`SELECT toDate(timestamp) AS day, ${GROUP} AS plmn,
+        count() AS samples, ${DEV} AS devices,
+        round(quantileIf(0.5)(internet_downloadMbps, internet_downloadMbps>0),2) AS dl_p50,
+        round(100*countIf(tech IN ('LTE','NR'))/count(),1) AS pct_4g_plus
+      FROM measurements_year_geo WHERE ${W} GROUP BY day, plmn ORDER BY day ASC`);
+
+    // Q7 — geography of pain (H3 res 7, or res 8 for a single-city ≤3d window)
+    const hexRes = cfg.days<=3 ? 8 : 7;
+    const q7 = runQuery(`SELECT toString(h3_res${hexRes}) AS hex, count() AS samples, ${DEV} AS devices,
+        round(quantileIf(0.5)(signal_rsrp, signal_rsrp!=0),1) AS rsrp_p50,
+        round(quantileIf(0.5)(internet_downloadMbps, internet_downloadMbps>0),2) AS dl_p50,
+        round(100*countIf(tech IN ('LTE','NR'))/count(),1) AS pct_4g_plus
+      FROM measurements_year_geo WHERE ${W} GROUP BY hex ORDER BY samples DESC LIMIT 400`);
+
+    // Q10 — data-quality (fill rates within the current selection)
+    const q10 = runQuery(`SELECT count() AS n,
+        round(100*countIf(sim_mcc IS NOT NULL)/count(),1) AS pct_sim,
+        round(100*countIf(network_isRoaming IS NOT NULL)/count(),1) AS pct_roamflag,
+        round(100*countIf(deviceInfo_deviceId!='')/count(),1) AS pct_dev,
+        round(100*countIf(internet_downloadMbps>0)/count(),1) AS pct_dl,
+        round(100*countIf(internet_latency>0)/count(),1) AS pct_lat,
+        round(100*countIf(signal_rsrp!=0)/count(),1) AS pct_rsrp
+      FROM measurements_year_geo WHERE ${W}`);
+
+    setProgress(30);
+    const [r1,r2,r3,r6,r7,r10] = await Promise.all([safe(q1),safe(q2),safe(q3),safe(q6),safe(q7),safe(q10)]);
+    setProgress(60);
+
+    if(r1.__err) throw new Error(r1.__err);
+    const header=(Array.isArray(r1)?r1[0]:null)||{samples:0,devices:0,partners:0,dl_tests:0};
+    const totalSamples=+header.samples||0;
+
+    // Zero-roamer state
+    if(totalSamples===0){ resetRunBtn(); return showZeroState(cfg, noBbox); }
+
+    const partners=Array.isArray(r2)?r2:[];
+    // Q5 — local benchmark: top hexes (roamer footprint) → local subs in same hexes/tech.
+    let local=[]; let localErr=null;
+    try{
+      const topHexes=(Array.isArray(r7)?r7:[]).slice(0,200).map(h=>h.hex).filter(Boolean);
+      if(topHexes.length){
+        const visMcc = cfg.mode==='inbound'?cfg.hostMcc:cfg.visitedMcc;
+        const hexList=topHexes.join(',');
+        // Local = the visited/host network's own subscribers in the same hexes.
+        // OUTBOUND/INBOUND: non-roaming home subs (sim_mcc = network_mcc).
+        // PRESENCE: non-roaming users on the host net (isRoaming flag not set).
+        const localPred = cfg.mode==='presence'
+          ? `(network_isRoaming != true OR network_isRoaming IS NULL)`
+          : `sim_mcc = network_mcc`;
+        const q5b=`SELECT network_PLMN AS plmn, tech, count() AS samples, ${DEV} AS devices,
+            round(quantileIf(0.5)(signal_rsrp, signal_rsrp!=0),1) AS rsrp_p50,
+            round(quantileIf(0.5)(internet_downloadMbps, internet_downloadMbps>0),2) AS dl_p50,
+            round(quantileIf(0.5)(internet_latency, internet_latency>0),0) AS lat_p50
+          FROM measurements_year_geo
+          WHERE network_mcc = ${visMcc} AND ${localPred}
+            AND h3_res${hexRes} IN (${hexList})${timeWhere()}${bboxWhere(visMcc)}${exclusionsWhere()}
+          GROUP BY plmn, tech`;
+        local=await runQuery(q5b);
+      }
+    }catch(e){ localErr=e.message; console.warn('Q5 local',e.message); }
+    setProgress(85);
+
+    LAST={ cfg, header, partners, tech:(Array.isArray(r3)?r3:[]), local, trend:(Array.isArray(r6)?r6:[]),
+           hexes:(Array.isArray(r7)?r7:[]), hexRes, dq:(Array.isArray(r10)?r10[0]:{}), localErr, noBbox,
+           generatedAt:new Date() };
+    render();
+    setProgress(100); setTimeout(()=>setProgress(0),400);
+    document.getElementById('btn-export').disabled=false;
+    document.getElementById('last-refresh').textContent='Updated '+LAST.generatedAt.toLocaleTimeString();
+    setConnStatus('connected','Connected');
+  }catch(e){
+    showError(e.message);
+    setConnStatus('disconnected','Error');
+  }finally{ resetRunBtn(); }
+}
+function resetRunBtn(){ const b=document.getElementById('btn-run'); b.disabled=false; b.innerHTML='<span class="material-icons">play_arrow</span>Run Analysis'; setProgress(0); }
+function showError(msg){
+  document.getElementById('empty-state').style.display='none';
+  document.getElementById('zero-state').style.display='none';
+  const r=document.getElementById('results'); r.style.display='block';
+  r.innerHTML=`<div class="banner err"><strong>ClickHouse error</strong><br>${escapeHtml(msg)}</div>
+    <p class="footnote">If this is a row-limit error (max_rows_to_read), narrow the time window or pick a country covered by a bounding box. The connection panel has been re-opened if credentials are the issue.</p>`;
+  document.getElementById('conn-panel').classList.add('open');
+}
+
+// ══════════════ ZERO-ROAMER FALLBACK ══════════════
+async function showZeroState(cfg, noBbox){
+  const z=document.getElementById('zero-state'); z.style.display='flex';
+  if(cfg.mode==='presence'){
+    z.innerHTML=`<span class="material-icons">public_off</span>
+      <h3>No roaming presence in ${escapeHtml(countryName(cfg.visitedMcc))} (MCC ${cfg.visitedMcc}) in this window</h3>
+      <p>No samples carry the roaming flag on this network for the selected window. Try a wider time range, or pick another country — presence data is richest in high-traffic destinations (e.g. UK, Singapore, Mexico, Israel, Greece, Spain).</p>`;
+    return;
+  }
+  const corr = cfg.mode==='outbound'
+    ? `${cfg.homeMnc!==''?fmtPlmn(cfg.homeMcc,cfg.homeMnc):countryName(cfg.homeMcc)} → ${countryName(cfg.visitedMcc)} (MCC ${cfg.visitedMcc})`
+    : `visitors on ${countryName(cfg.hostMcc)} (MCC ${cfg.hostMcc})`;
+  z.innerHTML=`<span class="material-icons">travel_explore</span>
+    <h3>No roaming samples for ${escapeHtml(corr)} in this window</h3>
+    <p>Nothing measured for this corridor. That's expected for many corridors today — real cross-border roaming volume is still small and grows over time. Below are the corridors that <strong>do</strong> have data right now; click one to load it. Tip: switch to <strong>Presence</strong> mode to see flag-based roaming in any country without needing SIM identity.</p>
+    <button class="btn btn-secondary" id="btn-corr" style="width:auto;padding:8px 16px" onclick="loadTopCorridors()"><span class="material-icons">leaderboard</span>Show top corridors (last 7 days)</button>
+    <div id="corr-list" style="width:100%;max-width:760px;margin-top:6px"></div>`;
+}
+async function loadTopCorridors(){
+  const btn=document.getElementById('btn-corr'); if(btn){ btn.disabled=true; btn.innerHTML='<span class="material-icons" style="animation:spin 1s linear infinite">refresh</span>Loading…'; }
+  try{
+    // 7-day window keeps this global (no-bbox) scan under the 400M row cap.
+    const rows=await runQuery(`SELECT
+        sim_mcc AS home_mcc, sim_mnc AS home_mnc, network_mcc AS vis_mcc, any(network_iso) AS iso,
+        count() AS samples, ${DEV} AS devices
+      FROM measurements_year_geo
+      WHERE timestamp >= now() - INTERVAL 7 DAY
+        AND sim_mcc IS NOT NULL AND network_mcc IS NOT NULL AND sim_mcc != network_mcc${exclusionsWhere()}
+      GROUP BY home_mcc, home_mnc, vis_mcc HAVING samples > 0 ORDER BY samples DESC LIMIT 40`);
+    const box=document.getElementById('corr-list');
+    if(!rows.length){ box.innerHTML='<p class="footnote">No cross-border roaming rows found in the last 7 days at all.</p>'; return; }
+    box.innerHTML=`<table class="grid"><thead><tr><th>Home operator</th><th>Visited country</th><th>Samples</th><th>Devices</th><th></th></tr></thead><tbody>${
+      rows.map(r=>{
+        const hp=fmtPlmn(r.home_mcc,r.home_mnc); const vn=countryName(r.vis_mcc);
+        return `<tr><td class="plmn">${hp}</td><td class="op">${escapeHtml(vn)} (${r.vis_mcc})</td><td>${(+r.samples).toLocaleString()}</td><td>${(+r.devices).toLocaleString()}</td>
+          <td><span class="link" onclick="jumpCorridor(${r.home_mcc},${r.home_mnc},${r.vis_mcc})">load →</span></td></tr>`;
+      }).join('')}</tbody></table>`;
+  }catch(e){ document.getElementById('corr-list').innerHTML=`<div class="banner err">${escapeHtml(e.message)}</div>`; }
+  finally{ if(btn){ btn.disabled=false; btn.innerHTML='<span class="material-icons">leaderboard</span>Show top corridors (last 7 days)'; } }
+}
+function jumpCorridor(hmcc,hmnc,vmcc){
+  setMode('outbound');
+  fillCountrySelect('home-country',hmcc); fillCountrySelect('visited-country',vmcc);
+  document.getElementById('home-mnc').innerHTML=`<option value="${hmnc}" selected>${fmtPlmn(hmcc,hmnc)}</option><option value="">All operators (whole country)</option>`;
+  runAnalysis();
+}
+
+// ══════════════ SCORING (client-side, re-scores without re-query) ══════════════
+function localByPlmn(){
+  // sample-weight the per-tech local medians up to a per-PLMN value
+  const map={};
+  (LAST.local||[]).forEach(r=>{
+    const p=r.plmn; if(!map[p]) map[p]={dl:{s:0,w:0}, rsrp:{s:0,w:0}, lat:{s:0,w:0}, samples:0, devices:0};
+    const w=+r.samples||0; map[p].samples+=w;
+    if(r.dl_p50!=null){ map[p].dl.s+=(+r.dl_p50)*w; map[p].dl.w+=w; }
+    if(r.rsrp_p50!=null){ map[p].rsrp.s+=(+r.rsrp_p50)*w; map[p].rsrp.w+=w; }
+    if(r.lat_p50!=null){ map[p].lat.s+=(+r.lat_p50)*w; map[p].lat.w+=w; }
+  });
+  const out={};
+  Object.entries(map).forEach(([p,v])=>out[p]={
+    dl_p50: v.dl.w? v.dl.s/v.dl.w : null,
+    rsrp_p50: v.rsrp.w? v.rsrp.s/v.rsrp.w : null,
+    lat_p50: v.lat.w? v.lat.s/v.lat.w : null,
+    samples: v.samples
+  });
+  return out;
+}
+function scoreCell(kpi, val, hasTest){
+  if(val==null || isNaN(val) || (kpi.needsTest && !hasTest)) return {state:'na', pass:null};
+  const target=SLA_TARGETS[kpi.target];
+  const warnBand=Math.abs(target)*0.10;
+  let pass, warn;
+  if(kpi.dir==='gte'){ pass = val>=target; warn = !pass && val>=target-warnBand; }
+  else { pass = val<=target; warn = !pass && val<=target+warnBand; }
+  return { state: pass?'pass':(warn?'warn':'fail'), pass: pass?1:(warn?0.5:0) };
+}
+function localAggregate(){
+  // Inbound: local = the host network's own subscribers overall (single benchmark
+  // applied to every visiting home operator). Sample-weight the per-tech medians.
+  const agg={dl:{s:0,w:0}, rsrp:{s:0,w:0}, lat:{s:0,w:0}, samples:0};
+  (LAST.local||[]).forEach(r=>{
+    const w=+r.samples||0; agg.samples+=w;
+    if(r.dl_p50!=null){ agg.dl.s+=(+r.dl_p50)*w; agg.dl.w+=w; }
+    if(r.rsrp_p50!=null){ agg.rsrp.s+=(+r.rsrp_p50)*w; agg.rsrp.w+=w; }
+    if(r.lat_p50!=null){ agg.lat.s+=(+r.lat_p50)*w; agg.lat.w+=w; }
+  });
+  if(!agg.samples) return null;
+  return { dl_p50:agg.dl.w?agg.dl.s/agg.dl.w:null, rsrp_p50:agg.rsrp.w?agg.rsrp.s/agg.rsrp.w:null,
+           lat_p50:agg.lat.w?agg.lat.s/agg.lat.w:null, samples:agg.samples };
+}
+function computeScores(){
+  const cfg=LAST.cfg;
+  // OUTBOUND & PRESENCE benchmark per host PLMN; INBOUND uses one aggregate host benchmark.
+  const localMap = cfg.mode==='inbound' ? null : localByPlmn();
+  const localAll = cfg.mode==='inbound' ? localAggregate() : null;
+  const rows=LAST.partners.map(p=>{
+    const suppressed = (+p.samples < cfg.minSamples) || (+p.devices < cfg.minDevices);
+    // fairness ratio (roamer DL p50 / local DL p50)
+    const lp = cfg.mode==='inbound' ? localAll : localMap[p.plmn];
+    let fairness=null;
+    if(!suppressed && p.dl_tests>=5 && lp && lp.dl_p50>0 && p.dl_p50>0) fairness = 100*(+p.dl_p50)/lp.dl_p50;
+    // preferred share (share of this PLMN's samples among preferred set — a partner IS/ISN'T preferred)
+    let preferred = PREFERRED.length ? (PREFERRED.includes(p.plmn)?100:0) : null;
+    const vals={...p, fairness_ratio:fairness, preferred_share:preferred};
+    const cells={}; let wsum=0, psum=0;
+    SLA_KPIS.forEach(k=>{
+      const hasTest = k.needsTest ? (+p[k.needsTest]>=5) : true;
+      const sc=scoreCell(k, vals[k.key]==null?null:+vals[k.key], hasTest);
+      cells[k.key]={val:vals[k.key], ...sc};
+      if(sc.pass!=null){ wsum+=k.weight; psum+=k.weight*sc.pass; }
+    });
+    const composite = wsum? Math.round(100*psum/wsum) : null;
+    return { ...p, suppressed, fairness, preferred, cells, composite, local:lp||null };
+  });
+  return rows;
+}
+function rescore(){ if(LAST) render(); }
+
+// ══════════════ RENDER ══════════════
+function escapeHtml(s){ return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function num(v){ return (v==null||isNaN(v))?'—':(+v).toLocaleString(); }
+function stateClass(c){ return c==='pass'?'pass':c==='warn'?'warn':c==='fail'?'fail':'na'; }
+
+function opLabel(p){
+  // Inbound groups by the visiting home operator (sim_mcc-sim_mnc); network_operator
+  // would be the HOST operator, so label by home country instead.
+  if(LAST && LAST.cfg.mode==='inbound'){
+    const mcc=(p.plmn||'').split('-')[0];
+    return (MCC_TABLE[mcc]?.name || 'MCC '+mcc)+' subscriber';
+  }
+  const name=(p.operator||'').trim();
+  return name || 'MNO '+p.plmn;
+}
+let charts=[];
+function destroyCharts(){ charts.forEach(c=>{try{c.destroy();}catch(e){}}); charts=[]; }
+
+function render(){
+  document.getElementById('empty-state').style.display='none';
+  document.getElementById('zero-state').style.display='none';
+  const root=document.getElementById('results'); root.style.display='block';
+  destroyCharts();
+  const cfg=LAST.cfg, h=LAST.header;
+  const scored=computeScores();
+  const shown=scored.filter(r=>!r.suppressed);
+  const suppressed=scored.filter(r=>r.suppressed);
+
+  // crumb
+  const crumb=document.getElementById('crumb');
+  if(cfg.mode==='outbound'){
+    const homeTxt=cfg.homeMnc!==''?fmtPlmn(cfg.homeMcc,cfg.homeMnc):countryName(cfg.homeMcc);
+    crumb.innerHTML=`<span class="material-icons">flight_takeoff</span>
+      <span class="home">${escapeHtml(countryName(cfg.homeMcc))}</span> <span class="mono">${escapeHtml(homeTxt)}</span>
+      <span class="crumb-sep">→</span>
+      <span class="visited">${escapeHtml(countryName(cfg.visitedMcc))}</span> <span class="mono">MCC ${cfg.visitedMcc}</span>
+      <span class="meta">· ${cfg.days}d · ${num(h.devices)} devices · ${num(h.samples)} samples</span>`;
+  } else if(cfg.mode==='presence'){
+    crumb.innerHTML=`<span class="material-icons">public</span>
+      Roaming presence in <span class="visited">${escapeHtml(countryName(cfg.visitedMcc))}</span> <span class="mono">MCC ${cfg.visitedMcc}</span>
+      <span class="meta">· ${cfg.days}d · ${num(h.devices)} devices · ${num(h.samples)} samples · ${num(h.partners)} host PLMNs</span>`;
+  } else {
+    crumb.innerHTML=`<span class="material-icons">flight_land</span>
+      Inbound roamers on <span class="visited">${escapeHtml(countryName(cfg.hostMcc))}</span> <span class="mono">MCC ${cfg.hostMcc}</span>
+      <span class="meta">· ${cfg.days}d · ${num(h.devices)} devices · ${num(h.samples)} samples</span>`;
+  }
+
+  let html='';
+  // Warnings
+  if(LAST.noBbox) html+=`<div class="banner warn">No bounding box for this country — the query ran with an MCC filter only. On wide time windows this can hit the 400M-row read cap; if a section is empty, narrow the time range.</div>`;
+  if(cfg.mode==='presence'){
+    html+=`<div class="banner warn">Presence mode uses the modem <strong>network_isRoaming</strong> flag — it shows <em>who is roaming on each host network</em> and their radio quality, but <strong>cannot name the home operator</strong> (no SIM identity) and carries <strong>no download-throughput SLA</strong>. The "local" benchmark below compares roamers against non-roaming users on the same host network.</div>`;
+  }
+  if(cfg.mode==='outbound'){
+    const homeFillLow = (+LAST.dq?.pct_sim||0) < 50;
+    if(homeFillLow) html+=`<div class="banner warn">Home-SIM identity (sim_mcc) fills only ${LAST.dq?.pct_sim||0}% of the rows in this selection. Home-operator attribution is limited to the rows that carry it.</div>`;
+  }
+
+  // KPI tiles
+  html+=`<div class="section"><div class="kpi-row">${kpiTiles(h,scored)}</div></div>`;
+
+  // Scorecard
+  html+=`<div class="section"><div class="section-title"><span class="material-icons">grading</span>Partner SLA Scorecard
+    <span class="hint">PASS / WARN (≤10% off) / FAIL vs. targets · composite is a weighted mean of per-KPI pass ratios</span></div>`;
+  html+=scorecardTable(shown);
+  html+=`<div class="footnote">${suppressed.length? `<strong>${suppressed.length}</strong> partner(s) below the reporting threshold (min ${cfg.minSamples} samples / ${cfg.minDevices} devices) are excluded from scoring: ${suppressed.map(s=>s.plmn).join(', ')}.` : 'All partners met the reporting threshold.'}
+    Composite weights — ${SLA_KPIS.map(k=>`${k.label}×${k.weight}`).join(', ')}.</div></div>`;
+
+  // Fairness — only draw charts when there is a local benchmark to compare against
+  const anyLocal = shown.some(r=>r.local && (r.local.dl_p50!=null || r.local.lat_p50!=null));
+  const fairDlBox = anyLocal ? `<canvas id="ch-fair-dl"></canvas>` : `<div class="chart-empty">No local (non-roaming) subscribers were measured in the same hexes — nothing to benchmark against. Common in low-traffic corridors.</div>`;
+  const fairLatBox = anyLocal ? `<canvas id="ch-fair-lat"></canvas>` : `<div class="chart-empty">Insufficient local data for a latency comparison.</div>`;
+  html+=`<div class="section"><div class="section-title"><span class="material-icons">balance</span>Fairness vs. Local Subscribers
+    <span class="hint">roamer median vs the visited network's own subs, same hexes &amp; tech</span></div>
+    <div class="grid2">
+      <div class="card"><div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Download p50 — roamer vs local (Mbps)</div><div class="chart-box">${fairDlBox}</div></div>
+      <div class="card"><div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Latency p50 — roamer vs local (ms, lower better)</div><div class="chart-box">${fairLatBox}</div></div>
+    </div>${fairnessTable(shown)}</div>`;
+
+  // Tech mix
+  html+=`<div class="section"><div class="section-title"><span class="material-icons">cell_tower</span>Technology Mix
+    <span class="hint">is my subscriber stuck on 2G/3G abroad?</span></div>
+    <div class="card"><div class="chart-box" style="height:320px"><canvas id="ch-tech"></canvas></div></div></div>`;
+
+  // Map + worst hexes
+  html+=`<div class="section"><div class="section-title"><span class="material-icons">map</span>Geography of Roaming Quality
+    <span class="hint">H3 hexes coloured by median download</span></div>
+    <div class="grid2"><div id="map"></div>
+      <div class="card"><div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Worst hexes (lowest median DL, n≥${cfg.minSamples})</div>${worstHexTable()}</div>
+    </div></div>`;
+
+  // Trend
+  html+=`<div class="section"><div class="section-title"><span class="material-icons">show_chart</span>Daily Trend</div>
+    <div class="card"><div class="chart-box" style="height:300px"><canvas id="ch-trend"></canvas></div></div></div>`;
+
+  // Data quality footer
+  html+=dataQualityFooter();
+
+  root.innerHTML=html;
+
+  // draw
+  drawFairness(shown);
+  drawTech();
+  drawTrend();
+  drawMap();
+}
+
+function kpiTiles(h,scored){
+  const cfg=LAST.cfg;
+  const shown=scored.filter(r=>!r.suppressed);
+  const wmean=(key)=>{ let s=0,w=0; shown.forEach(r=>{ const v=+r[key]; const ww=+r.samples; if(!isNaN(v)&&ww){ s+=v*ww; w+=ww; } }); return w? s/w : null; };
+  const dlTests=shown.reduce((a,r)=>a+(+r.dl_tests||0),0);
+  const dl=wmean('dl_p50'), lat=wmean('lat_p50'), fourg=wmean('pct_4g_plus');
+  const fairVals=shown.map(r=>r.fairness).filter(v=>v!=null&&!isNaN(v));
+  const fair=fairVals.length? fairVals.reduce((a,b)=>a+b,0)/fairVals.length : null;
+  function cls(v,kpiKey){ if(v==null) return ''; const k=SLA_KPIS.find(x=>x.key===kpiKey); const sc=scoreCell(k,v,true); return sc.state; }
+  const tiles=[
+    {label:'Devices', value:num(h.devices), sub:'unique (deviceInfo_deviceId)'},
+    {label:'Samples', value:num(h.samples), sub:`${num(h.partners)} partner PLMNs`},
+    {label:'4G+ share', value: fourg==null?'—':fourg.toFixed(0)+'%', sub:`target ≥${SLA_TARGETS.tech4gPlusSharePct}%`, cls:cls(fourg,'pct_4g_plus')},
+    {label:'Median DL', value: (dlTests<5||dl==null)?'—':dl.toFixed(1), sub: dlTests<5?`insufficient (${dlTests} tests)`:`Mbps · ${num(dlTests)} tests`, cls:dlTests<5?'':cls(dl,'dl_p50')},
+    {label:'Median latency', value: lat==null?'—':lat.toFixed(0), sub:`ms · target ≤${SLA_TARGETS.latencyP50Ms}`, cls:cls(lat,'lat_p50')},
+    {label:'Fairness ratio', value: fair==null?'—':fair.toFixed(0)+'%', sub: fair==null?'insufficient local data':`roamer/local DL · ≥${SLA_TARGETS.fairnessRatioPct}%`, cls:cls(fair,'fairness_ratio')},
+  ];
+  return tiles.map(t=>`<div class="kpi ${t.cls||''}"><div class="label">${t.label}</div><div class="value">${t.value}</div><div class="sub">${t.sub}</div></div>`).join('');
+}
+
+function scorecardTable(rows){
+  if(!rows.length) return `<div class="card"><p class="insuff">No partner met the reporting threshold in this window.</p></div>`;
+  const cols=SLA_KPIS;
+  // Score sits right after the operator so the headline number is always visible
+  // without horizontal scrolling; the detailed KPI columns scroll to the right.
+  let h=`<div class="card"><div style="font-size:11px;color:var(--text-dim);margin-bottom:8px;display:flex;justify-content:space-between">
+      <span>Composite 0–100 · higher is better</span><span>← scroll for all KPI columns →</span></div>
+    <div style="overflow-x:auto"><table class="grid"><thead><tr>
+    <th>Partner</th><th>Operator</th><th>Score</th><th>Samples</th><th>Devices</th>`;
+  cols.forEach(k=>h+=`<th title="target ${k.dir==='gte'?'≥':'≤'} ${SLA_TARGETS[k.target]} ${k.unit}">${k.label}<div style="font-size:8px;font-weight:400;color:var(--text-dim)">${k.dir==='gte'?'≥':'≤'}${SLA_TARGETS[k.target]}${k.unit==='%'?'%':''}</div></th>`);
+  h+=`</tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const compCls=r.composite==null?'':(r.composite>=80?'pass':r.composite>=60?'warn':'fail');
+    h+=`<tr><td class="plmn">${r.plmn}${PREFERRED.includes(r.plmn)?' ★':''}</td><td class="op">${escapeHtml(opLabel(r))}</td>`+
+       `<td><span class="score-pill ${compCls}">${r.composite==null?'—':r.composite}</span></td>`+
+       `<td>${num(r.samples)}</td><td>${num(r.devices)}</td>`;
+    cols.forEach(k=>{
+      const c=r.cells[k.key];
+      if(c.state==='na' || c.val==null){ h+=`<td><span class="insuff">n/a</span></td>`; }
+      else h+=`<td><span class="cell-val">${k.fmt(+c.val)}<span class="chip-sla ${stateClass(c.state)}">${c.state}</span></span></td>`;
+    });
+    h+=`</tr>`;
+  });
+  h+=`</tbody></table></div></div>`;
+  return h;
+}
+
+function fairnessTable(rows){
+  const withLocal=rows.filter(r=>r.local);
+  let h=`<div class="card" style="margin-top:14px;overflow-x:auto"><table class="grid"><thead><tr>
+    <th>Partner</th><th>Roamer DL</th><th>Local DL</th><th>DL fairness</th><th>Roamer lat</th><th>Local lat</th><th>Roamer RSRP</th><th>Local RSRP</th><th>Roamer n</th><th>Local n</th></tr></thead><tbody>`;
+  rows.forEach(r=>{
+    const lp=r.local;
+    const fair = r.fairness;
+    const fcls = fair==null?'na':(fair>=SLA_TARGETS.fairnessRatioPct?'pass':fair>=SLA_TARGETS.fairnessRatioPct-10?'warn':'fail');
+    const dlOk = r.dl_tests>=5;
+    h+=`<tr><td class="plmn">${r.plmn}</td>
+      <td>${dlOk?(+r.dl_p50).toFixed(1):'<span class="insuff">insuff.</span>'}</td>
+      <td>${lp&&lp.dl_p50?lp.dl_p50.toFixed(1):'<span class="insuff">insuff.</span>'}</td>
+      <td>${fair==null?'<span class="insuff">insufficient data</span>':`<span class="cell-val">${fair.toFixed(0)}%<span class="chip-sla ${fcls}">${fcls}</span></span>`}</td>
+      <td>${r.lat_tests>=5?num(r.lat_p50):'<span class="insuff">insuff.</span>'}</td>
+      <td>${lp&&lp.lat_p50?lp.lat_p50.toFixed(0):'<span class="insuff">insuff.</span>'}</td>
+      <td>${num(r.rsrp_p50)}</td>
+      <td>${lp&&lp.rsrp_p50?lp.rsrp_p50.toFixed(0):'<span class="insuff">insuff.</span>'}</td>
+      <td>${num(r.samples)}</td><td>${lp?num(lp.samples):'0'}</td></tr>`;
+  });
+  h+=`</tbody></table>`;
+  if(LAST.localErr) h+=`<div class="footnote">Local benchmark query error: ${escapeHtml(LAST.localErr)}</div>`;
+  else if(!withLocal.length) h+=`<div class="footnote">No local (non-roaming) subscribers found in the same hexes for comparison — fairness cannot be computed. This is common in low-traffic corridors.</div>`;
+  h+=`</div>`;
+  return h;
+}
+
+function worstHexTable(){
+  const cfg=LAST.cfg;
+  const hx=LAST.hexes.filter(h=>+h.samples>=cfg.minSamples && +h.devices>=cfg.minDevices && h.dl_p50!=null)
+    .sort((a,b)=>(+a.dl_p50)-(+b.dl_p50)).slice(0,12);
+  if(!hx.length) return `<p class="insuff">No hex met the sample/device floor with a download reading.</p>`;
+  return `<table class="grid"><thead><tr><th>Hex</th><th>Samples</th><th>DL p50</th><th>RSRP p50</th><th>4G+</th></tr></thead><tbody>${
+    hx.map(h=>`<tr><td class="plmn" style="font-size:10px">${h.hex.slice(0,10)}…</td><td>${num(h.samples)}</td><td>${(+h.dl_p50).toFixed(1)}</td><td>${num(h.rsrp_p50)}</td><td>${(+h.pct_4g_plus).toFixed(0)}%</td></tr>`).join('')}</tbody></table>`;
+}
+
+function dataQualityFooter(){
+  const d=LAST.dq||{};
+  return `<div class="section"><div class="section-title"><span class="material-icons">verified</span>Data Quality &amp; Coverage
+    <span class="hint">every KPI is only as good as its fill rate</span></div>
+    <div class="card"><div class="dq-grid">
+      <div class="dq"><div class="k">Rows in selection</div><div class="v">${num(d.n)}</div></div>
+      <div class="dq"><div class="k">Home-SIM identity</div><div class="v">${d.pct_sim??'—'}%</div></div>
+      <div class="dq"><div class="k">Roaming flag set</div><div class="v">${d.pct_roamflag??'—'}%</div></div>
+      <div class="dq"><div class="k">Device ID</div><div class="v">${d.pct_dev??'—'}%</div></div>
+      <div class="dq"><div class="k">RSRP reading</div><div class="v">${d.pct_rsrp??'—'}%</div></div>
+      <div class="dq"><div class="k">Latency test</div><div class="v">${d.pct_lat??'—'}%</div></div>
+      <div class="dq"><div class="k">Download test</div><div class="v">${d.pct_dl??'—'}%</div></div>
+    </div>
+    <div class="footnote">Measurements are crowdsourced device-side samples, not network-side counters. Excluded from SLA numbers: ${document.getElementById('excl-manip').checked?'app-manipulated rows':''}${document.getElementById('excl-manip').checked&&document.getElementById('excl-modem').checked?', ':''}${document.getElementById('excl-modem').checked?'fixed-wireless routers':''}. Confounders (device mix, indoor/outdoor, time-of-day) are not controlled beyond same-hex / same-tech matching in the fairness panel.</div>
+    </div></div>`;
+}
+
+// ── charts ──
+const CHART_FONT={ family:'Inter' };
+function baseOpts(extra){ return Object.assign({ responsive:true, maintainAspectRatio:false,
+  plugins:{ legend:{ labels:{ color:'#94a3b8', font:CHART_FONT } } },
+  scales:{ x:{ ticks:{color:'#94a3b8',font:CHART_FONT}, grid:{color:'rgba(30,58,95,.4)'} },
+           y:{ ticks:{color:'#94a3b8',font:CHART_FONT}, grid:{color:'rgba(30,58,95,.4)'} } } }, extra||{}); }
+function drawFairness(rows){
+  const withLocal=rows.filter(r=>r.local);
+  const labels=withLocal.map(r=>r.plmn);
+  const mk=(cid, roamKey, localKey, roamGuard)=>{
+    const ctx=document.getElementById(cid); if(!ctx) return;
+    const roam=withLocal.map(r=>roamGuard(r)?+r[roamKey]:null);
+    const loc=withLocal.map(r=>r.local&&r.local[localKey]!=null?+r.local[localKey]:null);
+    charts.push(new Chart(ctx,{type:'bar',data:{labels,datasets:[
+      {label:'Roamer',data:roam,backgroundColor:'#3b82f6',maxBarThickness:60},
+      {label:'Local',data:loc,backgroundColor:'#22c55e',maxBarThickness:60}]},
+      options:baseOpts({plugins:{legend:{labels:{color:'#94a3b8',font:CHART_FONT}},
+        tooltip:{callbacks:{afterLabel:(c)=>{ const r=withLocal[c.dataIndex]; return c.datasetIndex===0?`n=${num(r.dl_tests||r.samples)}`:`n=${num(r.local?r.local.samples:0)}`; }}}}})}));
+  };
+  mk('ch-fair-dl','dl_p50','dl_p50', r=>r.dl_tests>=5);
+  mk('ch-fair-lat','lat_p50','lat_p50', r=>r.lat_tests>=5);
+}
+function drawTech(){
+  const cfg=LAST.cfg;
+  const partners=[...new Set(LAST.tech.map(t=>t.plmn))];
+  const techs=['NR','LTE','WCDMA','GSM'];
+  const colors={NR:'#a78bfa',LTE:'#3b82f6',WCDMA:'#f59e0b',GSM:'#ef4444'};
+  const totals={}; partners.forEach(p=>totals[p]=LAST.tech.filter(t=>t.plmn===p).reduce((a,t)=>a+(+t.samples),0));
+  // only partners above sample floor, sorted by volume
+  const shown=partners.filter(p=>totals[p]>=cfg.minSamples).sort((a,b)=>totals[b]-totals[a]).slice(0,15);
+  const ds=techs.map(tech=>({label:tech,backgroundColor:colors[tech],maxBarThickness:90,
+    data:shown.map(p=>{ const row=LAST.tech.find(t=>t.plmn===p&&t.tech===tech); return totals[p]? 100*(row?+row.samples:0)/totals[p] : 0; })}));
+  const ctx=document.getElementById('ch-tech'); if(!ctx) return;
+  charts.push(new Chart(ctx,{type:'bar',data:{labels:shown,datasets:ds},
+    options:baseOpts({scales:{x:{stacked:true,ticks:{color:'#94a3b8',font:CHART_FONT},grid:{display:false}},
+      y:{stacked:true,max:100,ticks:{color:'#94a3b8',font:CHART_FONT,callback:v=>v+'%'},grid:{color:'rgba(30,58,95,.4)'}}}})}));
+}
+function drawTrend(){
+  const cfg=LAST.cfg;
+  const partners=[...new Set(LAST.trend.map(t=>t.plmn))];
+  const totals={}; partners.forEach(p=>totals[p]=LAST.trend.filter(t=>t.plmn===p).reduce((a,t)=>a+(+t.samples),0));
+  const top=partners.sort((a,b)=>totals[b]-totals[a]).slice(0,6);
+  const days=[...new Set(LAST.trend.map(t=>t.day))].sort();
+  const palette=['#3b82f6','#22c55e','#f59e0b','#a78bfa','#06b6d4','#ef4444'];
+  const ds=top.map((p,i)=>({label:p, borderColor:palette[i%palette.length], backgroundColor:palette[i%palette.length], tension:.25, spanGaps:true,
+    data:days.map(d=>{ const row=LAST.trend.find(t=>t.plmn===p&&t.day===d); return row?+row.devices:null; })}));
+  const ctx=document.getElementById('ch-trend'); if(!ctx) return;
+  charts.push(new Chart(ctx,{type:'line',data:{labels:days,datasets:ds},
+    options:baseOpts({plugins:{legend:{labels:{color:'#94a3b8',font:CHART_FONT}},title:{display:true,text:'Daily unique devices per partner',color:'#64748b',font:CHART_FONT}}})}));
+}
+let mapObj=null;
+function dlColor(v){ // Mbps → colour
+  if(v==null) return '#475569';
+  if(v>=25) return '#22c55e'; if(v>=10) return '#84cc16'; if(v>=5) return '#eab308'; if(v>=2) return '#f97316'; return '#dc2626';
+}
+function drawMap(){
+  const el=document.getElementById('map'); if(!el) return;
+  const cfg=LAST.cfg;
+  if(mapObj){ try{mapObj.remove();}catch(e){} mapObj=null; }
+  el.innerHTML='';
+  mapObj=L.map('map',{zoomControl:true});
+  // Start centered on the visited/host country (not a hardcoded Middle-East view),
+  // so an empty map at least shows the right region.
+  const vmcc=String(cfg.mode==='outbound'?cfg.visitedMcc:cfg.hostMcc);
+  const b=COUNTRY_BBOX[vmcc];
+  if(b) mapObj.fitBounds([[b[0],b[2]],[b[1],b[3]]]);
+  else mapObj.setView([20,0],2);
+  addDarkBasemap(mapObj, { className: 'map-tiles' });
+  const hx=LAST.hexes.filter(h=>+h.samples>=cfg.minSamples && +h.devices>=cfg.minDevices);
+  const suppressedHexes=LAST.hexes.length-hx.length;
+  const bounds=[];
+  hx.forEach(h=>{
+    let idx; try{ idx=BigInt(h.hex).toString(16); }catch(e){ return; }
+    let poly; try{ poly=h3.cellToBoundary(idx); }catch(e){ return; } // [[lat,lng],...]
+    if(!poly||!poly.length) return;
+    poly.forEach(pt=>bounds.push(pt));
+    const dl=h.dl_p50!=null?+h.dl_p50:null;
+    L.polygon(poly,{color:dlColor(dl),weight:1,fillOpacity:.45,fillColor:dlColor(dl)})
+      .bindPopup(`<b>${h.hex.slice(0,10)}…</b><br>Samples: ${num(h.samples)}<br>Devices: ${num(h.devices)}<br>DL p50: ${dl!=null?dl.toFixed(1)+' Mbps':'insufficient'}<br>RSRP p50: ${num(h.rsrp_p50)} dBm<br>4G+: ${(+h.pct_4g_plus).toFixed(0)}%`)
+      .addTo(mapObj);
+  });
+  if(bounds.length){ try{ mapObj.fitBounds(bounds,{padding:[20,20]}); }catch(e){} }
+  else {
+    // No hex cleared the per-hex k-anonymity floor — say so rather than show a blank map.
+    const note=document.createElement('div'); note.className='map-empty-note';
+    note.textContent = suppressedHexes>0
+      ? `No map hex reached the k-anonymity floor (≥${cfg.minDevices} devices / hex). ${num(suppressedHexes)} hex(es) exist but each has too few unique devices to display. Showing ${countryName(vmcc)}.`
+      : `No geolocated samples for this corridor.`;
+    el.appendChild(note);
+  }
+  setTimeout(()=>{ try{mapObj.invalidateSize();}catch(e){} },120);
+}
+
+// ══════════════ EXPORT REPORT ══════════════
+function exportReport(){
+  if(!LAST) return;
+  const cfg=LAST.cfg, h=LAST.header, d=LAST.dq||{};
+  const scored=computeScores(); const shown=scored.filter(r=>!r.suppressed); const suppressed=scored.filter(r=>r.suppressed);
+  const homeTxt=cfg.mode==='outbound'?(cfg.homeMnc!==''?fmtPlmn(cfg.homeMcc,cfg.homeMnc):countryName(cfg.homeMcc)):'—';
+  const corridor = cfg.mode==='outbound'
+    ? `${countryName(cfg.homeMcc)} (${homeTxt}) → ${countryName(cfg.visitedMcc)} (MCC ${cfg.visitedMcc})`
+    : cfg.mode==='presence'
+    ? `Roaming presence in ${countryName(cfg.visitedMcc)} (MCC ${cfg.visitedMcc})`
+    : `Inbound roamers on ${countryName(cfg.hostMcc)} (MCC ${cfg.hostMcc})`;
+  // exec summary
+  const comps=shown.filter(r=>r.composite!=null);
+  const overall=comps.length? Math.round(comps.reduce((a,r)=>a+r.composite,0)/comps.length):null;
+  const best=comps.slice().sort((a,b)=>b.composite-a.composite)[0];
+  const worst=comps.slice().sort((a,b)=>a.composite-b.composite)[0];
+  // biggest breach
+  let breach=null;
+  shown.forEach(r=>SLA_KPIS.forEach(k=>{ const c=r.cells[k.key]; if(c.state==='fail'){ const gap=Math.abs((+c.val)-SLA_TARGETS[k.target]); if(!breach||gap>breach.gap) breach={plmn:r.plmn,kpi:k.label,val:c.val,target:SLA_TARGETS[k.target],unit:k.unit,gap,fmt:k.fmt}; } }));
+  const fairVals=shown.map(r=>r.fairness).filter(v=>v!=null);
+  const fairAvg=fairVals.length?Math.round(fairVals.reduce((a,b)=>a+b,0)/fairVals.length):null;
+
+  const bullets=[];
+  bullets.push(overall!=null?`Overall composite SLA score across ${comps.length} reporting partner(s): <b>${overall}/100</b>.`:`Insufficient data to compute an overall composite score.`);
+  if(best&&worst&&best!==worst) bullets.push(`Best partner <b>${best.plmn}</b> (${best.composite}); worst <b>${worst.plmn}</b> (${worst.composite}).`);
+  if(breach) bullets.push(`Largest single SLA breach: <b>${breach.plmn}</b> — ${breach.kpi} at ${breach.fmt(+breach.val)} vs target ${breach.target} ${breach.unit}.`);
+  bullets.push(fairAvg!=null?`Roamers measured <b>${fairAvg}%</b> of local-subscriber median download on the same cells${fairAvg<SLA_TARGETS.fairnessRatioPct?` — below the ${SLA_TARGETS.fairnessRatioPct}% fairness target (evidence consistent with deprioritisation; not a proof of throttling)`:''}.`:`Fairness vs local subscribers could not be computed (insufficient local or throughput data).`);
+  bullets.push(`Data confidence: home-SIM identity fills ${d.pct_sim??'—'}%, download tests ${d.pct_dl??'—'}%, latency tests ${d.pct_lat??'—'}% of rows in scope — treat throughput verdicts with the stated sample counts.`);
+
+  const cols=SLA_KPIS;
+  const scHead=cols.map(k=>`<th>${k.label}<div class="tgt">${k.dir==='gte'?'≥':'≤'}${SLA_TARGETS[k.target]}${k.unit}</div></th>`).join('');
+  const scBody=shown.map(r=>{
+    const cells=cols.map(k=>{ const c=r.cells[k.key]; if(c.state==='na'||c.val==null) return `<td class="na">n/a</td>`; return `<td class="${c.state}">${k.fmt(+c.val)}</td>`; }).join('');
+    const compCls=r.composite==null?'':(r.composite>=80?'pass':r.composite>=60?'warn':'fail');
+    return `<tr><td class="plmn">${r.plmn}</td><td class="op">${escapeHtml(opLabel(r))}</td><td>${num(r.samples)}</td><td>${num(r.devices)}</td>${cells}<td class="comp ${compCls}">${r.composite==null?'—':r.composite}</td></tr>`;
+  }).join('');
+
+  const fairBody=shown.map(r=>{
+    const lp=r.local; const fair=r.fairness;
+    return `<tr><td class="plmn">${r.plmn}</td>
+      <td>${r.dl_tests>=5?(+r.dl_p50).toFixed(1):'insuff.'}</td>
+      <td>${lp&&lp.dl_p50?lp.dl_p50.toFixed(1):'insuff.'}</td>
+      <td class="${fair==null?'na':(fair>=SLA_TARGETS.fairnessRatioPct?'pass':fair>=SLA_TARGETS.fairnessRatioPct-10?'warn':'fail')}">${fair==null?'insufficient':fair.toFixed(0)+'%'}</td>
+      <td>${r.lat_tests>=5?num(r.lat_p50):'insuff.'}</td><td>${lp&&lp.lat_p50?lp.lat_p50.toFixed(0):'insuff.'}</td>
+      <td>${num(r.rsrp_p50)}</td><td>${lp&&lp.rsrp_p50?lp.rsrp_p50.toFixed(0):'insuff.'}</td>
+      <td>${num(r.samples)}</td><td>${lp?num(lp.samples):'0'}</td></tr>`;
+  }).join('');
+
+  const worstHx=LAST.hexes.filter(x=>+x.samples>=cfg.minSamples&&+x.devices>=cfg.minDevices&&x.dl_p50!=null).sort((a,b)=>(+a.dl_p50)-(+b.dl_p50)).slice(0,12);
+  const hexBody=worstHx.map(x=>`<tr><td class="plmn">${x.hex.slice(0,12)}…</td><td>${num(x.samples)}</td><td>${(+x.dl_p50).toFixed(1)}</td><td>${num(x.rsrp_p50)}</td><td>${(+x.pct_4g_plus).toFixed(0)}%</td></tr>`).join('');
+
+  const now=LAST.generatedAt;
+  const w=window.open('','_blank');
+  const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Roaming SLA Report — ${escapeHtml(corridor)}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--navy:#0a1628;--card:#162038;--border:#1e3a5f;--text:#e2e8f0;--muted:#94a3b8;--dim:#64748b;--accent:#3b82f6;--green:#22c55e;--orange:#f59e0b;--red:#ef4444;}
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'Inter',sans-serif;background:var(--navy);color:var(--text);padding:40px;line-height:1.5;}
+    .wrap{max-width:1000px;margin:0 auto;}
+    h1{font-size:26px;font-weight:700;} h2{font-size:16px;margin:26px 0 10px;color:var(--accent);border-bottom:1px solid var(--border);padding-bottom:6px;}
+    .cover{border:1px solid var(--border);border-radius:12px;padding:28px;background:var(--card);margin-bottom:10px;}
+    .cover .corr{font-size:19px;font-weight:600;margin-top:8px;} .cover .meta{color:var(--muted);font-size:13px;margin-top:10px;font-family:'JetBrains Mono',monospace;}
+    .wordmark{font-size:12px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-top:16px;}
+    ul{margin:8px 0 8px 20px;} li{margin-bottom:6px;font-size:13px;}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px;}
+    th{background:var(--card);text-align:right;padding:7px 8px;color:var(--muted);font-size:10px;text-transform:uppercase;border-bottom:1px solid var(--border);}
+    th .tgt{font-size:9px;color:var(--dim);font-weight:400;}
+    th:first-child,td:first-child{text-align:left;} td{padding:6px 8px;border-bottom:1px solid rgba(30,58,95,.5);font-family:'JetBrains Mono',monospace;text-align:right;}
+    td.op{font-family:'Inter';} td.plmn{color:#60a5fa;font-weight:600;}
+    td.pass{color:var(--green);} td.warn{color:var(--orange);} td.fail{color:var(--red);} td.na{color:var(--dim);font-style:italic;}
+    td.comp{font-weight:700;} td.comp.pass{color:var(--green);} td.comp.warn{color:var(--orange);} td.comp.fail{color:var(--red);}
+    .method{font-size:12px;color:var(--muted);} .method b{color:var(--text);}
+    .dqgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:8px;}
+    .dqbox{border:1px solid var(--border);border-radius:8px;padding:10px;background:var(--card);}
+    .dqbox .k{font-size:10px;color:var(--muted);text-transform:uppercase;} .dqbox .v{font-size:18px;font-family:'JetBrains Mono';font-weight:600;margin-top:3px;}
+    .foot{font-size:11px;color:var(--dim);margin-top:8px;}
+    .toolbar{position:fixed;top:14px;right:14px;} .toolbar button{background:var(--accent);color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;cursor:pointer;font-family:'Inter';}
+    @media print{ body{padding:0;background:#fff;-webkit-print-color-adjust:exact;print-color-adjust:exact;} .toolbar{display:none;} h2{page-break-after:avoid;} table{page-break-inside:auto;} tr{page-break-inside:avoid;} .section{page-break-inside:avoid;} .cover,.method,.dqbox,.card,th{background:var(--navy)!important;} }
+  </style></head><body><div class="toolbar"><button onclick="window.print()">Print / Save PDF</button></div><div class="wrap">
+    <div class="cover section">
+      <h1>Roaming SLA Report</h1>
+      <div class="corr">${escapeHtml(corridor)}</div>
+      <div class="meta">Reporting period: ${h.first_day||'—'} → ${h.last_day||'—'} (${cfg.days} days) · ${num(h.devices)} devices · ${num(h.samples)} samples · ${num(h.partners)} partner PLMNs</div>
+      <div class="meta">Generated: ${now.toISOString().replace('T',' ').slice(0,19)} UTC</div>
+      <div class="wordmark">Flycomm · Analysis Suite</div>
+    </div>
+
+    <div class="section"><h2>1 · Executive summary</h2><ul>${bullets.map(b=>`<li>${b}</li>`).join('')}</ul></div>
+
+    <div class="section method"><h2>2 · Methodology</h2>
+      ${cfg.mode==='presence'
+        ? `<p><b>Roaming predicate:</b> a sample counts as roaming when the modem reports the roaming state (<b>network_isRoaming = true</b>). Rows are grouped by the <b>host</b> serving network (network_PLMN, MCC-MNC). This view has <b>no SIM identity</b>, so it cannot attribute samples to a home operator, and download throughput is not available on these rows.</p>
+           <p style="margin-top:6px"><b>Host country:</b> ${escapeHtml(countryName(cfg.visitedMcc))} (MCC ${cfg.visitedMcc}).</p>`
+        : `<p><b>Roaming predicate:</b> a sample counts as roaming when the SIM's country differs from the serving network's country (<b>sim_mcc ≠ network_mcc</b>). The SIM identifies the home operator; the serving network identifies the visited operator. This is the only predicate that can name the home operator; the modem <b>network_isRoaming</b> flag is used only as corroboration.</p>
+           <p style="margin-top:6px"><b>Home operator:</b> ${cfg.mode==='outbound'?escapeHtml(homeTxt):'grouped by home country/operator (inbound)'} · <b>Visited/host:</b> ${escapeHtml(countryName(cfg.mode==='outbound'?cfg.visitedMcc:cfg.hostMcc))}.</p>`}
+      <p style="margin-top:6px"><b>Exclusions:</b> ${document.getElementById('excl-manip').checked?'app-manipulated rows':''}${document.getElementById('excl-manip').checked&&document.getElementById('excl-modem').checked?'; ':''}${document.getElementById('excl-modem').checked?'fixed-wireless routers':''}. Reporting floor: ≥${cfg.minSamples} samples and ≥${cfg.minDevices} unique devices per partner (k-anonymity).</p>
+      <p style="margin-top:6px"><b>Local benchmark:</b> roamer KPIs are compared to the visited network's own (non-roaming) subscribers measured in the <b>same H3-res${LAST.hexRes} hexes and same technology</b>, controlling for geography and radio conditions. Fairness ratio = roamer DL p50 ÷ local DL p50.</p>
+      <p style="margin-top:6px"><b>Scoring:</b> each KPI is PASS / WARN (within 10% of target) / FAIL vs. the configured target. The composite (0–100) is the weighted mean of per-KPI pass ratios (PASS=1, WARN=0.5, FAIL=0). Weights: ${SLA_KPIS.map(k=>`${k.label}×${k.weight}`).join(', ')}.</p>
+    </div>
+
+    <div class="section"><h2>3 · Partner SLA scorecard</h2>
+      <table><thead><tr><th>Partner</th><th>Operator</th><th>Samples</th><th>Devices</th>${scHead}<th>Score</th></tr></thead><tbody>${scBody||'<tr><td colspan="16">No partner met the reporting threshold.</td></tr>'}</tbody></table>
+      ${suppressed.length?`<div class="foot">${suppressed.length} partner(s) below threshold, excluded from scoring: ${suppressed.map(s=>s.plmn).join(', ')}.</div>`:''}
+    </div>
+
+    <div class="section"><h2>4 · Fairness vs. local subscribers</h2>
+      <table><thead><tr><th>Partner</th><th>Roamer DL</th><th>Local DL</th><th>Fairness</th><th>Roamer lat</th><th>Local lat</th><th>Roamer RSRP</th><th>Local RSRP</th><th>Roamer n</th><th>Local n</th></tr></thead><tbody>${fairBody||'<tr><td colspan="10">No data.</td></tr>'}</tbody></table>
+      <div class="foot">A fairness ratio below ${SLA_TARGETS.fairnessRatioPct}% is evidence consistent with roamer deprioritisation on the same cells; it is not a proof of QoS throttling. Confounders: device mix, indoor/outdoor, time-of-day.</div>
+    </div>
+
+    <div class="section"><h2>5 · Technology &amp; coverage — worst hexes</h2>
+      <table><thead><tr><th>Hex (H3-res${LAST.hexRes})</th><th>Samples</th><th>DL p50</th><th>RSRP p50</th><th>4G+</th></tr></thead><tbody>${hexBody||'<tr><td colspan="5">No hex met the floor with a download reading.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="section"><h2>6 · Appendix — data quality &amp; limitations</h2>
+      <div class="dqgrid">
+        <div class="dqbox"><div class="k">Rows in scope</div><div class="v">${num(d.n)}</div></div>
+        <div class="dqbox"><div class="k">Home-SIM identity</div><div class="v">${d.pct_sim??'—'}%</div></div>
+        <div class="dqbox"><div class="k">RSRP reading</div><div class="v">${d.pct_rsrp??'—'}%</div></div>
+        <div class="dqbox"><div class="k">Roaming flag</div><div class="v">${d.pct_roamflag??'—'}%</div></div>
+        <div class="dqbox"><div class="k">Device ID</div><div class="v">${d.pct_dev??'—'}%</div></div>
+        <div class="dqbox"><div class="k">Latency test</div><div class="v">${d.pct_lat??'—'}%</div></div>
+        <div class="dqbox"><div class="k">Download test</div><div class="v">${d.pct_dl??'—'}%</div></div>
+      </div>
+      <p class="foot">Measurements are crowdsourced device-side samples, not network-side counters. Percentiles below the sample floor are reported as "insufficient", never as an SLA verdict. Unique devices use a privacy-preserving device key inside aggregates only; no subscriber identifiers (IMSI/IMEI) are processed. This report contains no commercial, penalty or revenue figures — measured KPIs versus user-configured targets only.</p>
+    </div>
+  </div></body></html>`;
+  w.document.write(html); w.document.close();
+}
+
+// ══════════════ INIT ══════════════
+fillCountrySelect('home-country', DEFAULTS.homeMcc);
+fillCountrySelect('visited-country', DEFAULTS.visitedMcc);
+// Seed the default home operator (Cellcom 425-02); the refresh button repopulates
+// this list from the data (distinct sim_mnc + anyHeavy(network_operator) labels).
+document.getElementById('home-mnc').innerHTML =
+  `<option value="${DEFAULTS.homeMnc}" selected>${fmtPlmn(DEFAULTS.homeMcc,DEFAULTS.homeMnc)} (default — click ⟳ to detect)</option>`+
+  `<option value="">All operators (whole country)</option>`;
+document.getElementById('min-samples').value=DEFAULTS.minSamples;
+document.getElementById('min-devices').value=DEFAULTS.minDevices;
+document.getElementById('excl-modem').checked=DEFAULTS.excludeModem;
+document.getElementById('excl-manip').checked=DEFAULTS.excludeManipulated;
+buildSlaPanel();
+setMode(DEFAULTS.mode);
+setPreset(DEFAULTS.days, 'preset-30d');
+loadCredentials();
+</script>
+</body>
+</html>
