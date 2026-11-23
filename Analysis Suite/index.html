@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" type="image/png" href="Favicon.png">
+  <title>Analysis Suite</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy: #0a1628; --card: #162038; --card-border: #1e3a5f;
+      --accent: #3b82f6; --text: #e2e8f0; --text-muted: #94a3b8; --text-dim: #64748b;
+    }
+    html, body { height: 100%; font-family: 'Inter', sans-serif; background: var(--navy); color: var(--text); }
+    body { display: flex; align-items: center; justify-content: center; padding: 40px; }
+    main { max-width: 720px; width: 100%; }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 10px; }
+    h1 .material-icons { color: var(--accent); }
+    p.lede { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    a.tool {
+      display: flex; gap: 14px; align-items: flex-start;
+      background: var(--card); border: 1px solid var(--card-border); border-radius: 12px;
+      padding: 18px; text-decoration: none; color: var(--text); transition: all 0.15s;
+    }
+    a.tool:hover { border-color: var(--accent); transform: translateY(-1px); }
+    a.tool .material-icons { font-size: 26px; color: var(--accent); margin-top: 2px; flex-shrink: 0; }
+    a.tool h2 { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+    a.tool p { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+    footer { margin-top: 26px; font-size: 11px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body>
+<main>
+  <h1><span class="material-icons">tune</span>Analysis Suite</h1>
+  <p class="lede">Cellular network analysis tools backed by ClickHouse.</p>
+
+  <div class="grid">
+    <a class="tool" href="cell-footprint.html">
+      <span class="material-icons">hexagon</span>
+      <div>
+        <h2>Cell Footprint</h2>
+        <p>RSRP coverage per cell with H3 hex aggregation, raw samples, and propagation-model prediction.</p>
+      </div>
+    </a>
+    <a class="tool" href="sql-builder.html">
+      <span class="material-icons">radar</span>
+      <div>
+        <h2>SIGINT — SQL Builder</h2>
+        <p>Polygon-based ClickHouse query generator for cell-site reconnaissance.</p>
+      </div>
+    </a>
+    <a class="tool" href="network_map.html">
+      <span class="material-icons">cell_tower</span>
+      <div>
+        <h2>Signal Map</h2>
+        <p>Where each network is received — clustered map with automatic anomaly flagging (hostile, phantom and mismatched PLMNs) for any area you draw.</p>
+      </div>
+    </a>
+    <a class="tool" href="db-dashboard.html">
+      <span class="material-icons">insights</span>
+      <div>
+        <h2>DB Dashboard</h2>
+        <p>Live KPI view of the measurements table — sources, tech, countries, operators, signal quality.</p>
+      </div>
+    </a>
+    <a class="tool" href="nmf-viewer.html">
+      <span class="material-icons">route</span>
+      <div>
+        <h2>NMF Viewer</h2>
+        <p>Visualise Nemo Outdoor drive-test files on a map.</p>
+      </div>
+    </a>
+    <a class="tool" href="regulator-dashboard.html">
+      <span class="material-icons">account_balance</span>
+      <div>
+        <h2>Regulator Dashboard</h2>
+        <p>Country-level executive view — unique users per day, per-MNO breakdown, and sample totals (Phase 1: MCC 630).</p>
+      </div>
+    </a>
+    <a class="tool" href="roaming.html">
+      <span class="material-icons">flight_takeoff</span>
+      <div>
+        <h2>Roaming SLA</h2>
+        <p>Measure the service quality roaming subscribers get on each partner network, and how it compares to the visited network's own local subscribers.</p>
+      </div>
+    </a>
+    <a class="tool" href="network-graph.html">
+      <span class="material-icons">hub</span>
+      <div>
+        <h2>Network Graph</h2>
+        <p>An operator's RAN as a relationship graph — sites, cells and TACs linked by observed cell changes and spatial overlap, with PCI, TAC-border and overshoot insights.</p>
+      </div>
+    </a>
+  </div>
+
+  <footer>served by clickhouse_proxy.py · port 8000</footer>
+</main>
+</body>
+</html>
