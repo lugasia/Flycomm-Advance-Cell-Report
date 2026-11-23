@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <link rel="icon" type="image/png" href="Favicon.png">
+  <title>Analysis Suite — Network Graph</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="basemap.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+  <script src="https://unpkg.com/3d-force-graph@1"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --navy:#0a1628; --card:#162038; --card2:#1a2744; --card-border:#1e3a5f;
+      --accent:#3b82f6; --accent2:#60a5fa; --red:#ef4444; --orange:#f59e0b;
+      --green:#22c55e; --cyan:#06b6d4; --purple:#a78bfa;
+      --text:#e2e8f0; --text-muted:#94a3b8; --text-dim:#64748b;
+    }
+    html, body { height:100%; font-family:'Inter',sans-serif; background:var(--navy); color:var(--text); overflow:hidden; }
+    #app { display:flex; height:100vh; }
+
+    aside { width:340px; min-width:340px; background:var(--card); border-right:1px solid var(--card-border); display:flex; flex-direction:column; overflow:hidden; }
+    #sb-header { padding:14px 18px; border-bottom:1px solid var(--card-border); flex-shrink:0; }
+    #sb-header img { height:28px; max-width:100%; object-fit:contain; opacity:.85; display:block; margin-bottom:6px; }
+    #sb-header h1 { font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px; }
+    #sb-header h1 .material-icons { font-size:19px; color:var(--accent); }
+    #sb-header p { font-size:11px; color:var(--text-muted); margin-top:3px; }
+    #sb-body { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; }
+    #sb-body::-webkit-scrollbar { width:4px; }
+    #sb-body::-webkit-scrollbar-thumb { background:var(--card-border); border-radius:2px; }
+    .sb-label { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:7px; }
+
+    #conn-bar { display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:8px; border:1px solid var(--card-border); cursor:pointer; background:rgba(255,255,255,.02); transition:all .15s; }
+    #conn-bar:hover { border-color:rgba(59,130,246,.4); }
+    .conn-dot { width:8px; height:8px; border-radius:50%; background:var(--text-muted); flex-shrink:0; transition:background .3s; }
+    .conn-dot.connected { background:var(--green); box-shadow:0 0 6px var(--green); }
+    .conn-dot.connecting { background:var(--orange); }
+    #conn-label { flex:1; font-size:12px; color:var(--text-muted); }
+    #conn-panel { display:none; padding:12px; background:var(--navy); border-radius:8px; border:1px solid var(--card-border); margin-top:6px; }
+    #conn-panel.open { display:block; }
+    .field-label { font-size:11px; color:var(--text-muted); margin-bottom:4px; margin-top:10px; }
+    .field-label:first-child { margin-top:0; }
+    input.db-inp, select.db-inp { width:100%; background:var(--card); border:1px solid var(--card-border); border-radius:6px; padding:7px 9px; color:var(--text); font-size:12px; font-family:'JetBrains Mono',monospace; outline:none; }
+    #sb-body > div > input.db-inp, #sb-body > div > select.db-inp, .row2 input.db-inp, .row2 select.db-inp, .row4 input.db-inp { background:var(--navy); }
+    input.db-inp:focus, select.db-inp:focus { border-color:var(--accent); }
+    select.db-inp { font-family:'Inter',sans-serif; cursor:pointer; }
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .row4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:5px; }
+    .row4 input.db-inp { padding:6px 5px; font-size:11px; }
+    .hint { font-size:10px; color:var(--text-dim); margin-top:6px; line-height:1.45; }
+    .link { color:var(--accent2); cursor:pointer; text-decoration:underline; text-decoration-color:rgba(96,165,250,.35); }
+    .chk { display:inline-flex; align-items:center; gap:5px; font-size:12px; color:var(--text); margin-right:12px; cursor:pointer; }
+
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:9px 14px; border-radius:8px; border:none; cursor:pointer; font-size:13px; font-weight:500; font-family:'Inter',sans-serif; transition:all .15s; width:100%; }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-primary:hover:not(:disabled) { background:#2563eb; }
+    .btn-primary:disabled { background:var(--card-border); color:var(--text-muted); cursor:not-allowed; }
+    .btn-secondary { background:var(--navy); color:var(--text); border:1px solid var(--card-border); }
+    .btn-secondary:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+    .btn .material-icons { font-size:15px; }
+
+    .tool-switcher { display:flex; flex-wrap:wrap; gap:2px; padding:8px 10px; border-bottom:1px solid var(--card-border); background:var(--navy); flex-shrink:0; }
+    .tool-switcher a { flex:1 1 0; min-width:0; display:flex; align-items:center; justify-content:center; gap:4px; padding:6px 6px; font-size:10px; font-weight:500; border-radius:6px; color:var(--text-muted); text-decoration:none; transition:all .15s; }
+    .tool-switcher a .material-icons { font-size:14px; }
+    .tool-switcher a:hover { background:rgba(59,130,246,.08); color:var(--text); }
+    .tool-switcher a.current { background:rgba(59,130,246,.14); color:var(--accent2); }
+
+    .step { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:rgba(59,130,246,.2); color:var(--accent2); font-size:10px; font-weight:700; margin-right:7px; letter-spacing:0; }
+    .btn.sm { font-size:12px; padding:7px 8px; }
+    .btn.sm.on { border-color:var(--accent); color:var(--accent2); background:rgba(59,130,246,.12); }
+    #area-summary { font-size:11px; color:var(--text-muted); margin-top:8px; line-height:1.45; }
+    #area-summary b { color:var(--text); font-weight:600; }
+    details.adv { margin-top:8px; }
+    details.adv summary { list-style:none; cursor:pointer; font-size:11px; color:var(--text-dim); display:flex; align-items:center; gap:3px; user-select:none; }
+    details.adv summary::-webkit-details-marker { display:none; }
+    details.adv summary:hover { color:var(--text-muted); }
+    details.adv summary .material-icons { font-size:15px; transition:transform .15s; }
+    details.adv[open] summary .material-icons { transform:rotate(90deg); }
+    details.adv .adv-body { padding-top:8px; }
+    .ins-sub { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-dim); margin:10px 0 6px; }
+    .ins-sub.bad { color:#fca5a5; }
+    .ins-none { font-size:10.5px; color:var(--text-dim); line-height:1.5; margin-top:8px; }
+    #draw-banner, #map-hint { position:absolute; top:10px; left:50%; transform:translateX(-50%); z-index:600; font-size:12px; font-weight:500; padding:7px 14px; border-radius:20px; box-shadow:0 4px 14px rgba(0,0,0,.4); white-space:nowrap; max-width:calc(100% - 140px); overflow:hidden; text-overflow:ellipsis; }
+    #draw-banner { display:none; background:rgba(59,130,246,.95); color:#fff; z-index:610; }
+    #draw-banner.show { display:block; }
+    #map-hint { background:rgba(22,32,56,.94); border:1px solid var(--card-border); color:var(--text-muted); }
+    #map-hint b { color:var(--text); font-weight:600; }
+    .opt-wrap { position:relative; }
+    .tb-btn { display:inline-flex; align-items:center; gap:5px; background:var(--navy); border:1px solid var(--card-border); border-radius:6px; padding:5px 9px; color:var(--text); font-size:11px; font-weight:500; font-family:'Inter',sans-serif; cursor:pointer; }
+    .tb-btn:hover, .tb-btn.open { border-color:var(--accent); color:var(--accent2); }
+    .tb-btn .material-icons { font-size:14px; }
+    #opts-pop { display:none; position:absolute; top:calc(100% + 6px); left:0; z-index:1500; width:270px; background:var(--card); border:1px solid var(--card-border); border-radius:10px; padding:12px; box-shadow:0 14px 34px rgba(0,0,0,.5); }
+    #opts-pop.open { display:block; }
+    #opts-pop .o-lbl { font-size:11px; font-weight:600; color:var(--text); margin-bottom:4px; }
+    #opts-pop .o-hint { font-size:10px; color:var(--text-dim); line-height:1.45; margin:4px 0 11px; }
+    #opts-pop .o-hint:last-child { margin-bottom:0; }
+    #opts-pop select, #opts-pop input { width:100%; }
+    .chip.issue { cursor:pointer; border-color:rgba(239,68,68,.5); color:#fca5a5; background:rgba(239,68,68,.1); }
+    .chip.issue b { color:#fecaca; }
+    .chip.clean { border-color:rgba(34,197,94,.4); color:#86efac; }
+    #g3-help .hx { float:right; cursor:pointer; color:var(--text-dim); font-size:15px; }
+    #g3-help.min { width:auto; padding:6px 10px; cursor:pointer; }
+    #g3-help.min > *:not(.lg-t) { display:none; }
+    #g3-help.min .lg-t { margin:0; }
+
+    #plmn-note { margin-top:6px; }
+    #plmn-note.bad { color:#fca5a5; }
+    #plmn-seen { display:flex; flex-wrap:wrap; gap:5px; margin-top:7px; }
+    #plmn-seen:empty { display:none; }
+    .seen { font-family:'JetBrains Mono',monospace; font-size:10.5px; padding:3px 7px; border-radius:10px; border:1px solid var(--card-border); color:var(--text-muted); cursor:pointer; background:var(--navy); }
+    .seen:hover { border-color:var(--accent); color:var(--text); }
+    .seen.hot { border-color:rgba(239,68,68,.6); color:#fca5a5; }
+    input#f-plmn { font-size:15px; font-weight:600; letter-spacing:.04em; padding:9px 11px; background:var(--navy); }
+
+    /* KPI strip */
+    #kpis { display:flex; gap:1px; background:var(--card-border); border-bottom:1px solid var(--card-border); flex-shrink:0; overflow-x:auto; }
+    .kpi { flex:1 1 0; min-width:104px; background:var(--card); padding:8px 14px; }
+    .kpi .kl { font-size:9.5px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); white-space:nowrap; }
+    .kpi .kv { font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; margin-top:2px; white-space:nowrap; }
+    .kpi .kv small { font-size:11px; font-weight:500; color:var(--text-muted); margin-left:4px; }
+    .kpi .ks { font-size:10.5px; color:var(--text-muted); margin-top:1px; white-space:nowrap; }
+    .kpi.alert { cursor:pointer; position:relative; }
+    .kpi.alert::before { content:''; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--c); }
+    .kpi.alert:hover { background:var(--card2); }
+
+    /* work area + alert console */
+    #work { flex:1; display:flex; min-height:0; }
+    #alerts { width:372px; min-width:372px; display:flex; flex-direction:column; border-left:1px solid var(--card-border); background:var(--card); min-height:0; }
+    #alerts.hidden { display:none; }
+    #al-head { padding:10px 12px 8px; border-bottom:1px solid var(--card-border); flex-shrink:0; }
+    #al-head .t { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600; }
+    #al-head .t .material-icons { font-size:17px; color:var(--orange); }
+    #al-head .t .n { margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-muted); font-weight:500; }
+    .al-tabs { display:flex; gap:2px; background:var(--navy); border:1px solid var(--card-border); border-radius:7px; padding:2px; margin-top:8px; }
+    .al-tabs button { flex:1; border:none; background:none; color:var(--text-muted); font:500 11.5px 'Inter',sans-serif; padding:5px; border-radius:5px; cursor:pointer; }
+    .al-tabs button.on { background:var(--card2); color:var(--text); box-shadow:inset 0 0 0 1px var(--card-border); }
+    .al-sevs { display:flex; gap:5px; margin-top:8px; flex-wrap:wrap; }
+    .al-sev { display:inline-flex; align-items:center; gap:5px; font:500 10.5px 'Inter',sans-serif; padding:3px 8px; border-radius:10px; border:1px solid var(--card-border); background:var(--navy); color:var(--text-muted); cursor:pointer; }
+    .al-sev i { width:7px; height:7px; border-radius:50%; background:var(--c); }
+    .al-sev.on { border-color:var(--c); color:var(--text); background:color-mix(in srgb, var(--c) 14%, var(--navy)); }
+    .al-sev.zero { opacity:.4; }
+    .al-opt { display:flex; align-items:center; justify-content:space-between; margin-top:8px; font-size:11px; color:var(--text-muted); }
+    .al-opt label { display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+    .al-opt input { accent-color:var(--accent); }
+    #al-list { flex:1; overflow-y:auto; padding:8px; }
+    #al-list::-webkit-scrollbar, #tbl-wrap::-webkit-scrollbar { width:5px; height:5px; }
+    #al-list::-webkit-scrollbar-thumb, #tbl-wrap::-webkit-scrollbar-thumb { background:var(--card-border); border-radius:3px; }
+    .al-empty { color:var(--text-dim); font-size:12px; text-align:center; padding:28px 16px; line-height:1.6; }
+    .al-empty .material-icons { font-size:30px; display:block; margin:0 auto 6px; color:var(--card-border); }
+    .al-group { border:1px solid var(--card-border); border-left:3px solid var(--c); border-radius:8px; margin-bottom:7px; background:var(--navy); overflow:hidden; }
+    .al-gh { display:flex; align-items:center; gap:7px; padding:8px 10px; cursor:pointer; }
+    .al-gh .sv { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--c); background:color-mix(in srgb, var(--c) 16%, transparent); padding:2px 6px; border-radius:4px; flex-shrink:0; }
+    .al-gh .tt { font-size:12px; font-weight:600; flex:1; min-width:0; }
+    .al-gh .dm { font-size:9px; font-weight:700; letter-spacing:.07em; color:var(--text-dim); border:1px solid var(--card-border); border-radius:4px; padding:1px 5px; }
+    .al-gh .ct { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text); background:var(--card2); border-radius:9px; padding:1px 7px; }
+    .al-gd { font-size:10.5px; color:var(--text-dim); padding:0 10px 8px; line-height:1.45; }
+    .al-items { display:none; border-top:1px solid var(--card-border); max-height:260px; overflow-y:auto; }
+    .al-group.open .al-items { display:block; }
+    .al-item { display:flex; align-items:flex-start; gap:8px; padding:7px 10px; border-bottom:1px solid rgba(30,58,95,.5); cursor:pointer; font-size:11px; line-height:1.45; }
+    .al-item:last-child { border-bottom:none; }
+    .al-item:hover { background:rgba(59,130,246,.08); }
+    .al-item.noloc { cursor:default; }
+    .al-item .bd { flex:1; min-width:0; color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
+    .al-item .bd b { color:var(--text); font-weight:600; }
+    .al-item .new { font:700 8.5px 'Inter',sans-serif; letter-spacing:.07em; color:#0a1628; background:var(--orange); border-radius:3px; padding:1px 4px; margin-right:5px; vertical-align:1px; }
+    .al-item.acked { opacity:.45; }
+    .al-item .ack { border:1px solid var(--card-border); background:none; color:var(--text-dim); font:500 10px 'Inter',sans-serif; border-radius:5px; padding:2px 6px; cursor:pointer; flex-shrink:0; }
+    .al-item .ack:hover { border-color:var(--accent); color:var(--text); }
+    .al-more { font-size:10.5px; color:var(--text-dim); padding:6px 10px; }
+
+    /* inventory */
+    #table-pane { display:none; flex:1; min-width:0; flex-direction:column; background:var(--navy); position:relative; }
+    #panes.v-table #table-pane { display:flex; }
+    #panes.v-table #graph-pane, #panes.v-table #map-pane, #panes.v-3d #table-pane { display:none; }
+    #tbl-bar { display:flex; align-items:center; gap:10px; padding:9px 14px; border-bottom:1px solid var(--card-border); flex-shrink:0; }
+    #tbl-bar input[type=text] { width:240px; background:var(--card); border:1px solid var(--card-border); border-radius:6px; padding:6px 9px; color:var(--text); font-size:12px; outline:none; }
+    #tbl-bar input[type=text]:focus { border-color:var(--accent); }
+    #tbl-bar label { font-size:11.5px; color:var(--text-muted); display:inline-flex; align-items:center; gap:5px; cursor:pointer; }
+    #tbl-bar .cnt { margin-left:auto; font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; }
+    #tbl-wrap { flex:1; overflow:auto; }
+    #tbl { width:100%; border-collapse:collapse; font-size:11.5px; font-family:'JetBrains Mono',monospace; }
+    #tbl th { position:sticky; top:0; background:var(--card); color:var(--text-muted); font:600 10px 'Inter',sans-serif; text-transform:uppercase; letter-spacing:.06em; text-align:right; padding:8px 10px; border-bottom:1px solid var(--card-border); cursor:pointer; white-space:nowrap; user-select:none; z-index:1; }
+    #tbl th:hover { color:var(--text); }
+    #tbl th.l, #tbl td.l { text-align:left; }
+    #tbl th.sorted { color:var(--accent2); }
+    #tbl td { padding:6px 10px; border-bottom:1px solid rgba(30,58,95,.45); text-align:right; color:var(--text-muted); white-space:nowrap; }
+    #tbl td.l b { color:var(--text); font-weight:600; }
+    #tbl tr.r { cursor:pointer; }
+    #tbl tr.r:hover td { background:rgba(59,130,246,.07); }
+    #tbl tr.r.sel td { background:rgba(59,130,246,.14); }
+    .svb { display:inline-block; font:700 9px 'Inter',sans-serif; letter-spacing:.06em; text-transform:uppercase; color:var(--c); background:color-mix(in srgb, var(--c) 16%, transparent); border-radius:4px; padding:2px 6px; }
+    #topbar .upd { font-size:10.5px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; white-space:nowrap; }
+    #detail .d-al { border-left:3px solid var(--c); background:var(--navy); border-radius:6px; padding:6px 8px; margin-bottom:5px; font-size:11px; line-height:1.4; }
+    #detail .d-al b { color:var(--text); }
+    #detail .d-al span { color:var(--text-muted); display:block; font-size:10.5px; }
+
+    .thr { border:1px solid var(--card-border); border-radius:8px; padding:9px 10px; margin-bottom:8px; background:var(--navy); }
+    .thr .th { display:flex; align-items:baseline; gap:8px; font-size:11px; font-weight:600; color:var(--text); }
+    .thr .th .sc { margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:15px; font-weight:700; color:var(--c); }
+    .thr .tb { height:5px; border-radius:3px; background:var(--card2); margin:7px 0 8px; overflow:hidden; }
+    .thr .tb i { display:block; height:100%; background:var(--c); }
+    .thr .ev { display:flex; gap:7px; font-size:10.5px; line-height:1.4; padding:2px 0; color:var(--text-muted); }
+    .thr .ev .w { font-family:'JetBrains Mono',monospace; font-weight:600; width:26px; flex-shrink:0; text-align:right; }
+    .thr .ev.p .w { color:#fca5a5; } .thr .ev.n .w { color:#86efac; }
+    .thr .nt { font-size:10px; color:var(--text-dim); margin-top:6px; line-height:1.45; }
+
+    #status { font-size:11px; color:var(--text-muted); line-height:1.5; font-family:'JetBrains Mono',monospace; white-space:pre-wrap; word-break:break-word; }
+    #status .err { color:var(--red); }
+    #status .ok { color:var(--green); }
+
+    .ins-group { border:1px solid var(--card-border); border-radius:8px; margin-bottom:6px; overflow:hidden; background:var(--navy); }
+    .ins-head { display:flex; align-items:center; gap:8px; padding:8px 10px; cursor:pointer; font-size:12px; font-weight:600; }
+    .ins-head .material-icons { font-size:15px; }
+    .ins-head .cnt { margin-left:auto; font-family:'JetBrains Mono',monospace; font-size:11px; padding:1px 7px; border-radius:9px; background:var(--card2); color:var(--text-muted); }
+    .ins-head .cnt.hot { background:rgba(239,68,68,.15); color:#fca5a5; }
+    .ins-desc { font-size:10px; color:var(--text-dim); padding:0 10px 8px; line-height:1.45; }
+    .ins-list { display:none; border-top:1px solid var(--card-border); max-height:220px; overflow-y:auto; }
+    .ins-group.open .ins-list { display:block; }
+    .ins-item { padding:6px 10px; font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text-muted); cursor:pointer; border-bottom:1px solid rgba(30,58,95,.5); line-height:1.4; }
+    .ins-item:hover { background:rgba(59,130,246,.08); color:var(--text); }
+    .ins-item b { color:var(--text); font-weight:600; }
+
+    main { flex:1; display:flex; flex-direction:column; min-width:0; }
+    #topbar { display:flex; align-items:center; gap:10px; padding:8px 14px; border-bottom:1px solid var(--card-border); background:var(--card); flex-shrink:0; flex-wrap:wrap; }
+    .seg { display:flex; border:1px solid var(--card-border); border-radius:7px; overflow:hidden; }
+    .seg button { background:var(--navy); color:var(--text-muted); border:none; padding:6px 11px; font-size:11px; font-weight:600; cursor:pointer; font-family:'Inter',sans-serif; }
+    .seg button.active { background:rgba(59,130,246,.16); color:var(--accent2); }
+    .tb-lbl { font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--text-dim); font-weight:700; }
+    #topbar select, #topbar input[type=number] { background:var(--navy); border:1px solid var(--card-border); border-radius:6px; padding:5px 7px; color:var(--text); font-size:11px; outline:none; }
+    #topbar input[type=number] { width:54px; font-family:'JetBrains Mono',monospace; }
+    .chip { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-muted); padding:3px 8px; border:1px solid var(--card-border); border-radius:10px; white-space:nowrap; }
+    .chip b { color:var(--text); }
+    #demo-banner { display:none; background:rgba(245,158,11,.14); color:#fcd34d; font-size:11px; font-weight:600; padding:5px 14px; border-bottom:1px solid rgba(245,158,11,.35); letter-spacing:.04em; }
+
+    #panes { flex:1; display:flex; min-height:0; min-width:0; position:relative; }
+    #g3-pane { flex:1; position:relative; min-width:0; display:none; overflow:hidden; background:radial-gradient(ellipse at 50% 60%, #10223f 0%, var(--navy) 75%); }
+    #panes.v-3d #g3-pane { display:block; }
+    #panes.v-3d #graph-pane, #panes.v-3d #map-pane { display:none; }
+    #g3 { position:absolute; inset:0; }
+    #g3-labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+    .g3-lab { position:absolute; transform:translate(-50%,-140%); font-family:'JetBrains Mono',monospace; font-size:11px; font-weight:600; color:var(--text); background:rgba(10,22,40,.72); border:1px solid var(--card-border); border-radius:5px; padding:2px 6px; white-space:nowrap; }
+    .g3-lab.op { font-size:13px; border-color:var(--accent); color:#fff; }
+    .g3-lab.layer { transform:translate(0,-50%); background:none; border:none; color:var(--text-dim); font-size:10px; letter-spacing:.1em; text-transform:uppercase; font-family:'Inter',sans-serif; font-weight:700; }
+    .g3-lab.sel { border-color:#fff; }
+    #g3-help { position:absolute; left:12px; bottom:12px; z-index:500; width:300px; background:rgba(10,22,40,.88); border:1px solid var(--card-border); border-radius:8px; padding:10px 12px; font-size:11px; color:var(--text-muted); line-height:1.55; }
+    #g3-help b { color:var(--text); }
+    #g3-help .lg-t { font-weight:700; text-transform:uppercase; letter-spacing:.07em; margin-bottom:5px; color:var(--text-dim); font-size:10px; }
+    #g3-help .ln { width:16px; height:0; border-top:3px solid; display:inline-block; vertical-align:middle; margin-right:5px; }
+    #g3-help .sw { width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:4px; }
+    #g3-bands { margin-top:6px; font-family:'JetBrains Mono',monospace; font-size:10px; }
+    #g3-empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--text-dim); font-size:13px; pointer-events:none; }
+    #g3-empty .material-icons { font-size:44px; color:var(--card-border); }
+    #graph-pane, #map-pane { flex:1; position:relative; min-width:0; }
+    #graph-pane { border-right:1px solid var(--card-border); background:radial-gradient(ellipse at center, #0e1d36 0%, var(--navy) 70%); }
+    #panes.v-graph #map-pane, #panes.v-map #graph-pane { display:none; }
+    canvas#gc { position:absolute; inset:0; width:100%; height:100%; cursor:grab; }
+    #map { position:absolute; inset:0; background:var(--navy); }
+    .pane-tag { position:absolute; left:12px; top:10px; z-index:500; font-size:10px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted); background:rgba(10,22,40,.75); padding:4px 8px; border-radius:5px; border:1px solid var(--card-border); pointer-events:none; }
+    #map-pane .pane-tag { left:54px; }
+    #empty { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; color:var(--text-dim); font-size:13px; text-align:center; padding:30px; pointer-events:none; }
+    #empty .material-icons { font-size:44px; color:var(--card-border); }
+    #legend { position:absolute; left:12px; bottom:12px; z-index:500; background:rgba(10,22,40,.85); border:1px solid var(--card-border); border-radius:8px; padding:8px 10px; font-size:10px; color:var(--text-muted); max-width:260px; max-height:40%; overflow:auto; }
+    #legend .lg-t { font-weight:700; text-transform:uppercase; letter-spacing:.07em; margin-bottom:5px; color:var(--text-dim); }
+    #legend .lg-i { display:inline-flex; align-items:center; gap:5px; margin:2px 8px 2px 0; font-family:'JetBrains Mono',monospace; }
+    #legend .sw { width:9px; height:9px; border-radius:50%; display:inline-block; }
+    #legend .ln { width:16px; height:0; border-top:2px solid; display:inline-block; }
+    #detail { position:absolute; right:12px; top:10px; z-index:1200; width:300px; max-height:calc(100% - 24px); overflow:auto; background:rgba(22,32,56,.96); border:1px solid var(--card-border); border-radius:10px; padding:12px; display:none; font-size:11px; }
+    #detail h3 { font-size:13px; font-weight:600; margin-bottom:2px; display:flex; align-items:center; gap:6px; }
+    #detail .x { margin-left:auto; cursor:pointer; color:var(--text-muted); font-size:16px; }
+    #detail .sub { color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:10px; margin-bottom:8px; }
+    #detail table { width:100%; border-collapse:collapse; font-family:'JetBrains Mono',monospace; font-size:10px; }
+    #detail td, #detail th { padding:3px 4px; text-align:left; border-bottom:1px solid rgba(30,58,95,.6); color:var(--text-muted); }
+    #detail th { color:var(--text-dim); font-weight:600; }
+    #detail td.v { color:var(--text); text-align:right; }
+    #detail .sec { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:var(--text-dim); margin:10px 0 4px; }
+    #detail tr.nb { cursor:pointer; }
+    #detail tr.nb:hover td { color:var(--accent2); }
+    #tip { position:fixed; z-index:2000; pointer-events:none; background:rgba(10,22,40,.95); border:1px solid var(--card-border); border-radius:6px; padding:6px 8px; font-size:11px; font-family:'JetBrains Mono',monospace; color:var(--text); display:none; white-space:pre; }
+    .spinner { width:14px; height:14px; border:2px solid rgba(255,255,255,.25); border-top-color:#fff; border-radius:50%; animation:spin .8s linear infinite; display:inline-block; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    .leaflet-container { background:var(--navy); font-family:'Inter',sans-serif; }
+  </style>
+<script src="suite-nav.js" defer></script>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <div id="sb-header">
+      <img src="fcic.png" alt="FCIC" onerror="this.style.display='none'">
+      <h1><span class="material-icons">hub</span> Network Graph</h1>
+      <p>Operator RAN as a relationship graph — observed from crowd samples</p>
+    </div>
+
+    <div class="tool-switcher">
+      <a href="sql-builder.html"><span class="material-icons">radar</span>SIGINT</a>
+      <a href="db-dashboard.html"><span class="material-icons">insights</span>Dashboard</a>
+      <a href="nmf-viewer.html"><span class="material-icons">route</span>NMF</a>
+      <a href="cell-footprint.html"><span class="material-icons">hexagon</span>Footprint</a>
+      <a href="regulator-dashboard.html"><span class="material-icons">account_balance</span>Regulator</a>
+      <a href="roaming.html"><span class="material-icons">flight_takeoff</span>Roaming</a>
+      <a href="network-graph.html" class="current"><span class="material-icons">hub</span>Graph</a>
+    </div>
+
+    <div id="sb-body">
+      <div>
+        <div class="sb-label">Database</div>
+        <div id="conn-bar" onclick="toggleConnPanel()">
+          <div class="conn-dot" id="conn-dot"></div>
+          <span id="conn-label">Not connected — click to configure</span>
+          <span class="material-icons" style="font-size:16px;color:var(--text-muted)">settings</span>
+        </div>
+        <div id="conn-panel">
+          <div class="field-label">Host</div>
+          <input class="db-inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <div class="field-label">Port</div>
+          <input class="db-inp" type="text" id="db-port" placeholder="8443" style="width:100px">
+          <div class="field-label">Database</div>
+          <input class="db-inp" type="text" id="db-name" value="default">
+          <div class="field-label">Username</div>
+          <input class="db-inp" type="text" id="db-user" placeholder="default">
+          <div class="field-label">Password</div>
+          <input class="db-inp" type="password" id="db-pass" placeholder="••••••••">
+          <div style="margin-top:10px">
+            <button class="btn btn-secondary" onclick="testConnection()" style="font-size:12px;padding:7px 12px;">
+              <span class="material-icons" style="font-size:14px">sync</span> Test Connection
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="sb-label"><span><span class="step">1</span>Area</span></div>
+        <div class="row2">
+          <button class="btn btn-secondary sm" id="btn-draw-rect" onclick="startAreaDraw('rect')"><span class="material-icons">crop_square</span>Draw box</button>
+          <button class="btn btn-secondary sm" id="btn-draw-poly" onclick="startAreaDraw('poly')"><span class="material-icons">polyline</span>Draw polygon</button>
+        </div>
+        <div id="area-summary"></div>
+        <details class="adv">
+          <summary><span class="material-icons">chevron_right</span>Presets and coordinates</summary>
+          <div class="adv-body">
+            <select class="db-inp" id="f-area" onchange="onAreaPick()">
+              <option value="32.03,32.15,34.74,34.86">Tel Aviv-Yafo</option>
+              <option value="31.73,31.84,35.15,35.26">Jerusalem</option>
+              <option value="32.76,32.84,34.95,35.08">Haifa</option>
+              <option value="31.21,31.29,34.75,34.84">Be'er Sheva</option>
+              <option value="custom">Custom area</option>
+            </select>
+            <div class="field-label">Lat min / max · Lng min / max</div>
+            <div class="row4">
+              <input class="db-inp" id="f-la0" value="32.03"><input class="db-inp" id="f-la1" value="32.15">
+              <input class="db-inp" id="f-lo0" value="34.74"><input class="db-inp" id="f-lo1" value="34.86">
+            </div>
+            <div class="hint"><span class="link" onclick="useMapView()">Use the current map view</span> as the area</div>
+          </div>
+        </details>
+      </div>
+
+      <div>
+        <div class="sb-label"><span><span class="step">2</span>PLMN</span></div>
+        <input class="db-inp" id="f-plmn" type="text" value="425-02" placeholder="MCC-MNC, e.g. 425-02" autocomplete="off" spellcheck="false" oninput="onPlmnInput()" onkeydown="if(event.key==='Enter') buildFromDb()">
+        <div class="hint" id="plmn-note"></div>
+        <div id="plmn-seen"></div>
+        <input type="hidden" id="f-mcc" value="425"><input type="hidden" id="f-mnc" value="02">
+      </div>
+
+      <div>
+        <div class="sb-label"><span><span class="step">3</span>Period &amp; technology</span></div>
+        <div class="row2">
+          <select class="db-inp" id="f-days" onchange="autoDetect()">
+            <option value="3">Last 3 days</option><option value="7">Last 7 days</option>
+            <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
+          </select>
+          <div style="display:flex;align-items:center">
+            <label class="chk"><input type="checkbox" id="f-lte" checked> LTE</label>
+            <label class="chk"><input type="checkbox" id="f-nr" checked> NR</label>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <button class="btn btn-primary" id="btn-build" onclick="buildFromDb()"><span class="material-icons">hub</span> Build graph</button>
+        <div class="hint">No database? <span class="link" onclick="loadDemo()">Load synthetic demo network</span></div>
+      </div>
+
+      <div><div id="status"></div></div>
+
+      <div id="ins-wrap" style="display:none">
+        <div class="sb-label">Export</div>
+        <div class="row2">
+          <button class="btn btn-secondary" style="font-size:11px;padding:7px" onclick="exportAlertsCsv()"><span class="material-icons">download</span>Alerts CSV</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:7px" onclick="exportInventoryCsv()"><span class="material-icons">download</span>Inventory CSV</button>
+        </div>
+        <div class="row2" style="margin-top:8px">
+          <button class="btn btn-secondary" style="font-size:11px;padding:7px" onclick="exportCsv()"><span class="material-icons">download</span>Relations CSV</button>
+          <button class="btn btn-secondary" style="font-size:11px;padding:7px" onclick="exportPng()"><span class="material-icons">image</span>Graph PNG</button>
+        </div>
+        <div class="hint">Everything here is <b>observed</b> from crowd samples, not read from the operator's OSS. Site positions are estimated, and an alert is a lead to verify — not a confirmed fault or attack.</div>
+      </div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="topbar">
+      <div class="seg" id="seg-view">
+        <button data-v="map" class="active" title="Sites and relations on the map">Map</button><button data-v="graph" title="Relationship graph">Graph</button><button data-v="split" title="Graph and map side by side">Split</button><button data-v="3d" title="3D hierarchy model">3D</button><button data-v="table" title="Every cell with its KPIs">Inventory</button>
+      </div>
+      <span class="tb-lbl">Show</span>
+      <select id="c-level" onchange="rebuild()"><option value="site">Sites</option><option value="cell">Cells (sectors)</option></select>
+      <span class="tb-lbl">Colour by</span>
+      <select id="c-color" onchange="recolor()"><option value="tac">Tracking area (TAC)</option><option value="band">Band</option><option value="rsrp">Signal strength</option><option value="tech">Technology</option></select>
+      <div class="opt-wrap">
+        <button class="tb-btn" id="btn-opts" onclick="toggleOpts(event)"><span class="material-icons">tune</span>Options</button>
+        <div id="opts-pop" onclick="event.stopPropagation()">
+          <div class="o-lbl">What counts as a relation</div>
+          <select id="c-etype" onchange="rebuild()"><option value="ho">Devices moved between them</option><option value="ov">They cover the same spot</option><option value="both">Either</option></select>
+          <div class="o-hint">Movement = the same device was served by one, then the other, within 2 minutes. Same spot = both serve the same ~100 m square.</div>
+          <div class="o-lbl">Hide weak relations</div>
+          <input type="number" id="c-min" value="3" min="1" onchange="rebuild()">
+          <div class="o-hint">A relation needs at least this many movements (or shared squares) to be drawn. Raise it to de-clutter.</div>
+          <div class="o-lbl">Attacker-cell history check</div>
+          <select id="c-back"><option value="30">Compare with the previous 30 days</option><option value="60" selected>Compare with the previous 60 days</option><option value="90">Compare with the previous 90 days</option></select>
+          <div class="o-hint">A cell that was never received in this area before the period scores as new. Longer is stricter and slower. Applies on the next build.</div>
+          <div class="o-lbl">Graph layout</div>
+          <select id="c-anchor" onchange="setAnchor()"><option value="0.03">By relations, roughly geographic</option><option value="0">By relations only</option><option value="1">Exactly geographic</option></select>
+          <div class="o-hint">Applies to the Graph view.</div>
+        </div>
+      </div>
+      <span style="flex:1"></span>
+      <span class="upd" id="upd"></span>
+      <span class="tb-lbl">Refresh</span>
+      <select id="c-refresh" onchange="setRefresh()" title="Re-run the queries on a timer"><option value="0">Manual</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select>
+      <button class="tb-btn open" id="btn-alerts" onclick="toggleAlerts()"><span class="material-icons">notifications</span>Alerts</button>
+    </div>
+    <div id="demo-banner">SYNTHETIC DEMO DATA — generated in the browser, not real network measurements</div>
+    <div id="kpis"></div>
+    <div id="work">
+    <div id="panes" class="v-map">
+      <div id="g3-pane">
+        <div class="pane-tag">3D network model</div>
+        <div id="g3"></div>
+        <div id="g3-labels"></div>
+        <div id="g3-empty"><span class="material-icons">hub</span><div>Pick an operator and area, then <b>Build graph</b>.</div></div>
+        <div id="g3-help" onclick="if(this.classList.contains('min')) toggleHelp(false)">
+          <span class="material-icons hx" title="Hide" onclick="event.stopPropagation();toggleHelp(true)">close</span>
+          <div class="lg-t">How to read this</div>
+          <b>Height = hierarchy.</b> Operator at the top, its tracking areas (TAC) below, then sites, then each site's cells.<br>
+          <b>Floor position = geography.</b> North is away from you.<br>
+          <span class="ln" style="border-color:#7aa2e3"></span><b>Thick line</b> = devices really moved between the two nodes; thicker = more.<br>
+          <span class="ln" style="border-color:#22d3ee"></span>Same, but it <b>crosses a TAC border</b>.<br>
+          <span class="ln" style="border-color:#475569;border-top-width:1px"></span>Thin line = belongs-to (hierarchy).<br>
+          Click a site to isolate its relations · drag to rotate · scroll to zoom.
+          <div id="g3-bands"></div>
+        </div>
+      </div>
+      <div id="graph-pane">
+        <div class="pane-tag">Relationship graph</div>
+        <canvas id="gc"></canvas>
+        <div id="empty"><span class="material-icons">hub</span><div>Pick an operator and area, then <b>Build graph</b>.</div></div>
+        <div id="legend" style="display:none"></div>
+      </div>
+      <div id="map-pane">
+        <div class="pane-tag">Geography</div>
+        <div id="map"></div>
+        <div id="map-hint">The dashed outline is the <b>analysis area</b> — draw a box or polygon to change it, then <b>Build graph</b>.</div>
+        <div id="draw-banner"></div>
+      </div>
+      <div id="table-pane">
+        <div id="tbl-bar">
+          <input type="text" id="tbl-q" placeholder="Search cell, TAC, PCI, band…" oninput="renderTable()">
+          <label><input type="checkbox" id="tbl-al" onchange="renderTable()"> With alerts only</label>
+          <span class="cnt" id="tbl-cnt"></span>
+        </div>
+        <div id="tbl-wrap"><table id="tbl"></table></div>
+      </div>
+      <div id="detail"></div>
+    </div>
+    <div id="alerts">
+      <div id="al-head">
+        <div class="t"><span class="material-icons">notifications_active</span>Alerts<span class="n" id="al-n"></span></div>
+        <div class="al-tabs" id="al-tabs"><button data-d="" class="on">All</button><button data-d="SOC">SOC · security</button><button data-d="NOC">NOC · network</button></div>
+        <div class="al-sevs" id="al-sevs"></div>
+        <div class="al-opt"><label><input type="checkbox" id="al-hide" checked onchange="renderAlerts()"> Hide acknowledged</label><span id="al-acked"></span></div>
+      </div>
+      <div id="al-list"><div class="al-empty"><span class="material-icons">notifications_none</span>Type a PLMN, choose the area and <b>Build graph</b>.<br>Alerts appear here, most severe first.</div></div>
+    </div>
+    </div>
+  </main>
+</div>
+<div id="tip"></div>
+
+<script>
+// ══════════════ CONNECTION (same pattern + shared creds key as the rest of the suite) ══════════════
+const CREDS_KEY = 'clickhouse_credentials';
+const TABLE = 'measurements_year_geo';
+let isConnected = false;
+const $ = id => document.getElementById(id);
+function toggleConnPanel(){ $('conn-panel').classList.toggle('open'); }
+function loadCredentials(){
+  let saved = null; try { saved = localStorage.getItem(CREDS_KEY); } catch(e){}
+  if(!saved){ $('conn-panel').classList.add('open'); return; }
+  try{
+    const c = JSON.parse(saved);
+    if(c.host) $('db-host').value=c.host;
+    if(c.port) $('db-port').value=c.port;
+    if(c.database) $('db-name').value=c.database;
+    if(c.user) $('db-user').value=c.user;
+    if(c.password) $('db-pass').value=atob(c.password);
+    if(c.host&&c.user&&c.password) testConnection(true);
+  }catch(e){ $('conn-panel').classList.add('open'); }
+}
+function saveCredentials(){
+  const c = { host:$('db-host').value.trim(), port:$('db-port').value.trim()||'8443', database:$('db-name').value.trim()||'default',
+              user:$('db-user').value.trim(), password:btoa($('db-pass').value) };
+  try { localStorage.setItem(CREDS_KEY, JSON.stringify(c)); } catch(e){}
+}
+function setConnStatus(state,label){ $('conn-dot').className='conn-dot '+state; $('conn-label').textContent=label; isConnected=(state==='connected'); }
+async function executeClickHouseQuery(sql){
+  const host=$('db-host').value.trim(), port=$('db-port').value.trim()||'8443', db=$('db-name').value.trim()||'default';
+  const user=$('db-user').value.trim(), pass=$('db-pass').value;
+  if(!host||!user||!pass) throw new Error('Fill in connection details first');
+  const url=`https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`;
+  const resp=await fetch(url,{method:'POST',headers:{'Authorization':'Basic '+btoa(`${user}:${pass}`),'Content-Type':'text/plain'},body:sql});
+  if(!resp.ok){ const t=await resp.text(); let m=`HTTP ${resp.status}`; try{const j=JSON.parse(t); m=j.exception||j.error?.message||t;}catch{m=t||m;} throw new Error(m); }
+  const json=await resp.json();
+  if(json.exception) throw new Error(json.exception);
+  return json;
+}
+async function testConnection(silent=false){
+  setConnStatus('connecting','Connecting…');
+  try{
+    const r=await executeClickHouseQuery('SELECT 1 AS test, version() AS version');
+    const ver=r.data?.[0]?.version||'';
+    setConnStatus('connected',`Connected ${ver?'· v'+ver.split('.').slice(0,2).join('.'):''}`);
+    saveCredentials();
+    if(!silent) $('conn-panel').classList.remove('open');
+    autoDetect();
+  }catch(e){
+    setConnStatus('disconnected','Error: '+e.message.substring(0,50));
+    if(!silent) $('conn-panel').classList.add('open');
+  }
+}
+
+// ══════════════ STATUS ══════════════
+const statusLines = [];
+function status(msg, cls){ statusLines.push(cls?`<span class="${cls}">${esc(msg)}</span>`:esc(msg)); $('status').innerHTML = statusLines.slice(-9).join('\n'); }
+function clearStatus(){ statusLines.length = 0; $('status').innerHTML=''; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+const fmt = n => n==null||isNaN(n) ? '–' : n>=1e6 ? (n/1e6).toFixed(1)+'M' : n>=1e4 ? (n/1e3).toFixed(0)+'k' : n>=1e3 ? (n/1e3).toFixed(1)+'k' : String(Math.round(n));
+
+// ══════════════ FILTERS ══════════════
+let areaPoly = null, areaDrawer = null;   // areaPoly: [[lat,lng],…] when the user drew a polygon, else null (plain box)
+function onAreaPick(){ const v=$('f-area').value; if(v==='custom') return; const [a,b,c,d]=v.split(','); $('f-la0').value=a; $('f-la1').value=b; $('f-lo0').value=c; $('f-lo1').value=d; areaPoly=null; fitBbox(); autoDetect(); }
+function bbox(){ const p=id=>parseFloat($(id).value); const b={la0:p('f-la0'),la1:p('f-la1'),lo0:p('f-lo0'),lo1:p('f-lo1')};
+  if([b.la0,b.la1,b.lo0,b.lo1].some(isNaN)||b.la0>=b.la1||b.lo0>=b.lo1) throw new Error('The area is not valid — draw it again'); b.poly=areaPoly; return b; }
+function useMapView(){ const b=map.getBounds(); $('f-la0').value=b.getSouth().toFixed(4); $('f-la1').value=b.getNorth().toFixed(4); $('f-lo0').value=b.getWest().toFixed(4); $('f-lo1').value=b.getEast().toFixed(4); $('f-area').value='custom'; areaPoly=null; drawBbox(); autoDetect(); }
+const MCC_NAMES = {'425':'Israel','416':'Jordan','602':'Egypt','420':'Saudi Arabia','417':'Syria','418':'Iraq','432':'Iran','415':'Lebanon','202':'Greece','214':'Spain','280':'Cyprus','286':'Turkey','424':'UAE','630':'DR Congo','208':'France','262':'Germany','222':'Italy','234':'UK','310':'USA','250':'Russia','255':'Ukraine'};
+const HOSTILE_MCC = new Set(['432','417','418']);
+let OPS_SEEN = [];   // operators observed in the area: [{mcc, mnc, name, n}]
+function parsePlmn(v){ const m = String(v||'').trim().match(/^(\d{3})\s*[-\s\/.:]?\s*(\d{2,3})$/); return m ? { mcc:m[1], mnc:m[2] } : null; }
+function onPlmnInput(){
+  const p = parsePlmn($('f-plmn').value), note = $('plmn-note');
+  if(!p){ note.className='hint bad'; note.textContent = 'Type MCC then MNC — 425-02, 42502 and 425 02 all work.'; return null; }
+  $('f-mcc').value = p.mcc; $('f-mnc').value = p.mnc;
+  const seen = OPS_SEEN.find(o => +o.mcc===+p.mcc && +o.mnc===+p.mnc);
+  note.className = 'hint';
+  note.innerHTML = `MCC <b>${p.mcc}</b>${MCC_NAMES[p.mcc] ? ' · '+MCC_NAMES[p.mcc] : ''} &nbsp;MNC <b>${p.mnc}</b>` +
+    (seen ? ` — ${esc(seen.name||'unnamed')}, ${fmt(+seen.n)} samples in this area` : (OPS_SEEN.length ? ' — <span style="color:var(--orange)">not seen in this area and period</span>' : ''));
+  return p;
+}
+function renderSeen(){
+  $('plmn-seen').innerHTML = OPS_SEEN.slice(0,8).map(o => { const id=`${o.mcc}-${String(o.mnc).padStart(2,'0')}`;
+    return `<span class="seen ${HOSTILE_MCC.has(String(o.mcc))?'hot':''}" title="${esc(o.name||'unnamed')} · ${fmt(+o.n)} samples — click to use" onclick="$('f-plmn').value='${esc(id)}';onPlmnInput()">${esc(id)}</span>`; }).join('');
+}
+function inPoly(lat,lng,p){ let inside=false; for(let i=0,j=p.length-1;i<p.length;j=i++){ const yi=p[i][0],xi=p[i][1],yj=p[j][0],xj=p[j][1];
+  if((yi>lat)!==(yj>lat) && lng<(xj-xi)*(lat-yi)/(yj-yi)+xi) inside=!inside; } return inside; }
+function startAreaDraw(kind){
+  if(typeof L.Draw==='undefined'){ status('The drawing library could not be loaded — use Presets and coordinates instead', 'err'); return; }
+  const was = areaDrawer && areaDrawer._kind===kind; stopAreaDraw(); if(was) return;
+  if(view!=='map' && view!=='split') setView('map');
+  const shape={ color:'#60a5fa', weight:2 };
+  areaDrawer = kind==='rect' ? new L.Draw.Rectangle(map,{ shapeOptions:shape, showArea:false }) : new L.Draw.Polygon(map,{ shapeOptions:shape, showArea:false, allowIntersection:false });
+  areaDrawer._kind = kind; map.invalidateSize(); areaDrawer.enable();
+  $(kind==='rect'?'btn-draw-rect':'btn-draw-poly').classList.add('on');
+  $('draw-banner').textContent = kind==='rect' ? 'Drag on the map to draw the area · Esc to cancel' : 'Click to add corners, click the first corner to finish · Esc to cancel';
+  $('draw-banner').classList.add('show'); $('map-hint').style.display='none';
+}
+function stopAreaDraw(){
+  if(areaDrawer){ const d=areaDrawer; areaDrawer=null; d.disable(); }
+  $('btn-draw-rect').classList.remove('on'); $('btn-draw-poly').classList.remove('on'); $('draw-banner').classList.remove('show');
+}
+function setArea(latlngs, poly){
+  const b=L.latLngBounds(latlngs);
+  $('f-la0').value=b.getSouth().toFixed(4); $('f-la1').value=b.getNorth().toFixed(4); $('f-lo0').value=b.getWest().toFixed(4); $('f-lo1').value=b.getEast().toFixed(4);
+  areaPoly=poly; $('f-area').value='custom'; drawBbox(); autoDetect();
+}
+function areaSummary(){
+  try{ const b=bbox(), mid=(b.la0+b.la1)/2;
+    const h=haversine({lat:b.la0,lng:b.lo0},{lat:b.la1,lng:b.lo0}), w=haversine({lat:mid,lng:b.lo0},{lat:mid,lng:b.lo1});
+    const name=$('f-area').value!=='custom' ? $('f-area').selectedOptions[0].text : (areaPoly ? `Polygon, ${areaPoly.length} corners` : 'Custom box');
+    $('area-summary').innerHTML = `<b>${esc(name)}</b> · about ${w.toFixed(w<10?1:0)} × ${h.toFixed(h<10?1:0)} km` + (w*h>900 ? '<br><span style="color:var(--orange)">Large area — the query may be slow.</span>' : '');
+  }catch(e){ $('area-summary').innerHTML = `<span style="color:var(--red)">${esc(e.message)}</span>`; }
+}
+let _detT=0;
+function autoDetect(){ clearTimeout(_detT); if(!isConnected) return; _detT=setTimeout(()=>detectOperators(true), 500); }
+function techList(){ const t=[]; if($('f-lte').checked) t.push('LTE'); if($('f-nr').checked) t.push('NR'); if(!t.length) throw new Error('Pick at least one technology'); return t; }
+
+// ══════════════ SCHEMA-ADAPTIVE SQL ══════════════
+let _cols = null;
+async function loadSchema(){
+  if(_cols) return _cols;
+  const r = await executeClickHouseQuery(`SELECT name FROM system.columns WHERE database = currentDatabase() AND table = '${TABLE}'`);
+  _cols = new Set(r.data.map(x=>x.name));
+  if(!_cols.size) throw new Error(`Table ${TABLE} not found in this database`);
+  return _cols;
+}
+function sqlParts(cols, opts){
+  const has = c => cols.has(c);
+  const LAT = has('location_lat_rounded') ? 'location_lat_rounded' : 'location_geo_coordinates.2';
+  const LNG = has('location_lng_rounded') ? 'location_lng_rounded' : 'location_geo_coordinates.1';
+  const sessCand = ['session_id','sessionId','deviceInfo_sessionId','deviceInfo_session_id','session','sessionID','session_uuid'].filter(has);
+  const SESS = sessCand[0] || (has('deviceInfo_deviceId') ? 'deviceInfo_deviceId' : null);
+  const ID = has('cell_nci')
+    ? `if(toString(tech) = 'NR', ifNull(toString(cell_nci), ''), ifNull(toString(cell_eci), ''))`
+    : `ifNull(toString(cell_eci), '')`;
+  const K = `concat(toString(tech), ':', ${ID})`;
+  const b = opts.bbox, techs = opts.techs.map(t=>`'${t}'`).join(',');
+  const mcc = String(parseInt(opts.mcc,10)), mnc = String(parseInt(opts.mnc,10));
+  const polySql = b.poly ? `
+      AND pointInPolygon((toFloat64(${LNG}), toFloat64(${LAT})), [${b.poly.map(q=>`(${q[1].toFixed(6)}, ${q[0].toFixed(6)})`).join(', ')}])` : '';
+  // Rules from the Flycomm ClickHouse data reference: bound the time on both sides (future-dated rows exist),
+  // give bin_lat / bin_lon ranges (they lead the primary key), and keep clean, non-manipulated rows only.
+  const fl = v => (Math.floor(v*10)/10).toFixed(1);
+  const space = `${LAT} BETWEEN ${b.la0} AND ${b.la1} AND ${LNG} BETWEEN ${b.lo0} AND ${b.lo1}${polySql}` +
+    (has('bin_lat') && has('bin_lon') ? `
+      AND bin_lat BETWEEN ${fl(b.la0)} AND ${fl(b.la1)} AND bin_lon BETWEEN ${fl(b.lo0)} AND ${fl(b.lo1)}` : '');
+  const clean = (has('quality_flags') ? ` AND quality_flags = ''` : '') + (has('appManipulated') ? ` AND ifNull(toUInt8(appManipulated), 0) = 0` : '');
+  const geoWhere = `timestamp > now() - INTERVAL ${opts.days} DAY AND timestamp <= now()
+      AND ${space}${clean}`;
+  const plmnWhere = `ifNull(network_mcc, -1) = ${mcc} AND toUInt32OrZero(toString(network_mnc)) = ${mnc}`;
+  const WHERE = `${geoWhere}
+      AND ${plmnWhere}
+      AND toString(tech) IN (${techs})
+      AND ${ID} NOT IN ('', '0')`;
+  // A sample has one serving row and several neighbour rows; neighborNo is NULL on the serving row.
+  const SERVING = has('neighborNo') ? 'neighborNo IS NULL' : has('primaryNo') ? 'primaryNo = 0' : '1';
+  const LEGACY = `toString(tech) IN ('GSM','WCDMA','CDMA')`;
+  // Mobility: serving rows only, and 2G/3G rows are kept (as one pseudo-cell) so a fall from LTE/NR to 2G/3G is visible.
+  const WHERE_T = `${geoWhere}
+      AND ${plmnWhere}
+      AND (${LEGACY} OR (toString(tech) IN (${techs}) AND ${ID} NOT IN ('', '0')))
+      AND ${SERVING}`;
+  const KT = `if(${LEGACY}, 'LEGACY:any', ${K})`;
+  const opt = (c, expr) => has(c) ? expr : `''`;
+  return { has, LAT, LNG, SESS, ID, K, KT, WHERE, WHERE_T, SERVING, geoWhere, space, clean, plmnWhere, opt };
+}
+function qCells(p){
+  const W = `pow(10, (greatest(least(ifNull(toFloat64(signal_rsrp), -120), -50), -130) + 130) / 20)`; // RSRP-weighted → pulls the estimate toward the site
+  return `SELECT ${p.K} AS k, any(toString(tech)) AS t, any(${p.ID}) AS id,
+      toString(any(cell_pci)) AS pci, toString(topK(1)(cell_tac)[1]) AS tac, uniqExact(cell_tac) AS tacn,
+      ${p.opt('band_number','toString(any(band_number))')} AS band, ${p.opt('band_name','toString(any(band_name))')} AS bname,
+      ${p.opt('band_downlinkEarfcn','toString(any(band_downlinkEarfcn))')} AS arfcn,
+      count() AS n, ${p.SESS ? `uniqExact(${p.SESS})` : '0'} AS s,
+      avg(${p.LAT}) AS lat, avg(${p.LNG}) AS lng,
+      sum(${p.LAT} * ${W}) / sum(${W}) AS slat, sum(${p.LNG} * ${W}) / sum(${W}) AS slng,
+      quantile(0.5)(signal_rsrp) AS rsrp, ${p.has('signal_snr') ? 'quantile(0.5)(signal_snr)' : 'NULL'} AS snr,
+      toString(max(timestamp)) AS last,
+      toUnixTimestamp(min(timestamp)) AS fts, toUnixTimestamp(max(timestamp)) AS lts,
+      uniqExact(toDate(timestamp)) AS days, uniqExact(cell_pci) AS pcin,
+      arrayStringConcat(arrayMap(x -> toString(x), groupUniqArray(6)(cell_tac)), ',') AS tacs,
+      stddevPop(toFloat64(${p.LAT})) AS sdla, stddevPop(toFloat64(${p.LNG})) AS sdlo,
+      ${p.has('sector_count') ? `quantileIf(0.5)(sector_count, ${p.SERVING})` : '0'} AS sc,
+      ${p.has('signal_timingAdvance') ? `countIf(signal_timingAdvance BETWEEN 0 AND 2000)` : '0'} AS tan,
+      ${p.has('signal_timingAdvance') ? `quantileIf(0.5)(signal_timingAdvance, signal_timingAdvance BETWEEN 0 AND 2000)` : 'NULL'} AS ta,
+      ${p.has('source') ? 'uniqExact(source)' : '0'} AS srcn,
+      ${p.has('deviceInfo_deviceId') ? `uniqExactIf(deviceInfo_deviceId, deviceInfo_deviceId != '')` : '0'} AS devn
+    FROM ${TABLE}
+    WHERE ${p.WHERE}
+    GROUP BY k
+    HAVING n >= 5
+    ORDER BY n DESC
+    LIMIT 20000`;
+}
+function qTransitions(p){
+  // Consecutive samples of the same session that are served by a different cell within 120 s = one observed cell change.
+  return `SELECT a, b, count() AS n, uniqExact(sess) AS s FROM (
+      SELECT sess, k AS b, lagInFrame(k) OVER w AS a, ts - lagInFrame(ts) OVER w AS dt FROM (
+        SELECT toString(${p.SESS}) AS sess, ${p.KT} AS k, toInt64(toUnixTimestamp(timestamp)) AS ts
+        FROM ${TABLE}
+        WHERE ${p.WHERE_T} AND toString(${p.SESS}) != ''
+      ) WINDOW w AS (PARTITION BY sess ORDER BY ts ASC ROWS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    ) WHERE a != '' AND a != b AND dt >= 0 AND dt <= 120
+    GROUP BY a, b ORDER BY n DESC LIMIT 100000`;
+}
+// Was the candidate cell received in this area BEFORE the analysed period? Only candidates are checked, to keep it cheap.
+function qBaseline(p, days, back, cand){
+  const ids = cand.map(c => `'${String(c.id).replace(/[^0-9]/g,'')}'`).join(',');
+  const enbs = [...new Set(cand.filter(c => c.tech === 'LTE').map(c => c.siteNum))];
+  const enbSql = p.has('cell_enb') && enbs.length && cand.every(c => c.tech === 'LTE') ? `
+      AND cell_enb IN (${enbs.join(',')})` : '';   // set-indexed column
+  return `SELECT ${p.K} AS k, count() AS n, uniqExact(toDate(timestamp)) AS days
+    FROM ${TABLE}
+    WHERE timestamp > now() - INTERVAL ${days + back} DAY AND timestamp <= now() - INTERVAL ${days} DAY
+      AND ${p.space}${p.clean}
+      AND ${p.plmnWhere}${enbSql}
+      AND ${p.ID} IN (${ids})
+    GROUP BY k`;
+}
+async function loadBaseline(p, opts, cellRows){
+  const back = +$('c-back').value || 60;
+  try{
+    const now = Date.now()/1000, winStart = now - opts.days*86400;
+    const cand = cellRows.map(r => { const id = Number(r.id), nr = r.t === 'NR'; return { k:r.k, id:r.id, tech:r.t, siteNum:Math.floor(id/(nr?4096:256)), days:+r.days||0, fts:+r.fts||0, n:+r.n }; })
+      .filter(c => c.n >= 3 && (c.days <= 3 || c.fts > winStart + 86400)).sort((a,b) => a.days - b.days || a.n - b.n).slice(0, 400);
+    if(!cand.length){ status('History check: every cell was present through the whole period', 'ok'); return { map:new Map(), checked:new Set(), back }; }
+    const t0 = performance.now();
+    const rows = (await executeClickHouseQuery(qBaseline(p, opts.days, back, cand))).data;
+    const map = new Map(rows.map(r => [r.k, { n:+r.n, days:+r.days }]));
+    status(`History check: ${cand.length} recent cells against the previous ${back} d — ${cand.length - map.size} never seen before · ${((performance.now()-t0)/1000).toFixed(1)}s`, 'ok');
+    return { map, checked:new Set(cand.map(c=>c.k)), back };
+  }catch(e){ status('History check failed (attacker score runs without it): '+e.message.substring(0,180), 'err'); return null; }
+}
+// Operator site registry. It is operator-provided and incomplete, so it is only used when it clearly matches what is observed.
+async function loadRegistry(opts, cellRows){
+  try{
+    const mcc = String(parseInt(opts.mcc,10)), m = parseInt(opts.mnc,10);
+    const plmns = [...new Set([`${mcc}-${String(m).padStart(2,'0')}`, `${mcc}-${String(m).padStart(3,'0')}`, `${mcc}-${m}`])].map(x=>`'${x}'`).join(',');
+    const base = `FROM sites WHERE PLMN IN (${plmns}) GROUP BY site_id, tech`;
+    let rows;
+    try{ rows = (await executeClickHouseQuery(`SELECT site_id, toString(tech) AS tech, argMax(lat, updated_to_ts) AS lat, argMax(lng, updated_to_ts) AS lng,
+        arrayStringConcat(arrayDistinct(arrayMap(x -> toString(x.pci), argMax(sectors, updated_to_ts))), ',') AS pcis ${base}`)).data; }
+    catch(e){ rows = (await executeClickHouseQuery(`SELECT site_id, toString(tech) AS tech, argMax(lat, updated_to_ts) AS lat, argMax(lng, updated_to_ts) AS lng, '' AS pcis ${base}`)).data; }
+    const map = new Map();
+    for(const r of rows) if(/LTE/i.test(r.tech)) map.set(Number(r.site_id), { lat:+r.lat, lng:+r.lng, pcis:new Set(String(r.pcis||'').split(',').filter(x=>x!=='')) });
+    const seen = new Set(cellRows.filter(r => r.t === 'LTE').map(r => Math.floor(Number(r.id)/256)));
+    const hit = [...seen].filter(x => map.has(x)).length, overlap = seen.size ? hit/seen.size : 0, usable = map.size >= 20 && overlap >= 0.3;
+    status(map.size ? `Site registry: ${map.size} LTE sites, ${Math.round(overlap*100)}% of the observed sites are in it` + (usable ? '' : ' — too low to trust, not used') : 'Site registry: no entries for this PLMN — not used', usable ? 'ok' : undefined);
+    return { map, n:map.size, overlap, usable };
+  }catch(e){ status('Site registry not available (attacker score runs without it): '+e.message.substring(0,160), 'err'); return null; }
+}
+function qBins(p){
+  // Top-3 serving cells per ~100 m bin → cells sharing a bin overlap spatially.
+  return `SELECT round(${p.LAT}, 3) AS la, round(${p.LNG}, 3) AS lo, ${p.K} AS k, count() AS c
+    FROM ${TABLE}
+    WHERE ${p.WHERE}
+    GROUP BY la, lo, k HAVING c >= 2
+    ORDER BY la, lo, c DESC
+    LIMIT 3 BY la, lo
+    LIMIT 150000`;
+}
+function qAreaOps(p){
+  return `SELECT toString(network_mcc) AS mcc, toString(network_mnc) AS mnc, toString(any(network_operator)) AS name, count() AS n
+      FROM ${TABLE} WHERE ${p.geoWhere} AND toString(network_mcc) NOT IN ('', '0') GROUP BY mcc, mnc ORDER BY n DESC LIMIT 40`;
+}
+async function detectOperators(quiet){
+  try{
+    const cols = await loadSchema();
+    const p = sqlParts(cols, { bbox:bbox(), techs:['LTE','NR'], days:+$('f-days').value, mcc:$('f-mcc').value, mnc:$('f-mnc').value });
+    const r = await executeClickHouseQuery(qAreaOps(p));
+    OPS_SEEN = r.data; renderSeen(); onPlmnInput();
+  }catch(e){ if(!quiet) status('Could not list the PLMNs in the area: '+e.message, 'err'); }
+}
+
+// ══════════════ DATA MODEL ══════════════
+let DATA = null;      // { cells: Map, cellEdges: Map, meta }
+let G = null;         // current level graph { nodes, edges, byId }
+let selected = null, hovered = null;
+
+function processRows(cellRows, transRows, binRows, meta){
+  const cells = new Map();
+  for(const r of cellRows){
+    const id = Number(r.id); if(!isFinite(id) || id<=0) continue;
+    const tech = r.t ?? r.tech, nr = tech === 'NR';
+    const siteNum = Math.floor(id / (nr ? 4096 : 256));   // NR: assumes a 24-bit gNB ID
+    cells.set(r.k, { k:r.k, tech, id, pci:r.pci, tac:String(r.tac??''), tacn:+r.tacn||1, band:String(r.band||''), bname:r.bname||'', arfcn:String(r.arfcn||''),
+      n:+r.n, s:+r.s, lat:+r.lat, lng:+r.lng, slat:+(r.slat??r.lat), slng:+(r.slng??r.lng), rsrp:r.rsrp==null?null:+r.rsrp, snr:r.snr==null?null:+r.snr, last:r.last,
+      sc:+r.sc||0, ta:(r.ta==null||isNaN(+r.ta))?null:+r.ta, tan:+r.tan||0, srcn:+r.srcn||0, devn:+(r.devn ?? r.s)||0, out:0, down:0,
+      fts:+r.fts||0, lts:+r.lts||0, days:+r.days||0, pcin:+r.pcin||1, tacs:String(r.tacs ?? r.tac ?? '').split(',').filter(x=>x!==''),
+      spr: Math.hypot((+r.sdla||0)*111, (+r.sdlo||0)*111*Math.cos((+r.lat||0)*Math.PI/180)),
+      site:`${tech}:${siteNum}`, siteNum, sector: id % (nr ? 4096 : 256) });
+  }
+  const cellEdges = new Map();
+  const edge = (a,b) => { const key = a<b ? a+'|'+b : b+'|'+a; let e = cellEdges.get(key); if(!e){ e={a:a<b?a:b, b:a<b?b:a, ho:0, ov:0}; cellEdges.set(key,e);} return e; };
+  let hoTotal = 0;
+  for(const r of transRows||[]){
+    const ca = cells.get(r.a);
+    if(r.b === 'LEGACY:any'){ if(ca) ca.down += +r.n; continue; }      // LTE/NR cell → 2G/3G
+    if(!ca || !cells.has(r.b)) continue;
+    ca.out += +r.n; edge(r.a,r.b).ho += +r.n; hoTotal += +r.n;
+  }
+  let cur = null, list = [];
+  const flush = () => { for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++) edge(list[i],list[j]).ov++; };
+  for(const r of binRows||[]){ if(!cells.has(r.k)) continue; const key=r.la+','+r.lo; if(key!==cur){ flush(); cur=key; list=[]; } list.push(r.k); }
+  flush();
+  let refTs = 0; for(const c of cells.values()) if(c.lts > refTs) refTs = c.lts;
+  DATA = { cells, cellEdges, meta, hoTotal, refTs };
+}
+
+function haversine(a,b){ const R=6371, r=Math.PI/180, dla=(b.lat-a.lat)*r, dlo=(b.lng-a.lng)*r;
+  const x=Math.sin(dla/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dlo/2)**2; return 2*R*Math.asin(Math.sqrt(x)); }
+function mode(arr, wfn){ const m=new Map(); for(const x of arr){ const [v,w]=wfn(x); m.set(v,(m.get(v)||0)+w); } let best=null,bw=-1; for(const [v,w] of m) if(w>bw){best=v;bw=w;} return best; }
+
+function buildLevel(){
+  const level = $('c-level').value, etype = $('c-etype').value, min = Math.max(1, +$('c-min').value||1);
+  const nodes = [], byId = new Map();
+  if(level === 'cell'){
+    for(const c of DATA.cells.values()){
+      const n = { id:c.k, label:`${c.siteNum}-${c.sector}`, tech:c.tech, tac:c.tac, band:c.band, rsrp:c.rsrp, n:c.n, s:c.s, lat:c.slat, lng:c.slng, cells:[c], intraHo:0 };
+      nodes.push(n); byId.set(n.id,n);
+    }
+  } else {
+    const groups = new Map();
+    for(const c of DATA.cells.values()){ if(!groups.has(c.site)) groups.set(c.site,[]); groups.get(c.site).push(c); }
+    for(const [sid, cs] of groups){
+      const N = cs.reduce((a,c)=>a+c.n,0);
+      const rs = cs.filter(c=>c.rsrp!=null), rn = rs.reduce((a,c)=>a+c.n,0);
+      const n = { id:sid, label:String(cs[0].siteNum), tech:cs[0].tech, tac:mode(cs,c=>[c.tac,c.n]), band:mode(cs,c=>[c.band,c.n]),
+        rsrp: rn ? rs.reduce((a,c)=>a+c.rsrp*c.n,0)/rn : null, n:N, s:cs.reduce((a,c)=>a+c.s,0),
+        lat:cs.reduce((a,c)=>a+c.slat*c.n,0)/N, lng:cs.reduce((a,c)=>a+c.slng*c.n,0)/N, cells:cs.sort((a,b)=>a.sector-b.sector), intraHo:0 };
+      nodes.push(n); byId.set(n.id,n);
+    }
+  }
+  const agg = new Map();
+  for(const e of DATA.cellEdges.values()){
+    const ca = DATA.cells.get(e.a), cb = DATA.cells.get(e.b);
+    const A = level==='cell' ? e.a : ca.site, B = level==='cell' ? e.b : cb.site;
+    if(A === B){ byId.get(A).intraHo += e.ho; continue; }
+    const key = A<B ? A+'|'+B : B+'|'+A; let x = agg.get(key);
+    if(!x){ x = { source:A<B?A:B, target:A<B?B:A, ho:0, ov:0 }; agg.set(key,x); }
+    x.ho += e.ho; x.ov += e.ov;
+  }
+  const edges = [];
+  for(const x of agg.values()){
+    const okHo = x.ho >= min, okOv = x.ov >= min;
+    if(!((etype!=='ov' && okHo) || (etype!=='ho' && okOv))) continue;
+    const a = byId.get(x.source), b = byId.get(x.target);
+    x.a = a; x.b = b; x.km = haversine(a,b); x.xtac = a.tac !== b.tac; x.xtech = a.tech !== b.tech;
+    x.w = etype==='ov' ? x.ov : etype==='ho' ? x.ho : x.ho*2 + x.ov;
+    edges.push(x);
+  }
+  for(const n of nodes){ n.deg=0; n.wdeg=0; n.nb=[]; }
+  for(const e of edges){ e.a.deg++; e.b.deg++; e.a.wdeg+=e.w; e.b.wdeg+=e.w; e.a.nb.push(e); e.b.nb.push(e); }
+  const maxN = Math.max(1, ...nodes.map(n=>n.n));
+  for(const n of nodes) n.r = (level==='cell'?2.2:3.2) + 9*Math.sqrt(n.n/maxN);
+  G = { nodes, edges, byId, level, etype, min };
+}
+
+// ══════════════ ALERT ENGINE (NOC + SOC) ══════════════
+const SEVS = [ {k:'info',l:'Info',c:'#64748b'}, {k:'low',l:'Low',c:'#818cf8'}, {k:'med',l:'Medium',c:'#06b6d4'}, {k:'high',l:'High',c:'#f59e0b'}, {k:'crit',l:'Critical',c:'#ef4444'} ];
+const AT = {
+  // SOC — the composite attacker-cell verdict (see scoreThreats)
+  attacker_crit:  { dom:'SOC', sev:4, t:'Probable attacker cell', d:'Several independent signs of a fake base station at once: score 70 or more out of 100. Verify on site.' },
+  attacker_high:  { dom:'SOC', sev:3, t:'Suspected attacker cell', d:'At least two independent signs of a fake base station: score 45 to 69. Open it to see the evidence.' },
+  attacker_watch: { dom:'SOC', sev:2, t:'Cell to verify', d:'Some signs of a fake base station, not enough to call it: score 30 to 44.' },
+  // SOC — single signs that look like someone else's transmitter
+  hostile_plmn: { dom:'SOC', sev:4, t:'Hostile-nation PLMN in the area', d:'A network of Iran (432), Syria (417) or Iraq (418) was received inside the analysis area.' },
+  tac_reserved: { dom:'SOC', sev:4, t:'Cell on a reserved TAC', d:'TAC 0, 65534 and 65535 are never assigned to a live cell — typical of rogue or test equipment.' },
+  transient:    { dom:'SOC', sev:3, t:'Short-lived strong cell', d:'Seen on one day only, by one or two devices, with a strong signal — the footprint of a portable fake base station.' },
+  tac_multi:    { dom:'SOC', sev:3, t:'Cell reported under several TACs', d:'One cell identity appears with different tracking areas — re-parenting, or a second transmitter cloning the identity.' },
+  pci_multi:    { dom:'SOC', sev:3, t:'Cell changed its PCI', d:'One cell identity was received with more than one physical cell ID in the period — a re-plan, or a clone.' },
+  orphan:       { dom:'SOC', sev:2, t:'Single-cell site with no neighbours', d:'A site with one observed cell that no device moved to or from — it does not fit the operator\'s grid.' },
+  wide:         { dom:'SOC', sev:2, t:'Cell seen over an implausibly wide area', d:'Samples of one cell are spread far wider than its peers — a moving transmitter or a reused identity.' },
+  test_plmn:    { dom:'SOC', sev:2, t:'Invalid or test PLMN in the area', d:'A PLMN that is not assigned to any real network (MCC 000, 001 or 999) was received here.' },
+  new_cell:     { dom:'SOC', sev:1, t:'Newly appeared cell', d:'First seen in the last 48 hours of the period. Usually a roll-out — worth a glance when it is unexpected.' },
+  lone_carrier: { dom:'SOC', sev:1, t:'Carrier used by a single cell', d:'The only cell on its channel in the whole area.' },
+  foreign_plmn: { dom:'SOC', sev:0, t:'Foreign PLMN in the area', d:'Another country\'s network was received here — normal near borders, otherwise a lead.' },
+  // NOC — things that degrade service
+  site_down:    { dom:'NOC', sev:3, t:'Site silent — possible outage', d:'No sample from any cell of the site for more than 3 days, although it was active earlier in the period.' },
+  pci_collision:{ dom:'NOC', sev:3, t:'PCI collision', d:'Two related cells on the same carrier share one PCI — devices cannot tell them apart.' },
+  pci_confusion:{ dom:'NOC', sev:2, t:'PCI confusion', d:'A cell has two neighbours with the same PCI on one carrier — handovers can go to the wrong one.' },
+  cell_stale:   { dom:'NOC', sev:2, t:'Cell silent', d:'No sample from this cell for more than 3 days while the rest of its site is still seen.' },
+  weak:         { dom:'NOC', sev:2, t:'Weak coverage', d:'Median RSRP at or below −115 dBm over a meaningful number of samples.' },
+  overshoot:    { dom:'NOC', sev:2, t:'Overshooting — long-distance relation', d:'Devices move between two nodes much farther apart than is usual in this area.' },
+  poor_sinr:    { dom:'NOC', sev:1, t:'Poor signal quality', d:'Median SNR at or below 0 dB — interference or pilot pollution.' },
+  isolated:     { dom:'NOC', sev:1, t:'Well-used node with no relations', d:'Plenty of samples but no relation at the current threshold — indoor cell, area edge, or a missing neighbour.' },
+  tac_border:   { dom:'NOC', sev:0, t:'Busy TAC border', d:'Many cell changes cross this tracking-area boundary — each costs a TAU.' },
+};
+const CAP = 60;
+let ALERTS = [], alDom = '', alSev = new Set(), prevAlertIds = null, newAlertIds = new Set();
+let ACK = new Set(); try{ ACK = new Set(JSON.parse(localStorage.getItem('ng_ack') || '[]')); }catch(e){}
+const hrs = s => s < 48*3600 ? Math.round(s/3600)+' h' : (s/86400).toFixed(1)+' d';
+const dts = ts => ts ? new Date(ts*1000).toISOString().slice(0,16).replace('T',' ') : '–';
+
+// ══════════════ ATTACKER-CELL SCORE ══════════════
+// A fake base station (IMSI catcher) has to look like a cell of the real network, but it cannot fake its history,
+// its place in the operator's grid, or how devices behave around it. Each sign below adds points; signs that say
+// "this is an ordinary cell" subtract. Nothing here is proof — it ranks what a person should go and check.
+function scoreThreats(cdeg, sites){
+  const cells = [...DATA.cells.values()], m = DATA.meta, period = +m.days || 14, ref = DATA.refTs, winStart = ref - period*86400;
+  const reg = m.registry && m.registry.usable ? m.registry : null, base = m.baseline || null;
+  const sitePos = [], tacSites = new Map();
+  for(const [sid, cs] of sites){ const N = cs.reduce((a,c)=>a+c.n,0), tac = mode(cs, c=>[c.tac,c.n]);
+    sitePos.push({ sid, tac, lat:cs.reduce((a,c)=>a+c.slat*c.n,0)/N, lng:cs.reduce((a,c)=>a+c.slng*c.n,0)/N });
+    tacSites.set(tac, (tacSites.get(tac)||0)+1); }
+  const medSc = d3.median(cells.filter(c=>c.sc>0), c=>c.sc) || 0;
+  const taCells = cells.filter(c=>c.tan>=5), taLow = taCells.length ? taCells.filter(c=>c.ta!=null && c.ta<=1).length/taCells.length : 1;
+  const totOut = cells.reduce((a,c)=>a+c.out,0), totDown = cells.reduce((a,c)=>a+c.down,0), areaDown = totOut+totDown ? totDown/(totOut+totDown) : 0;
+  for(const c of cells){
+    const ev = [], notes = []; let sum = 0;
+    const hit = (w, t) => { ev.push({ w, t }); sum += w; };
+    c.threat = { score:0, level:0, ev, notes };
+    if(c.n < 3) continue;
+    const dev = c.devn || c.s || 0;
+    // 1 · identity that no real cell would have
+    const resv = c.tacs.concat(c.tac).find(t => ['0','65534','65535'].includes(String(t)));
+    if(resv !== undefined) hit(30, `TAC ${resv} is reserved — never assigned to a live cell`);
+    if(c.tacn > 1) hit(10, `Reported under ${c.tacn} different TACs`);
+    if(c.pcin > 1) hit(10, `Received with ${c.pcin} different PCIs`);
+    // 2 · it does not belong to the grid around it (a fake cell uses a foreign TAC to force a location update)
+    if(resv === undefined && sitePos.length >= 10 && (tacSites.get(c.tac)||0) <= Math.max(1, Math.floor(sitePos.length*0.01))){
+      const near = sitePos.filter(x => x.sid !== c.site).map(x => ({ x, d:haversine({ lat:c.slat, lng:c.slng }, x) })).sort((a,b)=>a.d-b.d).slice(0,5);
+      if(near.length >= 3 && near.every(o => o.x.tac !== c.tac)) hit(20, `TAC ${c.tac} is used by none of the ${near.length} nearest sites (they use ${mode(near, o=>[o.x.tac,1])})`);
+    }
+    // 3 · history: a real cell was there last month too
+    const mid = c.fts > winStart + 86400;
+    if(base && base.checked.has(c.k)){
+      const h = base.map.get(c.k);
+      if(!h) hit(25, `Never received here in the ${base.back} days before this period`);
+      else hit(-20, `Known cell — received on ${h.days} day${h.days===1?'':'s'} in the ${base.back} days before`);
+    } else if(mid) hit(10, `First appeared ${dts(c.fts)}, part-way through the period`);
+    else if(c.days >= Math.max(3, period*0.5)) hit(-10, `Present on ${c.days} of ${period} days`);
+    if(period >= 7 && c.days <= 2 && dev <= 3) hit(15, `Seen on ${c.days} day${c.days===1?'':'s'} only, by ${dev||1} device${dev>1?'s':''}`);
+    // 4 · radio behaviour
+    if(c.rsrp != null && c.rsrp >= -85 && c.spr < 0.3 && c.n < 200) hit(10, `Strong (${c.rsrp.toFixed(0)} dBm) over a very small area (~${Math.round(c.spr*1000)} m)`);
+    if(c.sc > 0 && c.sc <= 1 && medSc >= 3) hit(10, `Devices on it see no other cell (area median: ${medSc.toFixed(0)} cells per sample)`);
+    if(c.tan >= 5 && c.ta != null && c.ta <= 1 && taLow < 0.2) hit(5, `Timing advance 0–1 on all ${c.tan} samples — the transmitter is right next to every device`);
+    if(c.down >= 3 && c.down/(c.out+c.down) >= 0.6 && areaDown < 0.3) hit(15, `${c.down} of ${c.out+c.down} departures fell to 2G/3G (area: ${Math.round(areaDown*100)}%)`);
+    const sc = sites.get(c.site) || [];
+    if(sc.length === 1 && !cdeg.get(c.k) && sitePos.length >= 10) hit(10, `Only cell of site ${c.siteNum}, and no device moved to or from a neighbour`);
+    // 5 · operator registry (LTE only; used only when it visibly matches the observed network)
+    if(reg && c.tech === 'LTE'){
+      const r = reg.map.get(c.siteNum);
+      if(!r) hit(15, `Site ${c.siteNum} is not in the operator registry (${reg.n} sites)`);
+      else { const km = haversine({ lat:c.slat, lng:c.slng }, r);
+        if(km > 5) hit(30, `Received ${km.toFixed(1)} km from the registered position of site ${c.siteNum} — a cloned identity`);
+        else if(r.pcis.size && c.pci !== '' && !r.pcis.has(String(c.pci))) hit(10, `PCI ${c.pci} is not one of the site's registered PCIs`);
+        else hit(-15, `Matches the operator registry (position${r.pcis.size ? ' and PCI' : ''})`); }
+    }
+    let score = Math.max(0, Math.min(100, sum));
+    const pos = ev.filter(e => e.w > 0).length;
+    if(pos < 2 && score > 40){ score = 40; notes.push('Only one sign — capped at 40. One sign alone is never called a suspect.'); }
+    if(dev <= 1 && score > 69){ score = 69; notes.push('Reported by a single device — capped below "probable". A faulty handset can produce this.'); }
+    if(!base) notes.push('History check did not run, so "never seen before" could not be tested.');
+    if(!reg && c.tech === 'LTE') notes.push('Operator registry not usable for this PLMN, so it was not consulted.');
+    ev.sort((a,b) => b.w - a.w);
+    c.threat = { score, level: score >= 70 ? 3 : score >= 45 ? 2 : score >= 30 ? 1 : 0, ev, notes };
+  }
+}
+function threatHtml(c){
+  const t = c.threat; if(!t || (!t.ev.length)) return '';
+  const col = t.level === 3 ? SEVS[4].c : t.level === 2 ? SEVS[3].c : t.level === 1 ? SEVS[2].c : '#22c55e';
+  return `<div class="thr" style="--c:${col}">
+    <div class="th">Attacker-cell score · ${c.siteNum}-${c.sector}<span class="sc">${t.score}</span></div>
+    <div class="tb"><i style="width:${t.score}%"></i></div>
+    ${t.ev.map(e => `<div class="ev ${e.w>0?'p':'n'}"><span class="w">${e.w>0?'+':'−'}${Math.abs(e.w)}</span><span>${esc(e.t)}</span></div>`).join('')}
+    ${t.notes.map(x => `<div class="nt">${esc(x)}</div>`).join('')}</div>`;
+}
+
+function computeAlerts(){
+  const A = [], cells = DATA.cells, m = DATA.meta, ref = DATA.refTs, period = +m.days || 14;
+  const scope = `${m.mcc||'demo'}-${m.mnc||''}`;
+  const nodeOf = c => G.level==='cell' ? c.k : c.site, cname = c => `${c.siteNum}-${c.sector}`;
+  const add = (type, ent, text, o={}) => A.push({ id:`${scope}|${type}|${ent}`, type, sev:AT[type].sev, dom:AT[type].dom, ent, text, node:o.node||null, other:o.other||null, cells:o.cells||[], rank:o.rank||0 });
+
+  // per-cell relation count + site grouping
+  const cdeg = new Map(), sites = new Map();
+  for(const e of DATA.cellEdges.values()) if(e.ho >= 1 || e.ov >= 2){ cdeg.set(e.a,(cdeg.get(e.a)||0)+1); cdeg.set(e.b,(cdeg.get(e.b)||0)+1); }
+  for(const c of cells.values()) (sites.get(c.site) || sites.set(c.site,[]).get(c.site)).push(c);
+  const all = [...cells.values()];
+  const medN = d3.median(all, c=>c.n) || 0, medSpr = d3.median(all.filter(c=>c.spr>0), c=>c.spr) || 0;
+  const chUse = new Map(); for(const c of all) if(c.arfcn) chUse.set(c.tech+c.arfcn, (chUse.get(c.tech+c.arfcn)||0)+1);
+
+  // ── SOC ──
+  scoreThreats(cdeg, sites);
+  for(const c of all){ const t = c.threat; if(!t.level) continue;
+    add(t.level===3 ? 'attacker_crit' : t.level===2 ? 'attacker_high' : 'attacker_watch', cname(c),
+      `score <b>${t.score}</b>/100 · ${t.ev.filter(e=>e.w>0).slice(0,3).map(e=>esc(e.t)).join(' · ')}`, { node:nodeOf(c), cells:[c.k], rank:t.score }); }
+  for(const c of all){
+    const o = { node:nodeOf(c), cells:[c.k], rank:c.n };
+    const bad = c.tacs.concat(c.tac).filter(t => ['0','65534','65535'].includes(String(t)));
+    if(bad.length) add('tac_reserved', cname(c), `TAC <b>${esc(bad[0])}</b> · PCI ${esc(c.pci)} · ${fmt(c.n)} samples`, o);
+    if(c.tacn > 1) add('tac_multi', cname(c), `<b>${c.tacn}</b> TACs: ${esc((c.tacs.length?c.tacs:[c.tac]).join(', '))} · ${fmt(c.n)} samples`, o);
+    if(c.pcin > 1) add('pci_multi', cname(c), `<b>${c.pcin}</b> different PCIs · ch ${esc(c.arfcn||'?')} · ${fmt(c.n)} samples`, o);
+    const transient = period >= 7 && c.days === 1 && c.s <= 2 && c.rsrp != null && c.rsrp >= -90;
+    if(transient) add('transient', cname(c), `1 day only (${dts(c.fts).slice(0,10)}) · ${c.s||1} device${c.s>1?'s':''} · <b>${c.rsrp.toFixed(0)} dBm</b> · TAC ${esc(c.tac)}`, o);
+    else if(period >= 7 && c.fts && ref - c.fts <= 48*3600) add('new_cell', cname(c), `first seen ${dts(c.fts)} · ${fmt(c.n)} samples · TAC ${esc(c.tac)}`, { ...o, rank:c.fts });
+    if(c.spr > Math.max(3, medSpr*4) && c.n >= 20) add('wide', cname(c), `spread <b>${c.spr.toFixed(1)} km</b> (area median ${medSpr.toFixed(2)} km) · ${fmt(c.n)} samples`, { ...o, rank:c.spr });
+    if(all.length >= 30 && c.arfcn && chUse.get(c.tech+c.arfcn) === 1) add('lone_carrier', cname(c), `${c.tech} ch <b>${esc(c.arfcn)}</b> · band ${esc(c.band||'?')} · ${fmt(c.n)} samples`, o);
+  }
+  for(const [sid, cs] of sites) if(cs.length === 1 && !cdeg.get(cs[0].k) && cs[0].n < medN && sites.size >= 10)
+    add('orphan', String(cs[0].siteNum), `${cs[0].tech} · TAC ${esc(cs[0].tac)} · PCI ${esc(cs[0].pci)} · ${fmt(cs[0].n)} samples`, { node:nodeOf(cs[0]), cells:[cs[0].k], rank:-cs[0].n });
+  for(const o of (m.areaOps || [])){
+    const mcc = String(o.mcc), id = `${mcc}-${String(o.mnc).padStart(2,'0')}`, txt = `${esc(o.name||'unnamed')} · ${fmt(+o.n)} samples in the area`;
+    if(+mcc === +m.mcc) continue;
+    if(HOSTILE_MCC.has(mcc)) add('hostile_plmn', id, `${MCC_NAMES[mcc]} · ${txt}`, { rank:+o.n });
+    else if(['000','001','999','0','1'].includes(mcc)) add('test_plmn', id, txt, { rank:+o.n });
+    else add('foreign_plmn', id, `${MCC_NAMES[mcc]||'MCC '+mcc} · ${txt}`, { rank:+o.n });
+  }
+
+  // ── NOC ──
+  const nbrs = new Map();
+  for(const e of DATA.cellEdges.values()){
+    if(e.ho < 2 && e.ov < 3) continue;
+    const a = cells.get(e.a), b = cells.get(e.b);
+    if(a.arfcn && a.arfcn === b.arfcn && a.pci === b.pci && a.pci !== '')
+      add('pci_collision', `${cname(a)} ↔ ${cname(b)}`, `PCI <b>${esc(a.pci)}</b> · ch ${esc(a.arfcn)} · ${fmt(e.ho)} cell changes`, { node:nodeOf(a), other:nodeOf(b), cells:[a.k,b.k], rank:e.ho });
+    if(e.ho >= 2){ (nbrs.get(a.k)||nbrs.set(a.k,[]).get(a.k)).push(b); (nbrs.get(b.k)||nbrs.set(b.k,[]).get(b.k)).push(a); }
+  }
+  for(const [k, list] of nbrs){
+    const g = new Map();
+    for(const c of list){ if(!c.arfcn || c.pci==='') continue; const key=c.arfcn+'|'+c.pci; (g.get(key)||g.set(key,[]).get(key)).push(c); }
+    for(const [key, cs] of g) if(cs.length >= 2){ const c = cells.get(k);
+      add('pci_confusion', `${cname(c)} / PCI ${key.split('|')[1]}`, `neighbours ${cs.map(cname).join(', ')} share PCI <b>${esc(key.split('|')[1])}</b>`, { node:nodeOf(c), other:nodeOf(cs[0]), cells:[c.k], rank:c.n }); }
+  }
+  if(period >= 5 && ref) for(const [sid, cs] of sites){
+    const stale = cs.filter(c => c.lts && ref - c.lts > 72*3600 && c.n >= 30);
+    if(!stale.length) continue;
+    const last = Math.max(...cs.map(c=>c.lts));
+    if(stale.length === cs.length) add('site_down', String(cs[0].siteNum), `silent for <b>${hrs(ref-last)}</b> · last seen ${dts(last)} · ${cs.length} cell${cs.length>1?'s':''} · ${fmt(cs.reduce((a,c)=>a+c.n,0))} samples before`, { node:nodeOf(cs[0]), cells:cs.map(c=>c.k), rank:ref-last });
+    else for(const c of stale) add('cell_stale', cname(c), `silent for <b>${hrs(ref-c.lts)}</b> · last seen ${dts(c.lts)} · ${fmt(c.n)} samples before`, { node:nodeOf(c), cells:[c.k], rank:ref-c.lts });
+  }
+  for(const c of all){
+    if(c.rsrp != null && c.rsrp <= -115 && c.n >= 50) add('weak', cname(c), `median <b>${c.rsrp.toFixed(0)} dBm</b> · ${fmt(c.n)} samples · band ${esc(c.band||'?')}`, { node:nodeOf(c), cells:[c.k], rank:-c.rsrp });
+    if(c.snr != null && c.snr <= 0 && c.n >= 50) add('poor_sinr', cname(c), `median SNR <b>${c.snr.toFixed(1)} dB</b> · ${fmt(c.n)} samples`, { node:nodeOf(c), cells:[c.k], rank:-c.snr });
+  }
+  const hoE = G.edges.filter(e=>e.ho>=G.min), medKm = d3.median(hoE, e=>e.km) || 0.5, thr = Math.max(2, medKm*4);
+  for(const e of hoE) if(e.km > thr) add('overshoot', `${e.a.label} ↔ ${e.b.label}`, `<b>${e.km.toFixed(1)} km</b> apart (usual ${medKm.toFixed(2)} km) · ${fmt(e.ho)} cell changes`, { node:e.a.id, other:e.b.id, cells:[...e.a.cells, ...e.b.cells].map(c=>c.k), rank:e.km });
+  const medNode = d3.median(G.nodes, n=>n.n) || 0;
+  for(const n of G.nodes) if(n.deg === 0 && n.n >= Math.max(30, medNode)) add('isolated', n.label, `${n.tech} · TAC ${esc(n.tac)} · ${fmt(n.n)} samples`, { node:n.id, cells:n.cells.map(c=>c.k), rank:n.n });
+  for(const e of G.edges.filter(e=>e.xtac && e.ho>0).sort((a,b)=>b.ho-a.ho).slice(0,12))
+    add('tac_border', `${e.a.label} ↔ ${e.b.label}`, `TAC ${esc(e.a.tac)} / ${esc(e.b.tac)} · <b>${fmt(e.ho)}</b> cell changes`, { node:e.a.id, other:e.b.id, rank:e.ho });
+
+  A.sort((x,y) => y.sev - x.sev || (x.type < y.type ? -1 : x.type > y.type ? 1 : 0) || y.rank - x.rank);
+  // what is new since the previous refresh
+  const ids = new Set(A.map(a=>a.id));
+  newAlertIds = prevAlertIds ? new Set([...ids].filter(i => !prevAlertIds.has(i))) : new Set();
+  prevAlertIds = ids;
+  ALERTS = A;
+  // attach to nodes and cells
+  for(const n of G.nodes){ n.sev = 0; n.alerts = []; }
+  for(const c of all){ c.sev = 0; c.alerts = []; }
+  for(const a of A){
+    for(const id of [a.node, a.other]){ const n = id && G.byId.get(id); if(n){ n.alerts.push(a); if(a.sev > n.sev) n.sev = a.sev; } }
+    for(const k of a.cells){ const c = cells.get(k); if(c){ c.alerts.push(a); if(a.sev > c.sev) c.sev = a.sev; } }
+  }
+  $('ins-wrap').style.display = '';
+  renderAlerts(); renderKpis();
+}
+
+function alertVisible(a){ return (!alDom || a.dom === alDom) && (!alSev.size || alSev.has(a.sev)) && !($('al-hide').checked && ACK.has(a.id)); }
+function renderAlerts(){
+  if(!DATA) return;
+  const inDom = ALERTS.filter(a => !alDom || a.dom === alDom), open = inDom.filter(a => !ACK.has(a.id));
+  $('al-sevs').innerHTML = [4,3,2,1,0].map(s => { const n = open.filter(a=>a.sev===s).length;
+    return `<span class="al-sev ${alSev.has(s)?'on':''} ${n?'':'zero'}" data-s="${s}" style="--c:${SEVS[s].c}"><i></i>${SEVS[s].l} ${n}</span>`; }).join('');
+  const acked = inDom.length - open.length;
+  $('al-acked').textContent = acked ? `${acked} acknowledged` : '';
+  const list = ALERTS.filter(alertVisible);
+  $('al-n').textContent = `${list.length} shown · ${ALERTS.length} total`;
+  if(!list.length){ $('al-list').innerHTML = `<div class="al-empty"><span class="material-icons">verified</span>${ALERTS.length ? 'No alert matches these filters.' : 'No alerts — nothing unusual was observed.'}</div>`; return; }
+  const groups = new Map(); for(const a of list) (groups.get(a.type) || groups.set(a.type,[]).get(a.type)).push(a);
+  let first = true, html = '';
+  for(const [type, items] of groups){
+    const t = AT[type], sv = SEVS[t.sev], openIt = first && t.sev >= 3; first = false;
+    html += `<div class="al-group ${openIt?'open':''}" style="--c:${sv.c}">
+      <div class="al-gh" onclick="this.parentNode.classList.toggle('open')"><span class="sv">${sv.l}</span><span class="tt">${esc(t.t)}</span><span class="dm">${t.dom}</span><span class="ct">${items.length}</span></div>
+      <div class="al-gd">${esc(t.d)}</div>
+      <div class="al-items">${items.slice(0,CAP).map(a => `<div class="al-item ${a.node?'':'noloc'} ${ACK.has(a.id)?'acked':''}" data-id="${esc(a.id)}">
+          <div class="bd">${newAlertIds.has(a.id)?'<span class="new">NEW</span>':''}<b>${esc(a.ent)}</b><br>${a.text}</div>
+          <button class="ack" data-ack="${esc(a.id)}" title="${ACK.has(a.id)?'Bring this alert back':'Mark as handled — it stays hidden on later refreshes'}">${ACK.has(a.id)?'Undo':'Ack'}</button></div>`).join('')}
+        ${items.length > CAP ? `<div class="al-more">+${items.length-CAP} more — export the Alerts CSV for the full list.</div>` : ''}</div>
+    </div>`;
+  }
+  $('al-list').innerHTML = html;
+}
+$('al-list').addEventListener('click', ev => {
+  const ack = ev.target.closest('[data-ack]');
+  if(ack){ ev.stopPropagation(); const id = ack.dataset.ack; ACK.has(id) ? ACK.delete(id) : ACK.add(id);
+    try{ localStorage.setItem('ng_ack', JSON.stringify([...ACK].slice(-2000))); }catch(e){}
+    const open = [...document.querySelectorAll('.al-group.open .tt')].map(x=>x.textContent);
+    renderAlerts(); renderKpis();
+    document.querySelectorAll('.al-group').forEach(g => g.classList.toggle('open', open.includes(g.querySelector('.tt').textContent)));
+    return; }
+  const it = ev.target.closest('.al-item'); if(!it) return;
+  const a = ALERTS.find(x => x.id === it.dataset.id); if(!a || !a.node) return;
+  if(view === 'table') setView('split');
+  select(G.byId.get(a.node), true);
+});
+$('al-sevs').addEventListener('click', ev => { const b = ev.target.closest('.al-sev'); if(!b) return; const s = +b.dataset.s; alSev.has(s) ? alSev.delete(s) : alSev.add(s); renderAlerts(); });
+document.querySelectorAll('#al-tabs button').forEach(b => b.onclick = () => { alDom = b.dataset.d; document.querySelectorAll('#al-tabs button').forEach(x=>x.classList.toggle('on', x===b)); renderAlerts(); });
+function toggleAlerts(force){ const hide = force === undefined ? !$('alerts').classList.contains('hidden') : !force;
+  $('alerts').classList.toggle('hidden', hide); $('btn-alerts').classList.toggle('open', !hide); resize(); map.invalidateSize(); size3D(); }
+function focusAlerts(dom){ toggleAlerts(true); alDom = dom; alSev = new Set([4,3]); document.querySelectorAll('#al-tabs button').forEach(x=>x.classList.toggle('on', x.dataset.d===dom)); renderAlerts(); }
+
+// ══════════════ KPI STRIP ══════════════
+function renderKpis(){
+  if(!DATA || !G){ $('kpis').innerHTML = ''; return; }
+  const cells = [...DATA.cells.values()], open = ALERTS.filter(a => !ACK.has(a.id));
+  const cnt = (dom, s) => open.filter(a => a.dom===dom && a.sev===s).length;
+  const al = (dom, label) => { const c = cnt(dom,4), h = cnt(dom,3), md = cnt(dom,2), col = c ? SEVS[4].c : h ? SEVS[3].c : md ? SEVS[2].c : '#22c55e';
+    return `<div class="kpi alert" style="--c:${col}" onclick="focusAlerts('${dom}')" title="Show the critical and high ${dom} alerts">
+      <div class="kl">${label}</div><div class="kv" style="color:${col}">${c+h}<small>critical + high</small></div><div class="ks">${c} critical · ${h} high · ${md} medium</div></div>`; };
+  const sites = new Set(cells.map(c=>c.site)).size, tacs = new Set(cells.map(c=>c.tac)).size;
+  const rs = cells.filter(c=>c.rsrp!=null), rn = rs.reduce((a,c)=>a+c.n,0), rsrp = rn ? rs.reduce((a,c)=>a+c.rsrp*c.n,0)/rn : null;
+  const weak = cells.filter(c=>c.rsrp!=null && c.rsrp<=-110).length;
+  const age = DATA.refTs ? Date.now()/1000 - DATA.refTs : null;
+  const tile = (l,v,s) => `<div class="kpi"><div class="kl">${l}</div><div class="kv">${v}</div><div class="ks">${s}</div></div>`;
+  const t3 = cells.filter(c=>c.threat && c.threat.level===3).length, t2 = cells.filter(c=>c.threat && c.threat.level===2).length, t1 = cells.filter(c=>c.threat && c.threat.level===1).length;
+  const tc = t3 ? SEVS[4].c : t2 ? SEVS[3].c : t1 ? SEVS[2].c : '#22c55e';
+  const atk = `<div class="kpi alert" style="--c:${tc}" onclick="focusAlerts('SOC')" title="Cells scored as possible fake base stations">
+      <div class="kl">Attacker cells</div><div class="kv" style="color:${tc}">${t3+t2}<small>suspect${t3+t2===1?'':'s'}</small></div><div class="ks">${t3} probable · ${t2} suspected · ${t1} to verify</div></div>`;
+  $('kpis').innerHTML = atk + al('SOC','Security alerts') + al('NOC','Network alerts') +
+    tile('Sites', fmt(sites), `${fmt(cells.length)} cells · ${tacs} TACs`) +
+    tile('Relations', fmt(G.edges.length), `${G.edges.filter(e=>e.xtac).length} cross a TAC border`) +
+    tile('Signal', rsrp==null ? '–' : rsrp.toFixed(0)+'<small>dBm</small>', `${weak} cell${weak===1?'':'s'} at −110 or worse`) +
+    tile('Latest sample', age==null ? '–' : (age < 5400 ? Math.max(1,Math.round(age/60))+'<small>min ago</small>' : hrs(age)+'<small>ago</small>'), DATA.refTs ? dts(DATA.refTs)+' UTC' : '');
+}
+
+// ══════════════ INVENTORY TABLE ══════════════
+const TCOLS = [ ['cell','Cell','l'], ['tech','Tech','l'], ['tac','TAC'], ['pci','PCI'], ['band','Band'], ['arfcn','Ch'], ['n','Samples'], ['s','Devices'],
+  ['rsrp','RSRP'], ['snr','SNR'], ['days','Days'], ['fts','First seen'], ['lts','Last seen'], ['threat','Attacker score'], ['sev','Alerts','l'] ];
+let tSort = { k:'threat', d:-1 };
+function renderTable(){
+  if(view !== 'table') return;
+  if(!DATA){ $('tbl').innerHTML = ''; $('tbl-cnt').textContent = 'No data yet — build a graph first'; return; }
+  const q = $('tbl-q').value.trim().toLowerCase(), only = $('tbl-al').checked;
+  const val = (c,k) => k==='cell' ? c.siteNum*10000+c.sector : (k==='tac'||k==='pci'||k==='band'||k==='arfcn') ? (+c[k]||0) : k==='sev' ? c.sev*1000+c.alerts.length : k==='threat' ? c.threat.score : c[k];
+  let rows = [...DATA.cells.values()].filter(c => (!only || c.alerts.length) && (!q || `${c.siteNum}-${c.sector} ${c.tech} tac${c.tac} pci${c.pci} b${c.band} ${c.arfcn} ${c.alerts.map(a=>AT[a.type].t).join(' ')}`.toLowerCase().includes(q)));
+  rows.sort((a,b) => { const x=val(a,tSort.k), y=val(b,tSort.k); return (x==null?-1e18:x) < (y==null?-1e18:y) ? -tSort.d : (x==null?-1e18:x) > (y==null?-1e18:y) ? tSort.d : b.n - a.n; });
+  $('tbl-cnt').textContent = `${rows.length} of ${DATA.cells.size} cells` + (rows.length > 600 ? ' · showing the first 600' : '');
+  const selK = selected ? new Set(selected.cells.map(c=>c.k)) : null;
+  $('tbl').innerHTML = `<tr>${TCOLS.map(([k,l,cl]) => `<th class="${cl||''} ${tSort.k===k?'sorted':''}" data-k="${k}">${l}${tSort.k===k ? (tSort.d<0?' ↓':' ↑') : ''}</th>`).join('')}</tr>` +
+    rows.slice(0,600).map(c => `<tr class="r ${selK && selK.has(c.k)?'sel':''}" data-k="${esc(c.k)}">
+      <td class="l"><b>${c.siteNum}-${c.sector}</b></td><td class="l">${c.tech}</td><td>${esc(c.tac)}</td><td>${esc(c.pci)}</td><td>${esc(c.band||'–')}</td><td>${esc(c.arfcn||'–')}</td>
+      <td>${fmt(c.n)}</td><td>${fmt(c.s)}</td><td style="${c.rsrp!=null&&c.rsrp<=-110?'color:#fca5a5':''}">${c.rsrp==null?'–':c.rsrp.toFixed(0)}</td><td>${c.snr==null?'–':c.snr.toFixed(1)}</td>
+      <td>${c.days||'–'}</td><td>${dts(c.fts)}</td><td>${dts(c.lts)}</td>
+      <td style="font-weight:600;color:${c.threat.level===3?SEVS[4].c:c.threat.level===2?SEVS[3].c:c.threat.level===1?SEVS[2].c:'var(--text-dim)'}">${c.threat.score||'–'}</td>
+      <td class="l">${c.alerts.length ? `<span class="svb" style="--c:${SEVS[c.sev].c}" title="${esc(c.alerts.map(a=>AT[a.type].t).join('\n'))}">${SEVS[c.sev].l} · ${c.alerts.length}</span>` : ''}</td></tr>`).join('');
+}
+$('tbl').addEventListener('click', ev => {
+  const th = ev.target.closest('th'); if(th){ const k = th.dataset.k; tSort = { k, d: tSort.k===k ? -tSort.d : (k==='cell'||k==='tech' ? 1 : -1) }; renderTable(); return; }
+  const tr = ev.target.closest('tr.r'); if(!tr || !G) return;
+  const c = DATA.cells.get(tr.dataset.k); select(G.byId.get(G.level==='cell' ? c.k : c.site) || null, false); renderTable();
+});
+
+// ══════════════ AUTO REFRESH ══════════════
+let refreshT = 0;
+function setRefresh(){ clearInterval(refreshT); const m = +$('c-refresh').value; if(m) refreshT = setInterval(() => { if(DATA && DATA.meta.source === 'clickhouse' && !$('btn-build').disabled) buildFromDb(true); }, m*60000); }
+function stamp(){ $('upd').textContent = 'Updated ' + new Date().toTimeString().slice(0,5); }
+
+// ══════════════ COLOUR ══════════════
+const PALETTE = ['#60a5fa','#f59e0b','#34d399','#f472b6','#a78bfa','#22d3ee','#fb7185','#facc15','#4ade80','#c084fc','#fb923c','#2dd4bf','#93c5fd','#fda4af'];
+let colorOf = () => '#60a5fa', legendItems = [];
+function recolor(){
+  if(!G) return;
+  const mode_ = $('c-color').value;
+  if(mode_ === 'rsrp'){
+    const sc = d3.scaleLinear().domain([-120,-105,-90,-75]).range(['#ef4444','#f59e0b','#22c55e','#06b6d4']).clamp(true);
+    colorOf = n => n.rsrp==null ? '#64748b' : sc(n.rsrp);
+    legendItems = [['#ef4444','≤ -120 dBm'],['#f59e0b','-105'],['#22c55e','-90'],['#06b6d4','≥ -75']];
+  } else {
+    const key = mode_==='tac' ? n=>n.tac : mode_==='band' ? n=>n.band : n=>n.tech;
+    const w = new Map(); for(const n of G.nodes) w.set(key(n), (w.get(key(n))||0)+1);
+    const ranked = [...w.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+    const cm = new Map(ranked.map((v,i)=>[v, i<PALETTE.length ? PALETTE[i] : '#64748b']));
+    colorOf = n => cm.get(key(n));
+    const pre = mode_==='tac' ? 'TAC ' : mode_==='band' ? 'B' : '';
+    legendItems = ranked.slice(0,PALETTE.length).map(v=>[cm.get(v), pre+(v===''?'?':v)+` (${w.get(v)})`]);
+    if(ranked.length > PALETTE.length) legendItems.push(['#64748b', `+${ranked.length-PALETTE.length} more`]);
+  }
+  for(const n of G.nodes) n.color = colorOf(n);
+  $('legend').style.display = '';
+  if(view==='3d') build3D();
+  $('legend').innerHTML = `<div class="lg-t">${$('c-color').selectedOptions[0].text}</div>` + legendItems.map(([c,l])=>`<span class="lg-i"><span class="sw" style="background:${c}"></span>${esc(l)}</span>`).join('') +
+    `<div class="lg-t" style="margin-top:6px">Edges</div><span class="lg-i"><span class="ln" style="border-color:#5b7fb5"></span>same TAC</span><span class="lg-i"><span class="ln" style="border-color:#22d3ee"></span>crosses TAC</span><span class="lg-i"><span class="sw" style="border:2px solid #ef4444;background:none"></span>critical alert</span><span class="lg-i"><span class="sw" style="border:2px solid #f59e0b;background:none"></span>high alert</span>` +
+    (G.etype==='both' ? `<span class="lg-i"><span class="ln" style="border-color:#5b7fb5;border-top-style:dashed"></span>overlap only</span>` : '');
+  draw(); drawMap();
+}
+
+// ══════════════ FORCE GRAPH (canvas) ══════════════
+const canvas = $('gc'), ctx = canvas.getContext('2d');
+let sim = null, tf = d3.zoomIdentity, W = 0, H = 0, dpr = 1;
+const zoom = d3.zoom().scaleExtent([0.05, 12]).on('zoom', ev => { tf = ev.transform; draw(); });
+d3.select(canvas).call(zoom).on('dblclick.zoom', null);
+function resize(){ const r = canvas.parentNode.getBoundingClientRect(); dpr = window.devicePixelRatio||1; W=r.width; H=r.height; canvas.width=Math.max(1,W*dpr); canvas.height=Math.max(1,H*dpr); draw(); }
+window.addEventListener('resize', () => { resize(); map.invalidateSize(); size3D(); });
+
+function startSim(){
+  if(sim) sim.stop();
+  const b = DATA.meta.bbox, la0=(b.la0+b.la1)/2, lo0=(b.lo0+b.lo1)/2, cosl=Math.cos(la0*Math.PI/180);
+  const spanKm = Math.max(1, haversine({lat:b.la0,lng:lo0},{lat:b.la1,lng:lo0}), haversine({lat:la0,lng:b.lo0},{lat:la0,lng:b.lo1}));
+  const S = (900 * Math.max(1, Math.sqrt(G.nodes.length/250))) / (spanKm/111);   // plane units per degree
+  for(const n of G.nodes){ n.gx=(n.lng-lo0)*cosl*S; n.gy=-(n.lat-la0)*S; if(n.x==null){ n.x=n.gx; n.y=n.gy; } }
+  const maxW = Math.max(1, ...G.edges.map(e=>e.w));
+  sim = d3.forceSimulation(G.nodes)
+    .force('link', d3.forceLink(G.edges).id(d=>d.id).distance(e=>18+50*(1-Math.log1p(e.w)/Math.log1p(maxW))).strength(e=>0.15+0.6*Math.log1p(e.w)/Math.log1p(maxW)))
+    .force('charge', d3.forceManyBody().strength(G.level==='cell'?-22:-70).distanceMax(600))
+    .force('collide', d3.forceCollide(d=>d.r+1.5))
+    .force('x', d3.forceX(d=>d.gx)).force('y', d3.forceY(d=>d.gy))
+    .alphaDecay(0.03).on('tick', draw);
+  setAnchor(true);
+}
+function setAnchor(noRestart){
+  if(!sim) return;
+  const a = +$('c-anchor').value;
+  sim.force('x').strength(a); sim.force('y').strength(a);
+  sim.force('link').strength(a>=1 ? 0 : (e=>0.15+0.6*Math.log1p(e.w)/Math.log1p(Math.max(1,...G.edges.map(x=>x.w)))));
+  sim.force('charge').strength(a>=1 ? 0 : (G.level==='cell'?-22:-70));
+  sim.alpha(noRestart===true ? 1 : 0.8).restart();
+}
+function fitGraph(){
+  if(!G || !G.nodes.length || !W) return;
+  const xs = d3.extent(G.nodes, n=>n.x), ys = d3.extent(G.nodes, n=>n.y);
+  const k = Math.min(8, 0.88 / Math.max((xs[1]-xs[0])/W, (ys[1]-ys[0])/H, 1e-6));
+  d3.select(canvas).call(zoom.transform, d3.zoomIdentity.translate(W/2 - k*(xs[0]+xs[1])/2, H/2 - k*(ys[0]+ys[1])/2).scale(k));
+}
+function edgeStyle(e){ const ovOnly = G.etype==='both' && e.ho < G.min; return { col: e.xtac ? '34,211,238' : '91,127,181', dash: ovOnly }; }
+function draw(){
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
+  if(!G) return;
+  ctx.save(); ctx.translate(tf.x, tf.y); ctx.scale(tf.k, tf.k);
+  const selSet = selected ? new Set([selected, ...selected.nb.map(e=>e.a===selected?e.b:e.a)]) : null;
+  const maxW = G.maxW || (G.maxW = Math.max(1, ...G.edges.map(e=>e.w)));
+  for(const e of G.edges){
+    const s = edgeStyle(e), on = !selected || e.a===selected || e.b===selected;
+    const t = Math.log1p(e.w)/Math.log1p(maxW);
+    ctx.strokeStyle = `rgba(${s.col},${on ? (selected?0.9:0.18+0.5*t) : 0.04})`;
+    ctx.lineWidth = (0.4 + 2.6*t) / Math.sqrt(tf.k);
+    ctx.setLineDash(s.dash ? [3/tf.k, 3/tf.k] : []);
+    ctx.beginPath(); ctx.moveTo(e.a.x, e.a.y); ctx.lineTo(e.b.x, e.b.y); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  const rs = 1/Math.pow(tf.k, 0.55);
+  for(const n of G.nodes){
+    const on = !selSet || selSet.has(n);
+    ctx.globalAlpha = on ? 1 : 0.15;
+    ctx.fillStyle = n.color || '#60a5fa';
+    ctx.beginPath(); ctx.arc(n.x, n.y, n.r*rs, 0, 6.2832); ctx.fill();
+    if(n.tech==='NR'){ ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1/tf.k; ctx.stroke(); }
+    if(n.sev >= 3){ ctx.strokeStyle=SEVS[n.sev].c; ctx.lineWidth=2/tf.k; ctx.beginPath(); ctx.arc(n.x, n.y, n.r*rs+3/tf.k, 0, 6.2832); ctx.stroke(); }
+    if(n===selected || n===hovered){ ctx.strokeStyle='#fff'; ctx.lineWidth=2/tf.k; ctx.beginPath(); ctx.arc(n.x,n.y,n.r*rs+2.5/tf.k,0,6.2832); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+  const showAll = tf.k > 2.2 || G.nodes.length <= 60;
+  ctx.font = `${11/tf.k}px JetBrains Mono, monospace`; ctx.fillStyle = 'rgba(226,232,240,.92)'; ctx.textAlign='center';
+  for(const n of G.nodes){ if(showAll || (selSet && selSet.has(n)) || n===hovered) ctx.fillText(n.label, n.x, n.y - n.r*rs - 3/tf.k); }
+  ctx.restore();
+}
+function nodeAt(px, py){
+  if(!G) return null;
+  const x = (px - tf.x)/tf.k, y = (py - tf.y)/tf.k, rs = 1/Math.pow(tf.k, 0.55);
+  let best = null, bd = Infinity;
+  for(const n of G.nodes){ const d = Math.hypot(n.x-x, n.y-y) - n.r*rs; if(d < 4/tf.k && d < bd){ bd=d; best=n; } }
+  return best;
+}
+canvas.addEventListener('mousemove', ev => {
+  const r = canvas.getBoundingClientRect(), n = nodeAt(ev.clientX-r.left, ev.clientY-r.top);
+  if(n !== hovered){ hovered = n; draw(); }
+  canvas.style.cursor = n ? 'pointer' : 'grab';
+  const tip = $('tip');
+  if(n){ tip.style.display='block'; tip.style.left=(ev.clientX+14)+'px'; tip.style.top=(ev.clientY+12)+'px';
+    tip.textContent = `${n.tech} ${G.level==='site'?'site':'cell'} ${n.label}\nTAC ${n.tac} · band ${n.band||'?'}\n${fmt(n.n)} samples · ${n.deg} relations`; }
+  else tip.style.display='none';
+});
+canvas.addEventListener('mouseleave', () => { $('tip').style.display='none'; hovered=null; draw(); });
+canvas.addEventListener('click', ev => { const r = canvas.getBoundingClientRect(); select(nodeAt(ev.clientX-r.left, ev.clientY-r.top), false); });
+
+// ══════════════ SELECTION + DETAIL ══════════════
+function select(n, focus){
+  selected = n || null;
+  renderDetail(); draw(); drawMap(); refresh3D();
+  if(n && focus){
+    if(W) d3.select(canvas).transition().duration(450).call(zoom.transform, d3.zoomIdentity.translate(W*0.36 - 2.5*n.x, H/2 - 2.5*n.y).scale(2.5));
+    map.setView([n.lat, n.lng], Math.max(map.getZoom(), 15));
+  } else if(n && !map.getBounds().contains([n.lat,n.lng])) map.panTo([n.lat,n.lng]);
+}
+function renderDetail(){
+  const d = $('detail'); if(!selected){ d.style.display='none'; return; }
+  const n = selected, row = (k,v) => `<tr><td>${k}</td><td class="v">${v}</td></tr>`;
+  const nb = n.nb.map(e=>({ e, o: e.a===n ? e.b : e.a })).sort((x,y)=>y.e.w-x.e.w);
+  const tacs = [...new Set(n.cells.map(c=>c.tac))], bands = [...new Set(n.cells.map(c=>c.band).filter(Boolean))];
+  d.innerHTML = `<h3><span class="sw" style="width:10px;height:10px;border-radius:50%;background:${n.color};display:inline-block"></span>${n.tech} ${G.level==='site'?'site':'cell'} ${esc(n.label)}<span class="material-icons x" onclick="select(null)">close</span></h3>
+    <div class="sub">${n.lat.toFixed(5)}, ${n.lng.toFixed(5)} (estimated)</div>
+    ${threatHtml(n.cells.slice().sort((a,b)=>(b.threat?b.threat.score:0)-(a.threat?a.threat.score:0))[0])}
+    ${(n.alerts||[]).filter(a=>!a.type.startsWith('attacker_')).slice(0,6).map(a=>`<div class="d-al" style="--c:${SEVS[a.sev].c}"><b>${esc(AT[a.type].t)}</b><span>${a.text}</span></div>`).join('')}
+    <table>${row('TAC', esc(tacs.join(', ')))}${row('Bands', esc(bands.join(', ')||'–'))}${row('Samples', fmt(n.n))}${row('Devices', fmt(n.s))}
+      ${row('Median RSRP', n.rsrp==null?'–':n.rsrp.toFixed(0)+' dBm')}${row('Relations', n.deg)}${G.level==='site'?row('Intra-site changes', fmt(n.intraHo)):''}</table>
+    <div class="sec">${G.level==='site'?'Cells':'Cell'}</div>
+    <table><tr><th>Sec</th><th>PCI</th><th>Band</th><th>Ch</th><th>RSRP</th><th>n</th></tr>
+      ${n.cells.map(c=>`<tr><td>${c.sector}</td><td>${esc(c.pci)}</td><td>${esc(c.band)}</td><td>${esc(c.arfcn)}</td><td>${c.rsrp==null?'–':c.rsrp.toFixed(0)}</td><td>${fmt(c.n)}</td></tr>`).join('')}</table>
+    <div class="sec">Strongest relations (${nb.length})</div>
+    <table><tr><th>Node</th><th>TAC</th><th>Chg</th><th>Ovl</th><th>km</th></tr>
+      ${nb.slice(0,14).map(x=>`<tr class="nb" data-id="${esc(x.o.id)}"><td>${esc(x.o.label)}${x.o.tech!==n.tech?' '+x.o.tech:''}</td><td style="${x.e.xtac?'color:#22d3ee':''}">${esc(x.o.tac)}</td><td>${fmt(x.e.ho)}</td><td>${x.e.ov}</td><td>${x.e.km.toFixed(1)}</td></tr>`).join('') || '<tr><td colspan="5">none at this threshold</td></tr>'}</table>`;
+  d.style.display = 'block';
+  d.querySelectorAll('tr.nb').forEach(tr => tr.onclick = () => select(G.byId.get(tr.dataset.id), true));
+}
+
+// ══════════════ MAP ══════════════
+const map = L.map('map', { preferCanvas:true, zoomControl:true }).setView([32.08, 34.79], 12);
+addDarkBasemap(map, { maxZoom: 19 });
+const edgeLayer = L.layerGroup().addTo(map), nodeLayer = L.layerGroup().addTo(map), bboxLayer = L.layerGroup().addTo(map);
+const mapRenderer = L.canvas({ padding: 0.3 });
+function drawBbox(){ bboxLayer.clearLayers(); areaSummary();
+  try{ const b=bbox(), st={ color:'#60a5fa', weight:1.5, dashArray:'6 5', fillColor:'#3b82f6', fillOpacity:G?0:0.05, interactive:false };
+    (b.poly ? L.polygon(b.poly, st) : L.rectangle([[b.la0,b.lo0],[b.la1,b.lo1]], st)).addTo(bboxLayer); }catch(e){} }
+map.on('draw:created', e => { const ll=e.layer.getLatLngs()[0]; const poly = e.layerType==='rectangle' ? null : ll.map(q=>[q.lat,q.lng]); stopAreaDraw(); setArea(ll, poly); });
+map.on('draw:drawstop', () => { if(areaDrawer) stopAreaDraw(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape'){ if(areaDrawer) stopAreaDraw(); $('opts-pop').classList.remove('open'); $('btn-opts').classList.remove('open'); } });
+document.addEventListener('click', () => { $('opts-pop').classList.remove('open'); $('btn-opts').classList.remove('open'); });
+function toggleOpts(ev){ ev.stopPropagation(); const o=$('opts-pop').classList.toggle('open'); $('btn-opts').classList.toggle('open', o); }
+function toggleHelp(min){ $('g3-help').classList.toggle('min', min); try{ localStorage.setItem('ng_help_min', min?'1':''); }catch(e){} }
+function fitBbox(){ try{ const b=bbox(); map.fitBounds([[b.la0,b.lo0],[b.la1,b.lo1]]); drawBbox(); }catch(e){} }
+function drawMap(){
+  edgeLayer.clearLayers(); nodeLayer.clearLayers();
+  if(!G) return;
+  const maxW = Math.max(1, ...G.edges.map(e=>e.w));
+  const es = selected ? selected.nb : [...G.edges].sort((a,b)=>b.w-a.w).slice(0, 2500);
+  for(const e of es){
+    const s = edgeStyle(e), t = Math.log1p(e.w)/Math.log1p(maxW);
+    L.polyline([[e.a.lat,e.a.lng],[e.b.lat,e.b.lng]], { renderer:mapRenderer, color:`rgb(${s.col})`, weight: selected ? 1.5+3*t : 0.6+2.4*t, opacity: selected ? 0.9 : 0.25+0.5*t, dashArray: s.dash?'4 4':null, interactive:false }).addTo(edgeLayer);
+  }
+  const selSet = selected ? new Set([selected, ...selected.nb.map(e=>e.a===selected?e.b:e.a)]) : null;
+  for(const n of G.nodes){
+    const on = !selSet || selSet.has(n);
+    if(n.sev >= 3) L.circleMarker([n.lat,n.lng], { renderer:mapRenderer, radius: Math.max(2.5, n.r*0.75)+4, color:SEVS[n.sev].c, weight:2, fill:false, opacity:on?0.95:0.25, interactive:false }).addTo(nodeLayer);
+    const m = L.circleMarker([n.lat,n.lng], { renderer:mapRenderer, radius: Math.max(2.5, n.r*0.75), color: n===selected ? '#fff' : (n.tech==='NR' ? 'rgba(255,255,255,.7)' : 'rgba(10,22,40,.9)'), weight: n===selected?2:1, fillColor:n.color, fillOpacity:on?0.95:0.2, opacity:on?1:0.2 }).addTo(nodeLayer);
+    m.on('click', () => select(n, false));
+    m.bindTooltip(`${n.tech} ${n.label} · TAC ${n.tac}`, { direction:'top', opacity:0.9 });
+  }
+}
+
+
+// ══════════════ 3D MODEL ══════════════
+// Fixed, meaningful coordinates (no force layout): floor = geography, height = hierarchy layer.
+let view = 'map', g3 = null, g3data = null, g3raf = 0;
+const LAYER_Y = { op: 330, tac: 200, site: 60, cell: -70 };
+const BAND_COLORS = ['#fbbf24','#34d399','#f472b6','#a78bfa','#fb923c','#22d3ee','#f87171','#a3e635'];
+function setView(v){
+  if(v === '3d' && (typeof ForceGraph3D === 'undefined')){ status('3D library could not be loaded — showing 2D', 'err'); v = 'split'; }
+  view = v;
+  document.querySelectorAll('#seg-view button').forEach(x=>x.classList.toggle('active', x.dataset.v===v));
+  $('panes').className = 'v-'+v;
+  if(v === '3d'){ build3D(); }
+  else if(v === 'table'){ renderTable(); }
+  else { resize(); map.invalidateSize(); if(G){ fitGraph(); drawMap(); if(!map._fitOnce){ map._fitOnce = true; fitBbox(); } } }
+}
+function size3D(){ if(g3 && view==='3d'){ const r=$('g3').getBoundingClientRect(); g3.width(r.width).height(r.height); } }
+function build3D(){
+  if(view !== '3d' || !G || !G.nodes.length) return;
+  if(typeof ForceGraph3D === 'undefined'){ setView('split'); return; }
+  const b = DATA.meta.bbox, la0=(b.la0+b.la1)/2, lo0=(b.lo0+b.lo1)/2, cosl=Math.cos(la0*Math.PI/180);
+  const span = Math.max((b.la1-b.la0), (b.lo1-b.lo0)*cosl), S = 820/span;
+  const P = (lat,lng) => [ (lng-lo0)*cosl*S, -(lat-la0)*S ];   // x (east), z (south → towards viewer)
+  // site objects, whatever the 2D level is
+  let sites;
+  if(G.level === 'site') sites = G.nodes.map(n => ({ id:n.id, label:n.label, tac:n.tac, tech:n.tech, lat:n.lat, lng:n.lng, n:n.n, ref:n, cells:n.cells.map(c=>({ c, ref:null })) }));
+  else {
+    const m = new Map();
+    for(const n of G.nodes){ const c=n.cells[0]; let s=m.get(c.site); if(!s){ s={ id:c.site, label:String(c.siteNum), tech:c.tech, n:0, la:0, lo:0, ref:null, cells:[], tw:new Map() }; m.set(c.site,s); }
+      s.cells.push({ c, ref:n }); s.n+=c.n; s.la+=c.slat*c.n; s.lo+=c.slng*c.n; s.tw.set(c.tac,(s.tw.get(c.tac)||0)+c.n); }
+    sites = [...m.values()].map(s => ({ ...s, lat:s.la/s.n, lng:s.lo/s.n, tac:[...s.tw.entries()].sort((a,b)=>b[1]-a[1])[0][0] }));
+  }
+  const tacW = new Map(); for(const s of sites) tacW.set(s.tac, (tacW.get(s.tac)||0)+1);
+  const tacRank = [...tacW.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+  const tacColor = new Map(tacRank.map((t,i)=>[t, i<PALETTE.length ? PALETTE[i] : '#64748b']));
+  const bandW = new Map(); for(const c of DATA.cells.values()) bandW.set(c.band,(bandW.get(c.band)||0)+1);
+  const bandRank = [...bandW.entries()].sort((a,b)=>b[1]-a[1]).map(x=>x[0]);
+  const bandColor = new Map(bandRank.map((v,i)=>[v, i<BAND_COLORS.length ? BAND_COLORS[i] : '#94a3b8']));
+  $('g3-bands').innerHTML = '<span style="color:var(--text-dim)">Cells by band: </span>' + bandRank.slice(0,8).map(v=>`<span class="sw" style="background:${bandColor.get(v)}"></span>B${esc(v||'?')} `).join('');
+
+  const nodes = [], links = [], maxN = Math.max(1, ...sites.map(s=>s.n));
+  const m = DATA.meta, opLabel = m.source==='demo' ? 'Demo operator' : `PLMN ${m.mcc}-${String(m.mnc).padStart(2,'0')}`;
+  const add = (o, x, y, z) => { o.x=o.fx=x; o.y=o.fy=y; o.z=o.fz=z; nodes.push(o); return o; };
+  add({ id:'__op', kind:'op', label:opLabel, color:'#ffffff', val:70, tip:`${opLabel}\n${tacRank.length} tracking areas · ${sites.length} sites` }, 0, LAYER_Y.op, 0);
+  const tacAcc = new Map();
+  const showCells = DATA.cells.size <= 6000;
+  const idx3 = new Map();
+  for(const s of sites){
+    const [x,z] = P(s.lat, s.lng);
+    const sn = add({ id:'s:'+s.id, kind:'site', label:s.label, ref:s.ref, tac:s.tac, color: s.ref ? s.ref.color : '#64748b', val: 3+22*s.n/maxN,
+      tip:`${s.tech} site ${s.label}\nTAC ${s.tac} · ${s.cells.length} cells · ${fmt(s.n)} samples` }, x, LAYER_Y.site, z);
+    if(s.ref) idx3.set(s.ref, sn);
+    let t = tacAcc.get(s.tac); if(!t){ t={ x:0, z:0, n:0, sites:0 }; tacAcc.set(s.tac,t); } t.x+=x; t.z+=z; t.n+=s.n; t.sites++;
+    links.push({ source:'t:'+s.tac, target:sn.id, kind:'h' });
+    if(showCells) s.cells.forEach((cc,i) => {
+      const ang = (i/s.cells.length)*6.2832, rad = 7 + 1.2*s.cells.length;
+      const cn = add({ id:'c:'+cc.c.k, kind:'cell', label:`${cc.c.siteNum}-${cc.c.sector}`, ref:cc.ref, tac:cc.c.tac, color: cc.ref ? cc.ref.color : (bandColor.get(cc.c.band)||'#94a3b8'), val: cc.ref ? 2.5 : 1.2,
+        tip:`Cell ${cc.c.siteNum}-${cc.c.sector} · PCI ${cc.c.pci}\nBand ${cc.c.band||'?'} · ch ${cc.c.arfcn||'?'} · ${fmt(cc.c.n)} samples` }, x+Math.cos(ang)*rad, LAYER_Y.cell, z+Math.sin(ang)*rad);
+      if(cc.ref) idx3.set(cc.ref, cn);
+      links.push({ source:sn.id, target:cn.id, kind:'h' });
+    });
+  }
+  for(const [tac, t] of tacAcc){
+    add({ id:'t:'+tac, kind:'tac', label:'TAC '+(tac||'?'), tac, color:tacColor.get(tac), val:26, tip:`TAC ${tac}\n${t.sites} sites · ${fmt(t.n)} samples` }, t.x/t.sites, LAYER_Y.tac, t.z/t.sites);
+    links.push({ source:'__op', target:'t:'+tac, kind:'h' });
+  }
+  const maxW = Math.max(1, ...G.edges.map(e=>e.w));
+  for(const e of G.edges){ const a=idx3.get(e.a), c=idx3.get(e.b); if(!a||!c) continue;
+    links.push({ source:a.id, target:c.id, kind:'m', e, t:Math.log1p(e.w)/Math.log1p(maxW) }); }
+  // floor frames so each layer reads as a plane
+  const hx = (b.lo1-b.lo0)*cosl*S/2 + 25, hz = (b.la1-b.la0)*S/2 + 25;
+  for(const [ly, on] of [['site',true],['cell',showCells]]) if(on){
+    const cs = [[-hx,-hz],[hx,-hz],[hx,hz],[-hx,hz]].map((p,i)=>add({ id:`f:${ly}:${i}`, kind:'frame', color:'#1e3a5f', val:0.01 }, p[0], LAYER_Y[ly], p[1]));
+    cs.forEach((c,i)=>links.push({ source:c.id, target:cs[(i+1)%4].id, kind:'f' }));
+  }
+  g3data = { nodes, links, idx3, layers:[['Operator','op',true],['Tracking areas','tac',true],['Sites','site',true],['Cells','cell',showCells]].filter(x=>x[2]), hx, hz };
+
+  if(!g3){
+    try{
+      g3 = ForceGraph3D({ controlType:'orbit' })($('g3'))
+        .backgroundColor('rgba(0,0,0,0)').showNavInfo(false)
+        .nodeRelSize(2.2).nodeOpacity(0.95).nodeResolution(10)
+        .nodeVal(n=>n.val).nodeLabel(n => n.tip ? `<div style="font:11px JetBrains Mono,monospace;white-space:pre;background:rgba(10,22,40,.95);border:1px solid #1e3a5f;border-radius:6px;padding:6px 8px;color:#e2e8f0">${esc(n.tip)}</div>` : '')
+        .linkOpacity(0.6).linkResolution(5)
+        .enableNodeDrag(false).cooldownTicks(4).warmupTicks(0)
+        .onNodeClick(n => { if(n.ref) select(n.ref === selected ? null : n.ref, false); else if(n.kind==='tac' || n.kind==='op') select(null); })
+        .onBackgroundClick(() => select(null));
+      g3.d3Force('charge', null); g3.d3Force('center', null);
+    }catch(err){ g3 = null; status('WebGL not available — showing 2D ('+err.message.substring(0,60)+')', 'err'); setView('split'); return; }
+  }
+  size3D(); style3D();
+  g3.graphData({ nodes, links });
+  if(g3.d3Force('link')) g3.d3Force('link').strength(0);
+  if(!g3._camSet){ g3.cameraPosition({ x:0, y:540, z:1180 }, { x:0, y:95, z:0 }, 0); g3._camSet = true; }
+  cancelAnimationFrame(g3raf); labels3D();
+}
+function style3D(){
+  if(!g3) return;
+  const sel = selected, near = sel ? new Set([sel, ...sel.nb.map(e=>e.a===sel?e.b:e.a)]) : null;
+  const dim = n => sel && (n.kind==='site' || n.kind==='cell') && !(n.ref && near.has(n.ref));
+  g3.nodeColor(n => n.kind==='frame' ? 'rgba(0,0,0,0)' : dim(n) ? '#243450' : n.color)
+    .linkColor(l => l.kind==='f' ? '#1e3a5f' : l.kind==='h' ? (sel ? '#1b2a45' : '#3a4d6e')
+        : (sel && l.e.a!==sel && l.e.b!==sel) ? '#16233c' : (l.e.xtac ? '#22d3ee' : '#7aa2e3'))
+    .linkWidth(l => l.kind!=='m' ? 0 : (sel && l.e.a!==sel && l.e.b!==sel) ? 0 : 0.5 + 3.2*l.t)
+    .linkDirectionalParticles(l => l.kind==='m' && sel && (l.e.a===sel || l.e.b===sel) ? 2 + Math.round(4*l.t) : 0)
+    .linkDirectionalParticleWidth(2.2).linkDirectionalParticleSpeed(0.012);
+}
+function refresh3D(){ if(g3 && view==='3d' && g3data) style3D(); }
+function labels3D(){
+  if(!g3 || view!=='3d' || !g3data){ return; }
+  const box = $('g3-labels'), r = $('g3').getBoundingClientRect(); let html = '';
+  const put = (x,y,z,cls,text) => { const p = g3.graph2ScreenCoords(x,y,z); if(cls==='layer') p.x = Math.min(p.x, r.width-130); if(p.x<-50||p.y<-20||p.x>r.width+50||p.y>r.height+20) return; html += `<div class="g3-lab ${cls}" style="left:${p.x.toFixed(0)}px;top:${p.y.toFixed(0)}px">${esc(text)}</div>`; };
+  for(const n of g3data.nodes){ if(n.kind==='op') put(n.x,n.y,n.z,'op',n.label); else if(n.kind==='tac') put(n.x,n.y,n.z,'',n.label); }
+  for(const [name, key] of g3data.layers) put(g3data.hx+22, LAYER_Y[key], g3data.hz, 'layer', name);
+  if(selected){ const sn = g3data.idx3.get(selected); if(sn){ put(sn.x,sn.y,sn.z,'sel',sn.label);
+    selected.nb.slice().sort((a,b)=>b.w-a.w).slice(0,10).forEach(e=>{ const o=g3data.idx3.get(e.a===selected?e.b:e.a); if(o) put(o.x,o.y,o.z,'',o.label); }); } }
+  box.innerHTML = html;
+  g3raf = requestAnimationFrame(labels3D);
+}
+
+// ══════════════ BUILD ══════════════
+function rebuild(){
+  if(!DATA) return;
+  const prev = G ? new Map(G.nodes.map(n=>[n.id,[n.x,n.y]])) : null, sameLevel = G && G.level === $('c-level').value;
+  const selId = selected && sameLevel ? selected.id : null;
+  buildLevel();
+  if(prev && sameLevel) for(const n of G.nodes){ const p=prev.get(n.id); if(p){ n.x=p[0]; n.y=p[1]; } }
+  selected = selId ? G.byId.get(selId) || null : null; hovered = null;
+  $('empty').style.display = G.nodes.length ? 'none' : 'flex';
+  const tacs = new Set(G.nodes.map(n=>n.tac));
+  $('map-hint').style.display = 'none';
+  $('g3-empty').style.display = G.nodes.length ? 'none' : 'flex';
+  startSim(); computeAlerts(); recolor(); renderDetail(); renderTable(); stamp();
+  if(!sameLevel || !prev){ sim.stop(); sim.tick(Math.min(220, Math.ceil(60000/Math.max(50,G.nodes.length)) + 40)); fitGraph(); sim.alpha(0.3).restart(); }
+}
+async function buildFromDb(keep){
+  keep = keep === true;
+  const btn = $('btn-build'); clearStatus();
+  try{
+    if(!onPlmnInput()) throw new Error('Type a valid PLMN first, for example 425-02');
+    const opts = { bbox:bbox(), techs:techList(), days:+$('f-days').value, mcc:$('f-mcc').value.trim(), mnc:$('f-mnc').value.trim() };
+    if(!/^\d+$/.test(opts.mcc) || !/^\d+$/.test(opts.mnc)) throw new Error('MCC and MNC must be numeric');
+    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Querying…';
+    $('demo-banner').style.display = 'none';
+    status('Reading schema…'); const cols = await loadSchema();
+    const p = sqlParts(cols, opts);
+    status(`Session key: ${p.SESS || 'none found'}`);
+    let t = performance.now();
+    status('1/3 cells…'); const cells = (await executeClickHouseQuery(qCells(p))).data;
+    status(`   ${cells.length} cells · ${((performance.now()-t)/1000).toFixed(1)}s`, 'ok');
+    if(!cells.length) throw new Error(`No samples for ${opts.mcc}-${opts.mnc} in this area and period`);
+    let trans = [], bins = [];
+    const jobs = [];
+    if(p.SESS) jobs.push((async()=>{ const t0=performance.now(); try{ trans = (await executeClickHouseQuery(qTransitions(p))).data; status(`2/3 cell changes: ${trans.length} pairs · ${((performance.now()-t0)/1000).toFixed(1)}s`, 'ok'); }catch(e){ status('2/3 cell changes failed: '+e.message.substring(0,220), 'err'); } })());
+    else status('2/3 skipped — no session/device column', 'err');
+    jobs.push((async()=>{ const t0=performance.now(); try{ bins = (await executeClickHouseQuery(qBins(p))).data; status(`3/3 overlap bins: ${bins.length} rows · ${((performance.now()-t0)/1000).toFixed(1)}s`, 'ok'); }catch(e){ status('3/3 overlap failed: '+e.message.substring(0,220), 'err'); } })());
+    let areaOps = [];
+    jobs.push((async()=>{ try{ areaOps = (await executeClickHouseQuery(qAreaOps(p))).data; OPS_SEEN = areaOps; renderSeen(); onPlmnInput(); }catch(e){ status('Other PLMNs in the area could not be listed: '+e.message.substring(0,160), 'err'); } })());
+    let registry = null, baseline = null;
+    jobs.push(loadRegistry(opts, cells).then(r => { registry = r; }));
+    jobs.push(loadBaseline(p, opts, cells).then(r => { baseline = r; }));
+    await Promise.all(jobs);
+    processRows(cells, trans, bins, { ...opts, areaOps, registry, baseline, source:'clickhouse' });
+    if(!trans.length && bins.length) $('c-etype').value = 'ov';
+    if(keep){ rebuild(); }
+    else { G = null; selected = null; prevAlertIds = null; if(view==='map') setView('split'); rebuild(); fitBbox(); }
+    status(`Graph ready — ${opts.mcc}-${opts.mnc}, ${opts.days} d`, 'ok');
+  }catch(e){ status('Error: '+e.message, 'err'); }
+  finally{ btn.disabled = false; btn.innerHTML = '<span class="material-icons">hub</span> Build graph'; }
+}
+
+// ══════════════ SYNTHETIC DEMO (clearly labelled; feeds the same pipeline as the DB rows) ══════════════
+function loadDemo(){
+  clearStatus();
+  let seed = 7; const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647;
+  const b = bbox(), cells = [], trans = [], bins = [], sites = [];
+  const rows = 11, colsN = 10;
+  for(let i=0;i<rows;i++) for(let j=0;j<colsN;j++){
+    if(rnd() < 0.12) continue;
+    const lat = b.la0 + (i+0.5+(rnd()-0.5)*0.5)*(b.la1-b.la0)/rows, lng = b.lo0 + (j+0.5+(i%2)*0.5+(rnd()-0.5)*0.5)*(b.lo1-b.lo0)/(colsN+0.5);
+    if(b.poly && !inPoly(lat, lng, b.poly)) continue;
+    const tac = lat > (b.la0+b.la1)/2 + (lng-(b.lo0+b.lo1)/2)*0.4 ? (lng > (b.lo0+b.lo1)/2 ? 1202 : 1201) : (lng > b.lo0+(b.lo1-b.lo0)*0.6 ? 1305 : 1304);
+    sites.push({ enb: 21000 + sites.length*3, lat, lng, tac, load: 0.3 + rnd() });
+  }
+  const kOf = c => `${c.tech}:${c.id}`;
+  for(const s of sites){
+    s.cells = [];
+    const bandsHere = rnd() < 0.55 ? [[3,1650],[7,3000]] : [[3,1650]];
+    for(const [band, ch] of bandsHere) for(let sec=0; sec<3; sec++){
+      const n = Math.round(200 + 3000*s.load*rnd());
+      const off = 0.0018, ang = sec*2.094 + 0.5;
+      const c = { tech:'LTE', id: s.enb*256 + sec + (band===7?10:0), pci: (s.enb*3 + sec) % 504, tac:s.tac, tacn:1, band, bname:'B'+band, arfcn:ch, n, s:Math.round(n/14),
+        lat: s.lat + Math.cos(ang)*off, lng: s.lng + Math.sin(ang)*off*1.2, slat:s.lat, slng:s.lng, rsrp: -112 + 30*rnd(), snr: 2+16*rnd(), last:'', sec, site:s };
+      s.cells.push(c); cells.push(c);
+    }
+    if(rnd() < 0.22){ const n = Math.round(150+900*rnd()); const c = { tech:'NR', id:(900000+s.enb)*4096+1, pci:(s.enb*7)%1008, tac:s.tac, tacn:1, band:78, bname:'n78', arfcn:636666, n, s:Math.round(n/14), lat:s.lat, lng:s.lng, slat:s.lat, slng:s.lng, rsrp:-108+24*rnd(), snr:5+15*rnd(), last:'', sec:1, site:s }; s.cells.push(c); cells.push(c); }
+  }
+  // planted findings
+  if(!cells.length){ status('The drawn area is too small for the demo network', 'err'); return; }
+  if(cells[40]) cells[40].tacn = 2;
+  for(let x=0;x<sites.length;x++) for(let y=x+1;y<sites.length;y++){
+    const a=sites[x], c=sites[y], km=haversine(a,c);
+    if(km > 2.1 && !(x===3 && y===sites.length-5)) continue;
+    const p = km > 2.1 ? 1 : Math.exp(-km/0.75);
+    if(rnd() > p*1.6) continue;
+    const pairs = 1 + Math.floor(rnd()*3);
+    for(let q=0;q<pairs;q++){
+      const ca=a.cells[Math.floor(rnd()*a.cells.length)], cb=c.cells[Math.floor(rnd()*c.cells.length)];
+      const n = Math.max(1, Math.round(120*p*a.load*c.load*rnd()));
+      trans.push({ a:kOf(ca), b:kOf(cb), n, s:Math.ceil(n/2) });
+      const steps = Math.max(1, Math.round(6*p));
+      for(let t=0;t<steps;t++){ const f=0.35+0.3*rnd(); const la=(a.lat+(c.lat-a.lat)*f+(rnd()-0.5)*0.002).toFixed(3), lo=(a.lng+(c.lng-a.lng)*f+(rnd()-0.5)*0.002).toFixed(3); bins.push({la,lo,k:kOf(ca),c:5},{la,lo,k:kOf(cb),c:4}); }
+    }
+  }
+  for(const s of sites) for(let i=0;i<s.cells.length;i++) for(let j=i+1;j<s.cells.length;j++) trans.push({ a:kOf(s.cells[i]), b:kOf(s.cells[j]), n:Math.round(20+80*rnd()), s:10 });
+  { const t0 = trans.find(t => { const a=cells.find(c=>kOf(c)===t.a), b=cells.find(c=>kOf(c)===t.b); return a.site!==b.site && a.arfcn===b.arfcn && t.n>=3; });
+    if(t0){ const a=cells.find(c=>kOf(c)===t0.a), b=cells.find(c=>kOf(c)===t0.b); b.pci = a.pci; } }
+  bins.sort((x,y)=> x.la===y.la ? (x.lo<y.lo?-1:x.lo>y.lo?1:0) : (x.la<y.la?-1:1));
+  const now = Math.floor(Date.now()/1000) - 1800;
+  for(const c of cells){ c.fts = now - 14*86400 + Math.floor(rnd()*3600); c.lts = now - Math.floor(rnd()*7200); c.days = 14; c.pcin = 1; c.tacs = String(c.tac); c.sdla = 0.002+rnd()*0.002; c.sdlo = 0.002+rnd()*0.002; }
+  // planted cases so every alert type can be seen without a database
+  if(cells[40]) cells[40].tacs = cells[40].tac + ',1309';
+  if(cells[12]){ cells[12].pcin = 2; }
+  if(cells[25]){ cells[25].rsrp = -118; cells[25].snr = -1.5; }
+  if(cells[60]){ cells[60].sdla = 0.05; cells[60].sdlo = 0.06; }
+  if(sites[7]) for(const c of sites[7].cells) c.lts = now - 5*86400;
+  if(sites[15] && sites[15].cells[1]) sites[15].cells[1].lts = now - 4*86400;
+  if(cells[80]){ cells[80].fts = now - 20*3600; }
+  const mid = { lat:(b.la0+b.la1)/2, lng:(b.lo0+b.lo1)/2 };
+  cells.push({ tech:'LTE', id: 990001*256+1, pci:401, tac:65535, tacn:1, band:3, bname:'B3', arfcn:1650, n:14, s:1, lat:mid.lat+0.004, lng:mid.lng+0.003, slat:mid.lat+0.004, slng:mid.lng+0.003, rsrp:-71, snr:18, last:'', sec:1, site:{},
+    fts: now - 30*3600, lts: now - 28*3600, days:1, pcin:1, tacs:'65535', sdla:0.0004, sdlo:0.0004 });
+  cells.push({ tech:'LTE', id: 990002*256+1, pci:77, tac:cells[0].tac, tacn:1, band:20, bname:'B20', arfcn:6300, n:9, s:2, lat:mid.lat-0.006, lng:mid.lng-0.004, slat:mid.lat-0.006, slng:mid.lng-0.004, rsrp:-78, snr:15, last:'', sec:1, site:{},
+    fts: now - 3*86400, lts: now - 3*86400 + 2400, days:1, pcin:1, tacs:String(cells[0].tac), sdla:0.0003, sdlo:0.0003 });
+  for(const c of cells){ c.sc = 3 + Math.floor(rnd()*4); c.ta = 2 + Math.floor(rnd()*14); c.tan = 20; c.srcn = 2; c.devn = c.s; }
+  const rogue = cells.slice(-2);
+  rogue[0].s = rogue[0].devn = 3; rogue[0].sc = 1; rogue[0].ta = 0; rogue[0].tan = 9;
+  rogue[1].s = rogue[1].devn = 1; rogue[1].sc = 1; rogue[1].ta = 1; rogue[1].tan = 6; rogue[1].tac = 2907; rogue[1].tacs = '2907';
+  trans.push({ a:kOf(rogue[0]), b:'LEGACY:any', n:7, s:3 }, { a:kOf(rogue[1]), b:'LEGACY:any', n:4, s:1 });
+  for(let i=0;i<12;i++){ const c = cells[Math.floor(rnd()*(cells.length-2))]; trans.push({ a:kOf(c), b:'LEGACY:any', n:1+Math.floor(rnd()*3), s:1 }); }
+  // demo registry = every generated site; demo history = every cell except the two planted ones and the "new" one
+  const regMap = new Map(); for(const st of sites) regMap.set(st.enb, { lat:st.lat, lng:st.lng, pcis:new Set(st.cells.filter(c=>c.tech==='LTE').map(c=>String(c.pci))) });
+  const registry = { map:regMap, n:regMap.size, overlap:1, usable:true };
+  const checked = new Set([kOf(rogue[0]), kOf(rogue[1])]); if(cells[80]) checked.add(kOf(cells[80])); if(cells[30]) checked.add(kOf(cells[30]));
+  const baseline = { map:new Map(cells[30] ? [[kOf(cells[30]), { n:5200, days:58 }]] : []), checked, back:60 };
+  const pm = parsePlmn($('f-plmn').value) || { mcc:'425', mnc:'02' };
+  const areaOps = [ { mcc:pm.mcc, mnc:pm.mnc, name:'Demo operator', n:cells.reduce((a,c)=>a+c.n,0) }, { mcc:'425', mnc:'99', name:'Other demo operator', n:48210 }, { mcc:'432', mnc:'11', name:'', n:6 }, { mcc:'416', mnc:'77', name:'', n:23 } ];
+  processRows(cells.map(c=>({ ...c, k:kOf(c), site:undefined })), trans, bins, { bbox:b, source:'demo', days:14, mcc:pm.mcc, mnc:pm.mnc, areaOps, registry, baseline });
+  prevAlertIds = null;
+  $('demo-banner').style.display = 'block';
+  G = null; selected = null; if(view==='map') setView('split'); setTimeout(() => { resize(); map.invalidateSize(); rebuild(); fitGraph(); fitBbox(); }, 0);   // not rAF: that never fires in a background tab
+  status('Synthetic demo network loaded — not real data', 'ok');
+}
+
+// ══════════════ EXPORT ══════════════
+function download(name, href){ const a=document.createElement('a'); a.download=name; a.href=href; document.body.appendChild(a); a.click(); a.remove(); }
+function exportPng(){
+  if(!G) return;
+  const c = document.createElement('canvas'); c.width=canvas.width; c.height=canvas.height; const x=c.getContext('2d');
+  x.fillStyle='#0a1628'; x.fillRect(0,0,c.width,c.height); x.drawImage(canvas,0,0);
+  x.fillStyle='rgba(226,232,240,.85)'; x.font=`${12*dpr}px Inter, sans-serif`;
+  const m = DATA.meta; x.fillText(m.source==='demo' ? 'SYNTHETIC DEMO DATA' : `PLMN ${m.mcc}-${m.mnc} · last ${m.days} d · ${G.nodes.length} ${G.level}s · ${G.edges.length} relations`, 14*dpr, c.height-14*dpr);
+  download('network-graph.png', c.toDataURL('image/png'));
+}
+function exportCsv(){
+  if(!G) return;
+  const q = v => `"${String(v).replace(/"/g,'""')}"`;
+  const lines = ['source,target,source_tac,target_tac,cell_changes,overlap_bins,distance_km,crosses_tac'];
+  for(const e of [...G.edges].sort((a,b)=>b.w-a.w)) lines.push([q(e.a.id),q(e.b.id),q(e.a.tac),q(e.b.tac),e.ho,e.ov,e.km.toFixed(3),e.xtac?1:0].join(','));
+  download(`network-graph-edges-${G.level}.csv`, URL.createObjectURL(new Blob([lines.join('\n')], { type:'text/csv' })));
+}
+
+function exportAlertsCsv(){
+  if(!ALERTS.length) return;
+  const q = v => `"${String(v).replace(/<[^>]+>/g,'').replace(/"/g,'""')}"`;
+  const lines = ['severity,domain,alert,entity,evidence,acknowledged'];
+  for(const a of ALERTS) lines.push([SEVS[a.sev].k, a.dom, q(AT[a.type].t), q(a.ent), q(a.text), ACK.has(a.id)?1:0].join(','));
+  download('network-alerts.csv', URL.createObjectURL(new Blob([lines.join('\n')], { type:'text/csv' })));
+}
+function exportInventoryCsv(){
+  if(!DATA) return;
+  const q = v => `"${String(v).replace(/"/g,'""')}"`;
+  const lines = ['cell,tech,site,sector,tac,pci,band,channel,samples,devices,median_rsrp,median_snr,days_seen,first_seen_utc,last_seen_utc,lat,lng,attacker_score,attacker_evidence,worst_alert,alerts'];
+  for(const c of DATA.cells.values()) lines.push([q(c.k), c.tech, c.siteNum, c.sector, q(c.tac), q(c.pci), q(c.band), q(c.arfcn), c.n, c.s, c.rsrp==null?'':c.rsrp.toFixed(1), c.snr==null?'':c.snr.toFixed(1), c.days,
+    q(dts(c.fts)), q(dts(c.lts)), c.slat.toFixed(6), c.slng.toFixed(6), c.threat.score, q(c.threat.ev.filter(e=>e.w>0).map(e=>`+${e.w} ${e.t}`).join('; ')), c.alerts.length?SEVS[c.sev].k:'', q(c.alerts.map(a=>AT[a.type].t).join('; '))].join(','));
+  download('network-inventory.csv', URL.createObjectURL(new Blob([lines.join('\n')], { type:'text/csv' })));
+}
+
+// ══════════════ INIT ══════════════
+document.querySelectorAll('#seg-view button').forEach(btn => btn.onclick = () => {
+  document.querySelectorAll('#seg-view button').forEach(x=>x.classList.toggle('active', x===btn));
+  setView(btn.dataset.v);
+});
+['f-la0','f-la1','f-lo0','f-lo1'].forEach(id => $(id).addEventListener('change', () => { $('f-area').value='custom'; areaPoly=null; drawBbox(); autoDetect(); }));
+try{ if(localStorage.getItem('ng_help_min')) $('g3-help').classList.add('min'); }catch(e){}
+new ResizeObserver(() => { map.invalidateSize(); if(!G && !areaDrawer && map.getSize().x > 50) fitBbox(); }).observe($('map-pane'));   // keep the area framed until a graph exists
+resize(); fitBbox(); loadCredentials(); onPlmnInput();
+if(/[?&]demo=1/.test(location.search)) loadDemo();
+</script>
+</body>
+</html>
