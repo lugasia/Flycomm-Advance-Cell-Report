@@ -204,6 +204,8 @@ new ResizeObserver(() => { map.invalidateSize(); if (pendingFit && map.getSize()
 // Rules from the Flycomm ClickHouse data reference: bound time on both sides, read few narrow columns, serving rows
 // only (neighborNo IS NULL). quality_flags is deliberately NOT filtered: its "location" rule may be flagging exactly
 // the rows we are looking for, so it is counted instead.
+// A cell needs 10 serving samples in the period to have a home. 30 was tried first and was too strict: measured over
+// 6 hours, most countries average 6-30 serving samples per cell, so only the densest networks were being scanned.
 function buildSql() {
   const h = +$('f-hours').value, km = +$('f-km').value, dev = +$('f-dev').value;
   return `WITH per AS (
@@ -239,7 +241,7 @@ SELECT round(home.1 + 0.05, 2) AS true_lat, round(home.2 + 0.05, 2) AS true_lon,
        sum(fl) AS flagged,
        topK(1)(plmn)[1] AS plmn
 FROM ranked
-WHERE tot >= 30 AND home_n / tot >= 0.5
+WHERE tot >= 10 AND home_n / tot >= 0.5
   AND geoDistance(home.2, home.1, bin_lon, bin_lat) > ${km * 1000}
 GROUP BY true_lat, true_lon, spoof_lat, spoof_lon
 HAVING devices >= ${dev}
