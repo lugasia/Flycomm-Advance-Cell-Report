@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="icon" type="image/png" href="Favicon.png">
+<title>Analysis Suite — GNSS Spoofing</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="basemap.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--navy:#0a1628;--card:#162038;--card2:#1a2744;--card-border:#1e3a5f;--accent:#3b82f6;--accent2:#60a5fa;--red:#ef4444;--orange:#f59e0b;--green:#22c55e;--cyan:#06b6d4;--text:#e2e8f0;--text-muted:#94a3b8;--text-dim:#64748b;--mono:'JetBrains Mono',ui-monospace,monospace}
+html,body{height:100%;font-family:'Inter',system-ui,sans-serif;background:var(--navy);color:var(--text);overflow:hidden;font-size:13px}
+#app{display:flex;height:100vh}
+.material-icons{font-size:16px;line-height:1;vertical-align:middle}
+.mono{font-family:var(--mono)}
+aside{width:356px;min-width:356px;background:var(--card);border-right:1px solid var(--card-border);display:flex;flex-direction:column;overflow:hidden;z-index:900}
+#sb-header{padding:14px 18px;border-bottom:1px solid var(--card-border);flex-shrink:0}
+#sb-header img{height:28px;max-width:100%;object-fit:contain;opacity:.85;display:block;margin-bottom:6px}
+#sb-header h1{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+#sb-header h1 .material-icons{font-size:19px;color:var(--accent)}
+#sb-header p{font-size:11px;color:var(--text-muted);margin-top:3px;line-height:1.45}
+#sb-body{flex:1;overflow-y:auto}
+#sb-body::-webkit-scrollbar,#dest::-webkit-scrollbar{width:5px}
+#sb-body::-webkit-scrollbar-thumb,#dest::-webkit-scrollbar-thumb{background:var(--card-border);border-radius:3px}
+.sec{padding:13px 16px;border-bottom:1px solid var(--card-border)}
+.sb-label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:9px;display:flex;justify-content:space-between;align-items:center}
+.sb-label .aux{font-weight:500;text-transform:none;letter-spacing:0;color:var(--text-dim);font-size:10.5px}
+.field-label{font-size:11px;color:var(--text-muted);margin:9px 0 4px}
+.inp{width:100%;background:var(--navy);border:1px solid var(--card-border);border-radius:6px;padding:6px 9px;color:var(--text);font-size:12px;font-family:var(--mono);outline:none;color-scheme:dark}
+select.inp{font-family:'Inter',sans-serif;cursor:pointer}
+.inp:focus{border-color:var(--accent)}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:8px 12px;border-radius:7px;border:1px solid var(--card-border);cursor:pointer;font:500 12px 'Inter',sans-serif;background:var(--navy);color:var(--text);transition:all .15s}
+.btn:hover:not(:disabled){border-color:var(--accent);color:var(--accent2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-size:13px;padding:9px 14px}
+.btn.primary:hover:not(:disabled){background:#2563eb;color:#fff}
+.btn.block{width:100%}
+.hint{font-size:10.5px;color:var(--text-dim);line-height:1.5;margin-top:7px}
+.link{color:var(--accent2);cursor:pointer;background:none;border:none;font-size:10.5px;padding:0;text-decoration:underline;text-decoration-color:rgba(96,165,250,.35)}
+#conn-bar{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:7px;border:1px solid var(--card-border);cursor:pointer}
+#conn-bar:hover{border-color:rgba(59,130,246,.5)}
+.conn-dot{width:8px;height:8px;border-radius:50%;background:var(--text-dim);flex-shrink:0}
+.conn-dot.connected{background:var(--green);box-shadow:0 0 6px var(--green)}
+.conn-dot.connecting{background:var(--orange)}
+.conn-dot.error{background:var(--red)}
+#conn-label{flex:1;font-size:11.5px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#conn-panel{display:none;padding-top:4px}
+#conn-panel.open{display:block}
+#status{font-size:11px;margin-top:8px;line-height:1.5;color:var(--text-muted);word-break:break-word;font-family:var(--mono)}
+#status.err{color:#fca5a5}#status.ok{color:#86efac}
+#sql{display:none;margin-top:8px;font-family:var(--mono);font-size:10px;line-height:1.5;color:var(--text-muted);background:var(--navy);border:1px solid var(--card-border);border-radius:6px;padding:8px;white-space:pre-wrap;max-height:220px;overflow:auto}
+#kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi{background:var(--navy);border:1px solid var(--card-border);border-radius:8px;padding:9px 10px}
+.kpi .v{font-size:19px;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+.kpi .l{font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-dim);margin-top:3px}
+#dest{display:flex;flex-direction:column;gap:5px;max-height:340px;overflow-y:auto;margin-right:-6px;padding-right:6px}
+.d{display:grid;grid-template-columns:auto 1fr auto;gap:2px 9px;align-items:center;padding:8px 10px;border-radius:7px;border:1px solid transparent;background:var(--navy);cursor:pointer;text-align:left;color:var(--text);width:100%;font-family:inherit}
+.d:hover{border-color:var(--card-border)}
+.d.on{border-color:var(--c);background:color-mix(in srgb,var(--c) 12%,var(--navy))}
+.d .ring{width:12px;height:12px;border-radius:50%;border:3px solid var(--c);grid-row:1/3}
+.d .t{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d .s{font-size:10.5px;color:var(--text-muted);grid-column:2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.d .n{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;grid-row:1/3;grid-column:3;text-align:right}
+.d .n small{display:block;font-size:9.5px;font-weight:500;color:var(--text-dim)}
+.tag{font-size:8.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:3px;padding:1px 5px;margin-left:6px;vertical-align:1px}
+.tag.conv{color:#0a1628;background:var(--orange)}
+.empty{font-size:11.5px;color:var(--text-dim);padding:6px 0;line-height:1.5}
+#sb-foot{flex-shrink:0;border-top:1px solid var(--card-border);background:var(--navy);padding:10px 16px;display:flex;gap:8px}
+
+main{flex:1;position:relative;min-width:0}
+#map{position:absolute;inset:0;background:#0b1220}
+.leaflet-container{font-family:'Inter',sans-serif;background:#0b1220}
+.leaflet-bar a{background:var(--card);color:var(--text);border-color:var(--card-border)}
+.leaflet-bar a:hover{background:var(--card2);color:#fff}
+.leaflet-control-attribution{background:rgba(10,22,40,.7)!important;color:var(--text-dim)!important;font-size:9px}
+.leaflet-control-attribution a{color:var(--text-muted)!important}
+.lbl{background:rgba(10,22,40,.9);border:1px solid var(--card-border);color:var(--text);font-size:11px;font-weight:600;padding:2px 7px;border-radius:5px;box-shadow:none;white-space:nowrap}
+.lbl:before{display:none}
+.leaflet-tooltip.tt{background:rgba(10,22,40,.96);border:1px solid var(--card-border);color:var(--text);font-size:11.5px;line-height:1.5;border-radius:7px;padding:7px 10px;box-shadow:0 6px 18px rgba(0,0,0,.45)}
+.leaflet-tooltip.tt:before{display:none}
+.tt .mut{color:var(--text-muted)}
+#demo-banner{display:none;position:absolute;top:0;left:0;right:0;z-index:800;background:rgba(245,158,11,.16);color:#fcd34d;font-size:11px;font-weight:600;padding:6px 14px;border-bottom:1px solid rgba(245,158,11,.35);letter-spacing:.04em;text-align:center}
+#legend{position:absolute;left:12px;bottom:24px;z-index:800;background:rgba(22,32,56,.94);border:1px solid var(--card-border);border-radius:9px;padding:10px 12px;max-width:300px;font-size:11px;line-height:1.55;color:var(--text-muted)}
+#legend h4{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-dim);margin-bottom:6px}
+#legend b{color:var(--text);font-weight:600}
+#legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent2);margin-right:6px}
+#legend .rg{display:inline-block;width:10px;height:10px;border-radius:50%;border:3px solid var(--orange);margin-right:5px;vertical-align:-1px}
+#empty{position:absolute;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;pointer-events:none}
+#empty div{background:rgba(22,32,56,.94);border:1px solid var(--card-border);border-radius:11px;padding:18px 22px;text-align:center;max-width:340px;font-size:12.5px;color:var(--text-muted);line-height:1.55}
+#empty .material-icons{font-size:30px;color:var(--text-dim);display:block;margin:0 auto 8px}
+.spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+<script src="suite-nav.js" defer></script>
+</head>
+<body>
+<div id="app">
+<aside>
+  <div id="sb-header">
+    <img src="fcic.png" alt="FCIC" onerror="this.style.display='none'">
+    <h1><span class="material-icons">gps_off</span> GNSS Spoofing</h1>
+    <p>Devices that report a position far from the cell that is serving them — worldwide</p>
+  </div>
+  <div class="tool-switcher"></div>
+
+  <div id="sb-body">
+    <div class="sec">
+      <div class="sb-label">Database</div>
+      <div id="conn-bar"><div class="conn-dot" id="conn-dot"></div><span id="conn-label">Not connected — click to configure</span><span class="material-icons" style="color:var(--text-muted)">settings</span></div>
+      <div id="conn-panel">
+        <div class="field-label">Host</div><input class="inp" type="text" id="db-host" placeholder="your-instance.clickhouse.cloud">
+        <div class="row2">
+          <div><div class="field-label">Port</div><input class="inp" type="text" id="db-port" placeholder="8443"></div>
+          <div><div class="field-label">Database</div><input class="inp" type="text" id="db-name" value="default"></div>
+        </div>
+        <div class="row2">
+          <div><div class="field-label">Username</div><input class="inp" type="text" id="db-user" placeholder="default"></div>
+          <div><div class="field-label">Password</div><input class="inp" type="password" id="db-pass" placeholder="••••••••"></div>
+        </div>
+        <button class="btn block" id="btn-test" style="margin-top:10px"><span class="material-icons">sync</span>Test connection</button>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sb-label">Scan</div>
+      <div class="row3">
+        <div><div class="field-label" style="margin-top:0">Period</div>
+          <select class="inp" id="f-hours"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="12">12 hours</option><option value="24">24 hours</option></select></div>
+        <div><div class="field-label" style="margin-top:0">Moved at least</div>
+          <select class="inp" id="f-km"><option value="30">30 km</option><option value="50" selected>50 km</option><option value="100">100 km</option><option value="300">300 km</option></select></div>
+        <div><div class="field-label" style="margin-top:0">Devices</div>
+          <select class="inp" id="f-dev"><option value="1">1 +</option><option value="2">2 +</option><option value="3" selected>3 +</option><option value="5">5 +</option></select></div>
+      </div>
+      <button class="btn primary block" id="btn-run" style="margin-top:11px"><span class="material-icons">travel_explore</span>Scan the world</button>
+      <div class="hint">One pass over the serving rows of the whole table for the period — no area filter. <button class="link" id="sql-toggle">Show SQL</button> · <button class="link" id="demo">Load synthetic demo</button></div>
+      <div id="status"></div>
+      <pre id="sql"></pre>
+    </div>
+
+    <div class="sec">
+      <div class="sb-label">Result <span class="aux" id="res-aux"></span></div>
+      <div id="kpis"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sb-label">Where positions are pulled to <button class="link" id="clear-sel" style="display:none">Show all</button></div>
+      <div id="dest"><div class="empty">Run a scan to list the places devices claim to be.</div></div>
+    </div>
+
+    <div class="sec">
+      <div class="sb-label">How to read it</div>
+      <div class="hint" style="margin-top:0">A cell does not move. For every LTE cell the scan finds where most of its devices are (its <b style="color:var(--text)">home</b>), then keeps the samples that claim to be far from it. Many homes pointing at one spot — often an airport — is the signature of spoofing.<br><br>
+      Not covered: jamming (the position is lost, not moved), and regions where spoofing is so constant that the cell's home itself is wrong. Displacements under ~30 km are below the 0.1° grid. A finding is a lead, not proof.</div>
+    </div>
+  </div>
+  <div id="sb-foot">
+    <button class="btn" id="btn-csv" style="flex:1" disabled><span class="material-icons">download</span>Links CSV</button>
+    <button class="btn" id="btn-fit" style="flex:1" disabled><span class="material-icons">fit_screen</span>Fit</button>
+  </div>
+</aside>
+
+<main>
+  <div id="map"></div>
+  <div id="demo-banner">SYNTHETIC DEMO DATA — generated in the browser, not real measurements</div>
+  <div id="legend"><h4>Legend</h4>
+    <span class="dot"></span><b>Dot</b> — where the serving cells really are<br>
+    <span class="rg"></span><b>Ring</b> — where the devices say they are<br>
+    Line thickness = number of samples. Click a ring to isolate its fan.</div>
+  <div id="empty"><div><span class="material-icons">travel_explore</span>Connect, then <b style="color:var(--text)">Scan the world</b>.<br>Every line that appears is a group of devices reporting a position their cell cannot be serving.</div></div>
+</main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => Math.round(n).toLocaleString('en-US');
+const TABLE = 'measurements_year_geo';
+const PALETTE = ['#3b82f6','#f59e0b','#22c55e','#ec4899','#a78bfa','#06b6d4','#ef4444','#84cc16','#fb923c','#2dd4bf','#e879f9','#facc15'];
+// Airports that are well-known spoofing targets — only used to put a name on a destination that lands next to one.
+const AIRPORTS = [['Amman · Queen Alia',31.7226,35.9932],['Beirut',33.8209,35.4884],['Tel Aviv · Ben Gurion',32.0114,34.8867],['Cairo',30.1219,31.4056],
+  ['Damascus',33.4114,36.5156],['Larnaca',34.8751,33.6249],['Kaliningrad',54.89,20.5926],['St Petersburg · Pulkovo',59.8003,30.2625],['Pskov',57.7839,28.3956],
+  ['Smolensk',54.825,32.025],['Moscow · Sheremetyevo',55.9726,37.4146],['Moscow · Vnukovo',55.5915,37.2615],['Moscow · Domodedovo',55.4088,37.9063],
+  ['Simferopol',45.0522,33.9751],['Sochi',43.4499,39.9566],['Tehran · Imam Khomeini',35.4161,51.1522],['Tehran · Mehrabad',35.6892,51.3134],
+  ['Baghdad',33.2625,44.2346],['Minsk',53.8825,28.0307],['Kyiv · Boryspil',50.345,30.8947],['Istanbul',41.2753,28.7519]];
+const hav = (a, b, c, d) => { const R = 6371, r = Math.PI/180, x = Math.sin((c-a)*r/2)**2 + Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2; return 2*R*Math.asin(Math.sqrt(x)); };
+const dts = ts => ts ? new Date(ts*1000).toISOString().slice(5,16).replace('T',' ') : '–';
+
+let LINKS = [], DEST = [], sel = null;
+const map = L.map('map', { zoomControl:false, preferCanvas:true, worldCopyJump:true }).setView([38, 30], 3);
+L.control.zoom({ position:'bottomright' }).addTo(map);
+addDarkBasemap(map, { maxZoom: 18 });
+const renderer = L.canvas({ padding: 0.3 });
+const lineLayer = L.layerGroup().addTo(map), srcLayer = L.layerGroup().addTo(map), dstLayer = L.layerGroup().addTo(map);
+let pendingFit = false;   // the map can boot at zero size (background tab); fit again once it has real dimensions
+new ResizeObserver(() => { map.invalidateSize(); if (pendingFit && map.getSize().x > 50) fit(); }).observe($('map'));
+
+// ── SQL ──
+// Rules from the Flycomm ClickHouse data reference: bound time on both sides, read few narrow columns, serving rows
+// only (neighborNo IS NULL). quality_flags is deliberately NOT filtered: its "location" rule may be flagging exactly
+// the rows we are looking for, so it is counted instead.
+function buildSql() {
+  const h = +$('f-hours').value, km = +$('f-km').value, dev = +$('f-dev').value;
+  return `WITH per AS (
+  SELECT cell_ecgi, bin_lat, bin_lon,
+         count() AS n,
+         uniq(deviceInfo_deviceId) AS dev,
+         uniqState(deviceInfo_deviceId) AS dev_st,
+         min(timestamp) AS t0, max(timestamp) AS t1,
+         countIf(quality_flags != '') AS fl,
+         any(network_PLMN) AS plmn
+  FROM ${TABLE}
+  WHERE timestamp > now() - INTERVAL ${h} HOUR AND timestamp <= now()
+    AND tech = 'LTE'
+    AND neighborNo IS NULL
+    AND ifNull(cell_ecgi, '') != ''
+  GROUP BY cell_ecgi, bin_lat, bin_lon
+),
+ranked AS (
+  SELECT cell_ecgi, bin_lat, bin_lon, n, dev_st, t0, t1, fl, plmn,
+         first_value((bin_lat, bin_lon)) OVER w AS home,
+         first_value(n) OVER w AS home_n,
+         sum(n) OVER (PARTITION BY cell_ecgi) AS tot
+  FROM per
+  WINDOW w AS (PARTITION BY cell_ecgi ORDER BY dev DESC, n DESC
+               ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)
+)
+SELECT round(home.1 + 0.05, 2) AS true_lat, round(home.2 + 0.05, 2) AS true_lon,
+       round(bin_lat + 0.05, 2) AS spoof_lat, round(bin_lon + 0.05, 2) AS spoof_lon,
+       sum(n) AS samples,
+       uniqMerge(dev_st) AS devices,
+       uniqExact(cell_ecgi) AS cells,
+       toUnixTimestamp(min(t0)) AS t0, toUnixTimestamp(max(t1)) AS t1,
+       sum(fl) AS flagged,
+       topK(1)(plmn)[1] AS plmn
+FROM ranked
+WHERE tot >= 30 AND home_n / tot >= 0.5
+  AND geoDistance(home.2, home.1, bin_lon, bin_lat) > ${km * 1000}
+GROUP BY true_lat, true_lon, spoof_lat, spoof_lon
+HAVING devices >= ${dev}
+ORDER BY samples DESC
+LIMIT 5000`;
+}
+
+// ── connection (same pattern + shared creds key as the rest of the suite) ──
+const CREDS_KEY = 'clickhouse_credentials';
+function setConn(state, label) { $('conn-dot').className = 'conn-dot ' + state; $('conn-label').textContent = label; }
+function status(msg, cls) { const el = $('status'); el.textContent = msg; el.className = cls || ''; }
+function loadCredentials() {
+  let saved = null; try { saved = localStorage.getItem(CREDS_KEY); } catch (e) {}
+  if (!saved) { $('conn-panel').classList.add('open'); return; }
+  try { const c = JSON.parse(saved);
+    if (c.host) $('db-host').value = c.host; if (c.port) $('db-port').value = c.port; if (c.database) $('db-name').value = c.database;
+    if (c.user) $('db-user').value = c.user; if (c.password) $('db-pass').value = atob(c.password);
+    if (c.host && c.user && c.password) testConnection(true); } catch (e) { $('conn-panel').classList.add('open'); }
+}
+function saveCredentials() {
+  try { localStorage.setItem(CREDS_KEY, JSON.stringify({ host:$('db-host').value.trim(), port:$('db-port').value.trim() || '8443',
+    database:$('db-name').value.trim() || 'default', user:$('db-user').value.trim(), password:btoa($('db-pass').value) })); } catch (e) {}
+}
+async function ch(sql) {
+  const host = $('db-host').value.trim(), port = $('db-port').value.trim() || '8443', db = $('db-name').value.trim() || 'default';
+  const user = $('db-user').value.trim(), pass = $('db-pass').value;
+  if (!host || !user || !pass) { $('conn-panel').classList.add('open'); throw new Error('Fill in the connection details first.'); }
+  const resp = await fetch(`https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`,
+    { method:'POST', headers:{ 'Authorization':'Basic ' + btoa(`${user}:${pass}`), 'Content-Type':'text/plain' }, body:sql });
+  if (!resp.ok) { const t = await resp.text(); let m = `HTTP ${resp.status}`; try { const j = JSON.parse(t); m = j.exception || j.error?.message || t; } catch { m = t || m; } throw new Error(m); }
+  const json = await resp.json(); if (json.exception) throw new Error(json.exception); return json;
+}
+async function testConnection(silent) {
+  setConn('connecting', 'Connecting…');
+  try { const r = await ch('SELECT version() AS version'); const v = r.data?.[0]?.version || '';
+    setConn('connected', `Connected${v ? ' · v' + v.split('.').slice(0,2).join('.') : ''}`); saveCredentials(); $('conn-panel').classList.remove('open'); }
+  catch (e) { setConn('error', 'Connection failed'); if (silent !== true) status(e.message, 'err'); }
+}
+
+// ── run ──
+async function run() {
+  const btn = $('btn-run'), sql = buildSql(); $('sql').textContent = sql;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Scanning…'; status('Running — a 24-hour scan can take a while.');
+  const t0 = performance.now();
+  try {
+    const res = await ch(sql);
+    setConn('connected', 'Connected'); saveCredentials();
+    load((res.data || []).map(r => ({ tla:+r.true_lat, tlo:+r.true_lon, sla:+r.spoof_lat, slo:+r.spoof_lon, n:+r.samples, dev:+r.devices, cells:+r.cells, t0:+r.t0, t1:+r.t1, fl:+r.flagged, plmn:r.plmn || '' })), false);
+    status(`${LINKS.length} link${LINKS.length === 1 ? '' : 's'} in ${((performance.now() - t0) / 1000).toFixed(1)} s` + (LINKS.length >= 5000 ? ' — capped at 5,000; raise the thresholds.' : ''), 'ok');
+  } catch (e) { status(e.message, 'err'); }
+  finally { btn.disabled = false; btn.innerHTML = '<span class="material-icons">travel_explore</span>Scan the world'; }
+}
+
+function load(links, demo) {
+  LINKS = links; sel = null;
+  for (const l of LINKS) l.km = hav(l.tla, l.tlo, l.sla, l.slo);
+  // destinations: one per reported 0.1° cell, biggest first
+  const m = new Map();
+  for (const l of LINKS) {
+    const k = l.sla + ',' + l.slo; let d = m.get(k);
+    if (!d) { d = { k, lat:l.sla, lon:l.slo, links:[], n:0, cells:0, maxDev:0, fl:0, t0:Infinity, t1:0, plmns:new Map() }; m.set(k, d); }
+    d.links.push(l); d.n += l.n; d.cells += l.cells; d.fl += l.fl; if (l.dev > d.maxDev) d.maxDev = l.dev;
+    if (l.t0 && l.t0 < d.t0) d.t0 = l.t0; if (l.t1 > d.t1) d.t1 = l.t1;
+    d.plmns.set(l.plmn, (d.plmns.get(l.plmn) || 0) + l.n);
+  }
+  DEST = [...m.values()].sort((a, b) => b.links.length - a.links.length || b.n - a.n);
+  DEST.forEach((d, i) => {
+    d.color = i < PALETTE.length ? PALETTE[i] : '#64748b';
+    let best = null, bd = 25;                       // 0.1° cell: accept an airport within 25 km of its centre
+    for (const [name, la, lo] of AIRPORTS) { const x = hav(d.lat, d.lon, la, lo); if (x < bd) { bd = x; best = name; } }
+    d.airport = best; d.name = best ? `${best} airport` : `${d.lat.toFixed(2)}, ${d.lon.toFixed(2)}`;
+    d.conv = d.links.length >= 3;
+    d.avgKm = d.links.reduce((a, l) => a + l.km * l.n, 0) / d.n;
+    for (const l of d.links) l.d = d;
+  });
+  $('demo-banner').style.display = demo ? 'block' : 'none';
+  $('empty').style.display = LINKS.length ? 'none' : 'flex';
+  if (!LINKS.length) $('empty').firstElementChild.innerHTML = '<span class="material-icons">verified</span>Nothing found for these thresholds.<br>Try a longer period, a shorter distance or fewer devices.';
+  $('btn-csv').disabled = $('btn-fit').disabled = !LINKS.length;
+  render(); if (LINKS.length) fit();
+}
+
+function render() {
+  lineLayer.clearLayers(); srcLayer.clearLayers(); dstLayer.clearLayers();
+  const show = sel ? sel.links : LINKS, maxN = Math.max(1, ...LINKS.map(l => l.n));
+  for (const l of show) {
+    const t = Math.log1p(l.n) / Math.log1p(maxN), c = l.d.color;
+    L.polyline([[l.tla, l.tlo], [l.sla, l.slo]], { renderer, color:c, weight:0.8 + 3.6 * t, opacity:0.35 + 0.5 * t, interactive:false }).addTo(lineLayer);
+    L.circleMarker([l.tla, l.tlo], { renderer, radius:2.5 + 4 * t, color:'#0a1628', weight:1, fillColor:c, fillOpacity:0.95 }).addTo(srcLayer)
+      .bindTooltip(`<b>${fmt(l.n)}</b> samples · ${l.dev} device${l.dev === 1 ? '' : 's'} · ${l.cells} cell${l.cells === 1 ? '' : 's'}<br>
+        <span class="mut">Really around</span> ${l.tla.toFixed(2)}, ${l.tlo.toFixed(2)}<br><span class="mut">Reported</span> ${esc(l.d.name)} · <b>${Math.round(l.km)} km</b> away<br>
+        <span class="mut">PLMN</span> ${esc(l.plmn || '?')} · <span class="mut">${dts(l.t0)} → ${dts(l.t1)} UTC</span>`, { className:'tt', direction:'top' });
+  }
+  for (const d of (sel ? [sel] : DEST)) {
+    const m = L.circleMarker([d.lat, d.lon], { renderer, radius:9, color:d.color, weight:3.5, fillColor:'#0a1628', fillOpacity:1 }).addTo(dstLayer);
+    m.on('click', () => pick(d));
+    m.bindTooltip(`<b>${esc(d.name)}</b><br>${d.links.length} source area${d.links.length === 1 ? '' : 's'} · ${fmt(d.n)} samples<br><span class="mut">Click to isolate</span>`, { className:'tt', direction:'top' });
+    if (d.airport || sel || DEST.indexOf(d) < 8)
+      L.tooltip({ permanent:true, direction:'right', className:'lbl', offset:[10, 0] }).setLatLng([d.lat, d.lon]).setContent(esc(d.airport || d.name)).addTo(dstLayer);
+  }
+  const maxDev = LINKS.reduce((a, l) => Math.max(a, l.dev), 0);
+  $('kpis').innerHTML = LINKS.length ? `<div class="kpi"><div class="v">${DEST.length}</div><div class="l">Destinations</div></div>
+    <div class="kpi"><div class="v">${LINKS.length}</div><div class="l">Links</div></div>
+    <div class="kpi"><div class="v">${fmt(LINKS.reduce((a, l) => a + l.n, 0))}</div><div class="l">Samples</div></div>` : '';
+  $('res-aux').textContent = LINKS.length ? `up to ${maxDev} devices on one link` : '';
+  $('clear-sel').style.display = sel ? '' : 'none';
+  $('dest').innerHTML = DEST.length ? DEST.map((d, i) => { const top = [...d.plmns.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    return `<button class="d ${sel === d ? 'on' : ''}" data-i="${i}" style="--c:${d.color}">
+      <span class="ring"></span>
+      <span class="t">${esc(d.name)}${d.conv ? '<span class="tag conv" title="Three or more separate areas point here">convergent</span>' : ''}</span>
+      <span class="n">${fmt(d.n)}<small>samples</small></span>
+      <span class="s">${d.links.length} source area${d.links.length === 1 ? '' : 's'} · ~${Math.round(d.avgKm)} km · PLMN ${esc(top || '?')}${d.fl ? ` · ${Math.round(d.fl / d.n * 100)}% flagged` : ''}</span></button>`; }).join('')
+    : '<div class="empty">Nothing found for these thresholds.</div>';
+}
+function pick(d) { sel = sel === d ? null : d; render(); fit(); }
+function fit() {
+  const ls = sel ? sel.links : LINKS; if (!ls.length) return;
+  if (map.getSize().x <= 50) { pendingFit = true; return; }
+  pendingFit = false;
+  map.fitBounds(L.latLngBounds(ls.flatMap(l => [[l.tla, l.tlo], [l.sla, l.slo]])), { paddingTopLeft:[60, 60], paddingBottomRight:[60, 60], maxZoom:9 });
+}
+function exportCsv() {
+  const lines = ['true_lat,true_lon,reported_lat,reported_lon,destination,distance_km,samples,devices,cells,first_utc,last_utc,flagged_samples,plmn'];
+  for (const l of LINKS) lines.push([l.tla, l.tlo, l.sla, l.slo, `"${l.d.name.replace(/"/g, '""')}"`, Math.round(l.km), l.n, l.dev, l.cells,
+    l.t0 ? new Date(l.t0 * 1000).toISOString() : '', l.t1 ? new Date(l.t1 * 1000).toISOString() : '', l.fl, l.plmn].join(','));
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([lines.join('\n')], { type:'text/csv' }));
+  a.download = `gnss-spoofing-${new Date().toISOString().slice(0, 13)}h.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+// ── synthetic demo (clearly labelled): fans shaped like the real thing, made-up numbers ──
+function loadDemo() {
+  let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  const fans = [ [31.75, 35.95, 32.6, 35.1, 1.0, 9, '425-01'], [54.85, 20.55, 56.5, 19.5, 4.0, 26, '246-01'], [59.85, 30.25, 59.6, 25.5, 2.5, 14, '248-01'],
+                 [57.75, 28.35, 57.6, 26.0, 1.6, 10, '247-02'], [33.85, 35.45, 34.9, 33.4, 0.8, 5, '280-01'], [45.05, 33.95, 46.6, 31.5, 1.4, 2, '255-01'] ];
+  const now = Math.floor(Date.now() / 1000), links = [];
+  for (const [sla, slo, cla, clo, spread, count, plmn] of fans) for (let i = 0; i < count; i++) {
+    const tla = Math.round((cla + (rnd() - 0.5) * spread * 2) * 10) / 10 + 0.05, tlo = Math.round((clo + (rnd() - 0.5) * spread * 3) * 10) / 10 + 0.05;
+    const n = Math.round(20 + 900 * rnd() * rnd()), t0 = now - Math.floor(rnd() * 5 * 3600);
+    links.push({ tla, tlo, sla, slo, n, dev:1 + Math.floor(rnd() * 14), cells:1 + Math.floor(rnd() * 9), t0, t1:t0 + Math.floor(rnd() * 1800), fl:Math.round(n * rnd() * 0.4), plmn });
+  }
+  load(links, true); status('Synthetic demo loaded — not real data', 'ok');
+}
+
+$('conn-bar').onclick = () => $('conn-panel').classList.toggle('open');
+$('btn-test').onclick = () => testConnection();
+$('btn-run').onclick = run;
+$('demo').onclick = loadDemo;
+$('sql-toggle').onclick = () => { const el = $('sql'), on = el.style.display !== 'block'; el.style.display = on ? 'block' : 'none'; $('sql-toggle').textContent = on ? 'Hide SQL' : 'Show SQL'; if (on) el.textContent = buildSql(); };
+['f-hours', 'f-km', 'f-dev'].forEach(id => $(id).onchange = () => { if ($('sql').style.display === 'block') $('sql').textContent = buildSql(); });
+$('dest').onclick = e => { const b = e.target.closest('.d'); if (b) pick(DEST[+b.dataset.i]); };
+$('clear-sel').onclick = () => { sel = null; render(); fit(); };
+$('btn-csv').onclick = exportCsv; $('btn-fit').onclick = fit;
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sel) { sel = null; render(); fit(); } });
+loadCredentials();
+if (/[?&]demo=1/.test(location.search)) loadDemo();
+</script>
+</body>
+</html>

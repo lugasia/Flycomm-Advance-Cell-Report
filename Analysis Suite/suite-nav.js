@@ -13,6 +13,7 @@
     { href: 'network_map.html',     icon: 'cell_tower',      name: 'Signal Map',     desc: 'Where each network is received, with anomalies flagged' },
     { href: 'network-graph.html',   icon: 'hub',             name: 'Network Graph',  desc: 'Sites, cells and how devices move between them' },
     { href: 'cell-footprint.html',  icon: 'hexagon',         name: 'Cell Footprint', desc: 'Coverage of a single cell' },
+    { href: 'gnss-spoofing.html',   icon: 'gps_off',         name: 'GNSS Spoofing',  desc: 'Devices reporting a position their cell cannot serve' },
     { group: 'Monitor' },
     { href: 'db-dashboard.html',        icon: 'insights',        name: 'DB Dashboard', desc: 'Live KPIs of the measurements table' },
     { href: 'regulator-dashboard.html', icon: 'account_balance', name: 'Regulator',    desc: 'Country-level users and operators' },
