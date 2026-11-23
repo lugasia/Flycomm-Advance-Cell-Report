@@ -8,7 +8,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="basemap.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -94,6 +96,13 @@ main{flex:1;position:relative;min-width:0}
 #empty{position:absolute;inset:0;z-index:700;display:flex;align-items:center;justify-content:center;pointer-events:none}
 #empty div{background:rgba(22,32,56,.94);border:1px solid var(--card-border);border-radius:11px;padding:18px 22px;text-align:center;max-width:340px;font-size:12.5px;color:var(--text-muted);line-height:1.55}
 #empty .material-icons{font-size:30px;color:var(--text-dim);display:block;margin:0 auto 8px}
+.btn.on{border-color:var(--accent);color:var(--accent2);background:rgba(59,130,246,.12)}
+#area-sum{font-size:11px;color:var(--text-muted);margin-top:8px;line-height:1.45}
+#area-sum b{color:var(--text);font-weight:600}
+#draw-banner{display:none;position:absolute;top:36px;left:50%;transform:translateX(-50%);z-index:810;background:rgba(59,130,246,.95);color:#fff;font-size:12px;font-weight:500;padding:7px 14px;border-radius:20px;box-shadow:0 4px 14px rgba(0,0,0,.4);white-space:nowrap}
+#draw-banner.show{display:block}
+.leaflet-draw-tooltip{background:var(--card);border:1px solid var(--card-border);color:var(--text);font-size:11px}
+.leaflet-draw-tooltip:before{display:none}
 .spinner{width:13px;height:13px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
 </style>
@@ -128,17 +137,26 @@ main{flex:1;position:relative;min-width:0}
     </div>
 
     <div class="sec">
+      <div class="sb-label">Area to check <button class="link" id="area-clear" style="display:none">Whole world</button></div>
+      <div class="row2">
+        <button class="btn" id="draw-rect"><span class="material-icons">crop_square</span>Draw box</button>
+        <button class="btn" id="draw-poly"><span class="material-icons">polyline</span>Draw polygon</button>
+      </div>
+      <div id="area-sum"></div>
+    </div>
+
+    <div class="sec">
       <div class="sb-label">Scan</div>
       <div class="row3">
         <div><div class="field-label" style="margin-top:0">Period</div>
-          <select class="inp" id="f-hours"><option value="1">1 hour</option><option value="6" selected>6 hours</option><option value="12">12 hours</option><option value="24">24 hours</option></select></div>
+          <select class="inp" id="f-hours"><option value="1">1 hour</option><option value="6">6 hours</option><option value="12">12 hours</option><option value="24" selected>24 hours</option><option value="72">3 days</option><option value="168">7 days</option></select></div>
         <div><div class="field-label" style="margin-top:0">Moved at least</div>
           <select class="inp" id="f-km"><option value="30">30 km</option><option value="50" selected>50 km</option><option value="100">100 km</option><option value="300">300 km</option></select></div>
         <div><div class="field-label" style="margin-top:0">Devices</div>
-          <select class="inp" id="f-dev"><option value="1">1 +</option><option value="2">2 +</option><option value="3" selected>3 +</option><option value="5">5 +</option></select></div>
+          <select class="inp" id="f-dev"><option value="1">1 +</option><option value="2" selected>2 +</option><option value="3">3 +</option><option value="5">5 +</option></select></div>
       </div>
-      <button class="btn primary block" id="btn-run" style="margin-top:11px"><span class="material-icons">travel_explore</span>Scan the world</button>
-      <div class="hint">One pass over the serving rows of the whole table for the period — no area filter. <button class="link" id="sql-toggle">Show SQL</button> · <button class="link" id="demo">Load synthetic demo</button></div>
+      <button class="btn primary block" id="btn-run" style="margin-top:11px"><span class="material-icons">travel_explore</span><span id="run-label">Scan the world</span></button>
+      <div class="hint"><span id="scan-hint"></span> <button class="link" id="sql-toggle">Show SQL</button> · <button class="link" id="demo">Load synthetic demo</button></div>
       <div id="status"></div>
       <pre id="sql"></pre>
     </div>
@@ -156,6 +174,7 @@ main{flex:1;position:relative;min-width:0}
     <div class="sec">
       <div class="sb-label">How to read it</div>
       <div class="hint" style="margin-top:0">A cell does not move. For every LTE cell the scan finds where most of its devices are (its <b style="color:var(--text)">home</b>), then keeps the samples that claim to be far from it. Many homes pointing at one spot — often an airport — is the signature of spoofing.<br><br>
+      Draw an area to check only the cells that live inside it: the scan then follows those cells wherever their devices claim to be, and reads a small part of the table, so long periods are practical.<br><br>
       Not covered: jamming (the position is lost, not moved), and regions where spoofing is so constant that the cell's home itself is wrong. Displacements under ~30 km are below the 0.1° grid. A finding is a lead, not proof.</div>
     </div>
   </div>
@@ -167,6 +186,7 @@ main{flex:1;position:relative;min-width:0}
 
 <main>
   <div id="map"></div>
+  <div id="draw-banner"></div>
   <div id="demo-banner">SYNTHETIC DEMO DATA — generated in the browser, not real measurements</div>
   <div id="legend"><h4>Legend</h4>
     <span class="dot"></span><b>Dot</b> — where the serving cells really are<br>
@@ -206,9 +226,35 @@ new ResizeObserver(() => { map.invalidateSize(); if (pendingFit && map.getSize()
 // the rows we are looking for, so it is counted instead.
 // A cell needs 10 serving samples in the period to have a home. 30 was tried first and was too strict: measured over
 // 6 hours, most countries average 6-30 serving samples per cell, so only the densest networks were being scanned.
+let AREA = null;   // { pts:[[lat,lng]…], poly:bool, la0, la1, lo0, lo1, layer }
 function buildSql() {
-  const h = +$('f-hours').value, km = +$('f-km').value, dev = +$('f-dev').value;
-  return `WITH per AS (
+  const h = +$('f-hours').value, km = +$('f-km').value, dev = +$('f-dev').value, A = AREA;
+  const fl = v => Math.floor(v * 10) / 10;
+  const serving = `tech = 'LTE'
+    AND neighborNo IS NULL
+    AND ifNull(cell_ecgi, '') != ''`;
+  const time = `timestamp > now() - INTERVAL ${h} HOUR AND timestamp <= now()`;
+  // With an area: first the cells that live inside it (cheap — bin_lat / bin_lon lead the primary key), then every
+  // serving row of those cells anywhere in the world. network_mcc and cell_ecgi both have set skip-indexes, and the
+  // table is sorted by location, so granules far from home that hold this MCC are few: exactly the displaced rows.
+  const areaCte = A ? `area_cells AS (
+  SELECT cell_ecgi, any(network_mcc) AS mcc
+  FROM ${TABLE}
+  WHERE ${time}
+    AND bin_lat BETWEEN ${fl(A.la0).toFixed(1)} AND ${fl(A.la1).toFixed(1)} AND bin_lon BETWEEN ${fl(A.lo0).toFixed(1)} AND ${fl(A.lo1).toFixed(1)}
+    AND location_lat_rounded BETWEEN ${A.la0.toFixed(5)} AND ${A.la1.toFixed(5)} AND location_lng_rounded BETWEEN ${A.lo0.toFixed(5)} AND ${A.lo1.toFixed(5)}${A.poly ? `
+    AND pointInPolygon((toFloat64(location_lng_rounded), toFloat64(location_lat_rounded)), [${A.pts.map(p => `(${p[1].toFixed(5)}, ${p[0].toFixed(5)})`).join(', ')}])` : ''}
+    AND ${serving}
+  GROUP BY cell_ecgi
+  HAVING count() >= 10
+),
+` : '';
+  const areaWhere = A ? `
+    AND network_mcc IN (SELECT mcc FROM area_cells)
+    AND cell_ecgi IN (SELECT cell_ecgi FROM area_cells)` : '';
+  const homeIn = A ? `
+  AND home.1 BETWEEN ${(fl(A.la0) - 0.001).toFixed(3)} AND ${(fl(A.la1) + 0.001).toFixed(3)} AND home.2 BETWEEN ${(fl(A.lo0) - 0.001).toFixed(3)} AND ${(fl(A.lo1) + 0.001).toFixed(3)}` : '';
+  return `WITH ${areaCte}per AS (
   SELECT cell_ecgi, bin_lat, bin_lon,
          count() AS n,
          uniq(deviceInfo_deviceId) AS dev,
@@ -217,10 +263,8 @@ function buildSql() {
          countIf(quality_flags != '') AS fl,
          any(network_PLMN) AS plmn
   FROM ${TABLE}
-  WHERE timestamp > now() - INTERVAL ${h} HOUR AND timestamp <= now()
-    AND tech = 'LTE'
-    AND neighborNo IS NULL
-    AND ifNull(cell_ecgi, '') != ''
+  WHERE ${time}
+    AND ${serving}${areaWhere}
   GROUP BY cell_ecgi, bin_lat, bin_lon
 ),
 ranked AS (
@@ -242,14 +286,51 @@ SELECT round(home.1 + 0.05, 2) AS true_lat, round(home.2 + 0.05, 2) AS true_lon,
        topK(1)(plmn)[1] AS plmn
 FROM ranked
 WHERE tot >= 10 AND home_n / tot >= 0.5
-  AND geoDistance(home.2, home.1, bin_lon, bin_lat) > ${km * 1000}
+  AND geoDistance(home.2, home.1, bin_lon, bin_lat) > ${km * 1000}${homeIn}
 GROUP BY true_lat, true_lon, spoof_lat, spoof_lon
 HAVING devices >= ${dev}
 ORDER BY samples DESC
 LIMIT 5000`;
 }
 
-// ── connection (same pattern + shared creds key as the rest of the suite) ──
+// ── area ──
+const areaLayer = L.layerGroup().addTo(map);
+let drawer = null;
+function refreshArea() {
+  const A = AREA, h = +$('f-hours').value;
+  $('area-clear').style.display = A ? '' : 'none';
+  $('run-label').textContent = A ? 'Scan this area' : 'Scan the world';
+  if (A) { const w = hav((A.la0 + A.la1) / 2, A.lo0, (A.la0 + A.la1) / 2, A.lo1), ht = hav(A.la0, A.lo0, A.la1, A.lo0);
+    $('area-sum').innerHTML = `<b>${A.poly ? `Polygon, ${A.pts.length} corners` : 'Box'}</b> · about ${Math.round(w)} × ${Math.round(ht)} km. Only cells that live inside it are checked.`;
+    $('scan-hint').textContent = 'Reads the area, then follows its cells anywhere in the world.'; }
+  else { $('area-sum').innerHTML = `<b>Whole world</b> — no area drawn.` + (h > 12 ? ' <span style="color:var(--orange)">Heavy for this period: draw an area first.</span>' : '');
+    $('scan-hint').textContent = 'One pass over the serving rows of the whole table for the period.'; }
+  if ($('sql').style.display === 'block') $('sql').textContent = buildSql();
+}
+function setArea(latlngs, poly) {
+  const pts = latlngs.map(q => [q.lat, q.lng]), las = pts.map(p => p[0]), los = pts.map(p => p[1]);
+  areaLayer.clearLayers();
+  AREA = { pts, poly, la0:Math.min(...las), la1:Math.max(...las), lo0:Math.min(...los), lo1:Math.max(...los) };
+  L.polygon(latlngs, { color:'#60a5fa', weight:1.5, dashArray:'6 5', fillColor:'#3b82f6', fillOpacity:0.06, interactive:false }).addTo(areaLayer);
+  refreshArea();
+}
+function clearArea() { AREA = null; areaLayer.clearLayers(); refreshArea(); }
+function stopDraw() { if (drawer) { const d = drawer; drawer = null; d.disable(); }
+  $('draw-rect').classList.remove('on'); $('draw-poly').classList.remove('on'); $('draw-banner').classList.remove('show'); }
+function startDraw(kind) {
+  if (typeof L.Draw === 'undefined') { status('The drawing library could not be loaded.', 'err'); return; }
+  const was = drawer && drawer._kind === kind; stopDraw(); if (was) return;
+  const shape = { color:'#60a5fa', weight:2 };
+  drawer = kind === 'rect' ? new L.Draw.Rectangle(map, { shapeOptions:shape, showArea:false }) : new L.Draw.Polygon(map, { shapeOptions:shape, showArea:false, allowIntersection:false });
+  drawer._kind = kind; drawer.enable();
+  $(kind === 'rect' ? 'draw-rect' : 'draw-poly').classList.add('on');
+  $('draw-banner').textContent = kind === 'rect' ? 'Drag on the map to draw the area · Esc to cancel' : 'Click to add corners, click the first corner to finish · Esc to cancel';
+  $('draw-banner').classList.add('show'); $('empty').style.display = 'none';
+}
+map.on('draw:created', e => { const ll = e.layer.getLatLngs()[0]; const poly = e.layerType !== 'rectangle'; stopDraw(); setArea(ll, poly); });
+map.on('draw:drawstop', () => { if (drawer) stopDraw(); });
+
+// ── connection// ── connection (same pattern + shared creds key as the rest of the suite) ──
 const CREDS_KEY = 'clickhouse_credentials';
 function setConn(state, label) { $('conn-dot').className = 'conn-dot ' + state; $('conn-label').textContent = label; }
 function status(msg, cls) { const el = $('status'); el.textContent = msg; el.className = cls || ''; }
@@ -284,7 +365,7 @@ async function testConnection(silent) {
 // ── run ──
 async function run() {
   const btn = $('btn-run'), sql = buildSql(); $('sql').textContent = sql;
-  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Scanning…'; status('Running — a 24-hour scan can take a while.');
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Scanning…'; status(AREA ? 'Running — reading the area, then following its cells.' : 'Running — a world scan over a long period can take a while.');
   const t0 = performance.now();
   try {
     const res = await ch(sql);
@@ -292,7 +373,7 @@ async function run() {
     load((res.data || []).map(r => ({ tla:+r.true_lat, tlo:+r.true_lon, sla:+r.spoof_lat, slo:+r.spoof_lon, n:+r.samples, dev:+r.devices, cells:+r.cells, t0:+r.t0, t1:+r.t1, fl:+r.flagged, plmn:r.plmn || '' })), false);
     status(`${LINKS.length} link${LINKS.length === 1 ? '' : 's'} in ${((performance.now() - t0) / 1000).toFixed(1)} s` + (LINKS.length >= 5000 ? ' — capped at 5,000; raise the thresholds.' : ''), 'ok');
   } catch (e) { status(e.message, 'err'); }
-  finally { btn.disabled = false; btn.innerHTML = '<span class="material-icons">travel_explore</span>Scan the world'; }
+  finally { btn.disabled = false; btn.innerHTML = `<span class="material-icons">travel_explore</span><span id="run-label">${AREA ? 'Scan this area' : 'Scan the world'}</span>`; }
 }
 
 function load(links, demo) {
@@ -390,12 +471,13 @@ $('btn-test').onclick = () => testConnection();
 $('btn-run').onclick = run;
 $('demo').onclick = loadDemo;
 $('sql-toggle').onclick = () => { const el = $('sql'), on = el.style.display !== 'block'; el.style.display = on ? 'block' : 'none'; $('sql-toggle').textContent = on ? 'Hide SQL' : 'Show SQL'; if (on) el.textContent = buildSql(); };
-['f-hours', 'f-km', 'f-dev'].forEach(id => $(id).onchange = () => { if ($('sql').style.display === 'block') $('sql').textContent = buildSql(); });
+['f-hours', 'f-km', 'f-dev'].forEach(id => $(id).onchange = refreshArea);
+$('draw-rect').onclick = () => startDraw('rect'); $('draw-poly').onclick = () => startDraw('poly'); $('area-clear').onclick = clearArea;
 $('dest').onclick = e => { const b = e.target.closest('.d'); if (b) pick(DEST[+b.dataset.i]); };
 $('clear-sel').onclick = () => { sel = null; render(); fit(); };
 $('btn-csv').onclick = exportCsv; $('btn-fit').onclick = fit;
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && sel) { sel = null; render(); fit(); } });
-loadCredentials();
+document.addEventListener('keydown', e => { if (e.key !== 'Escape') return; if (drawer) stopDraw(); else if (sel) { sel = null; render(); fit(); } });
+loadCredentials(); refreshArea();
 if (/[?&]demo=1/.test(location.search)) loadDemo();
 </script>
 </body>
