@@ -618,6 +618,12 @@ async function loadSchema(){
   if(!_cols.size) throw new Error(`Table ${TABLE} not found in this database`);
   return _cols;
 }
+// Cell identities that mean "not available", sent by some devices instead of a real ECI / NCI. They must be dropped
+// BEFORE the identity is split into site + sector, or they show up as one fake site (2^28-1 → gNB 65535, sector 4095).
+//   268435455 = 2^28-1 (all 28 bits set)   68719476735 = 2^36-1 (all 36 NCI bits set)
+//   2147483647 / 9223372036854775807 = Android CellInfo UNAVAILABLE / UNAVAILABLE_LONG
+const BAD_CELL_IDS = ['', '0', '268435455', '68719476735', '2147483647', '9223372036854775807'];
+const BAD_ID_SQL = BAD_CELL_IDS.map(x => `'${x}'`).join(', ');
 function sqlParts(cols, opts){
   const has = c => cols.has(c);
   const LAT = has('location_lat_rounded') ? 'location_lat_rounded' : 'location_geo_coordinates.2';
@@ -645,14 +651,14 @@ function sqlParts(cols, opts){
   const WHERE = `${geoWhere}
       AND ${plmnWhere}
       AND toString(tech) IN (${techs})
-      AND ${ID} NOT IN ('', '0')`;
+      AND ${ID} NOT IN (${BAD_ID_SQL})`;
   // A sample has one serving row and several neighbour rows; neighborNo is NULL on the serving row.
   const SERVING = has('neighborNo') ? 'neighborNo IS NULL' : has('primaryNo') ? 'primaryNo = 0' : '1';
   const LEGACY = `toString(tech) IN ('GSM','WCDMA','CDMA')`;
   // Mobility: serving rows only, and 2G/3G rows are kept (as one pseudo-cell) so a fall from LTE/NR to 2G/3G is visible.
   const WHERE_T = `${geoWhere}
       AND ${plmnWhere}
-      AND (${LEGACY} OR (toString(tech) IN (${techs}) AND ${ID} NOT IN ('', '0')))
+      AND (${LEGACY} OR (toString(tech) IN (${techs}) AND ${ID} NOT IN (${BAD_ID_SQL})))
       AND ${SERVING}`;
   const KT = `if(${LEGACY}, 'LEGACY:any', ${K})`;
   const opt = (c, expr) => has(c) ? expr : `''`;
@@ -773,6 +779,7 @@ let selected = null, hovered = null;
 function processRows(cellRows, transRows, binRows, meta){
   const cells = new Map();
   for(const r of cellRows){
+    if(BAD_CELL_IDS.includes(String(r.id))) continue;
     const id = Number(r.id); if(!isFinite(id) || id<=0) continue;
     const tech = r.t ?? r.tech, nr = tech === 'NR';
     const siteNum = Math.floor(id / (nr ? 4096 : 256));   // NR: assumes a 24-bit gNB ID
