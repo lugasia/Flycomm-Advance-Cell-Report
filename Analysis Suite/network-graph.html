@@ -235,6 +235,46 @@
     #topbar input[type=number] { width:54px; font-family:'JetBrains Mono',monospace; }
     .chip { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-muted); padding:3px 8px; border:1px solid var(--card-border); border-radius:10px; white-space:nowrap; }
     .chip b { color:var(--text); }
+    /* live mode */
+    body:not(.live) .only-live { display:none !important; }
+    body.live .only-hist { display:none !important; }
+    .mode-seg { display:flex; border:1px solid var(--card-border); border-radius:8px; overflow:hidden; }
+    .mode-seg button { flex:1; display:flex; align-items:center; justify-content:center; gap:6px; background:var(--navy); color:var(--text-muted); border:none; padding:8px; font:600 12px 'Inter',sans-serif; cursor:pointer; }
+    .mode-seg button .material-icons { font-size:15px; }
+    .mode-seg button.active { background:rgba(59,130,246,.16); color:var(--accent2); }
+    body.live .mode-seg button.active { background:rgba(239,68,68,.14); color:#fca5a5; }
+    .btn.stop { background:rgba(239,68,68,.14); color:#fca5a5; box-shadow:inset 0 0 0 1px rgba(239,68,68,.5); }
+    .btn.stop:hover:not(:disabled) { background:rgba(239,68,68,.22); }
+    .live-pill { display:inline-flex; align-items:center; gap:7px; font:700 10.5px 'JetBrains Mono',monospace; letter-spacing:.04em; padding:4px 10px; border-radius:20px; border:1px solid var(--card-border); color:var(--text-dim); white-space:nowrap; }
+    .live-pill i { width:7px; height:7px; border-radius:50%; background:var(--text-dim); }
+    .live-pill.on { color:#fca5a5; border-color:rgba(239,68,68,.5); }
+    .live-pill.on i { background:var(--red); animation:lvp 1.4s infinite; }
+    .live-pill.late { color:#fcd34d; border-color:rgba(245,158,11,.5); }
+    .live-pill.late i { background:var(--orange); }
+    @keyframes lvp { 0% { box-shadow:0 0 0 0 rgba(239,68,68,.6); } 100% { box-shadow:0 0 0 7px rgba(239,68,68,0); } }
+    #live-box { flex-shrink:0; max-height:48%; overflow-y:auto; padding:10px 12px; border-bottom:1px solid var(--card-border); }
+    #live-box:empty { display:none; }
+    .lb-h { display:flex; align-items:center; gap:7px; font-size:12px; font-weight:600; margin-bottom:6px; }
+    .lb-h .material-icons { font-size:15px; color:var(--accent2); }
+    .lb-h .w { margin-left:auto; font:500 10.5px 'JetBrains Mono',monospace; color:var(--text-muted); }
+    .lb-n { font-size:10px; color:var(--text-dim); line-height:1.45; margin-top:5px; }
+    .lb-r { display:flex; flex-wrap:wrap; gap:4px; }
+    .lb-r .seen { cursor:default; } .lb-r .seen b { color:var(--text); }
+    .lops { width:100%; border-collapse:collapse; font-size:11px; }
+    .lops th { text-align:left; font:700 9px 'Inter',sans-serif; text-transform:uppercase; letter-spacing:.07em; color:var(--text-dim); padding:0 4px 4px; }
+    .lops td { padding:4px; border-top:1px solid rgba(30,58,95,.6); white-space:nowrap; font-family:'JetBrains Mono',monospace; }
+    .lops .num { text-align:right; }
+    .lops td.nm { font-family:'Inter',sans-serif; color:var(--text-muted); max-width:96px; overflow:hidden; text-overflow:ellipsis; }
+    .lops tr[data-op] { cursor:pointer; } .lops tr[data-op]:hover td { background:rgba(59,130,246,.08); }
+    .lops tr.on td { background:rgba(59,130,246,.16); }
+    .lops td i { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; }
+    .lops .bar { display:inline-block; width:34px; height:4px; background:var(--navy); border-radius:2px; margin-right:6px; vertical-align:2px; overflow:hidden; }
+    .lops .bar u { display:block; height:100%; background:var(--accent); }
+    .fd { display:flex; gap:9px; padding:7px 9px; border-left:3px solid var(--c); background:var(--navy); border-radius:0 6px 6px 0; margin-bottom:5px; font-size:11px; line-height:1.45; }
+    .fd .ft { font:500 10px 'JetBrains Mono',monospace; color:var(--text-dim); flex-shrink:0; padding-top:1px; }
+    .fd b { color:var(--text); font-weight:600; } .fd div > b { display:block; }
+    .fd span { color:var(--text-muted); font-family:'JetBrains Mono',monospace; }
+    .kpi .spark { margin-left:8px; vertical-align:-3px; opacity:.9; }
     #demo-banner { display:none; background:rgba(245,158,11,.14); color:#fcd34d; font-size:11px; font-weight:600; padding:5px 14px; border-bottom:1px solid rgba(245,158,11,.35); letter-spacing:.04em; }
 
     #panes { flex:1; display:flex; min-height:0; min-width:0; position:relative; }
@@ -307,6 +347,10 @@
     </div>
 
     <div id="sb-body">
+      <div class="mode-seg" id="mode-seg">
+        <button data-m="hist" class="active" onclick="setMode('hist')" title="One network over days: structure, history, attacker-cell scoring"><span class="material-icons">history</span>Analysis</button>
+        <button data-m="live" onclick="setMode('live')" title="Every network in the area over the last minutes, refreshed on a timer"><span class="material-icons">sensors</span>Live</button>
+      </div>
       <div>
         <div class="sb-label">Database</div>
         <div id="conn-bar" onclick="toggleConnPanel()">
@@ -360,7 +404,13 @@
         </details>
       </div>
 
-      <div>
+      <div class="only-live">
+        <div class="sb-label"><span><span class="step">2</span>Networks that belong here</span></div>
+        <input class="db-inp" id="f-expect" type="text" value="" placeholder="425   or   425-01, 425-02, 425-03" autocomplete="off" spellcheck="false" oninput="onExpectInput()">
+        <div class="hint" id="expect-note"></div>
+      </div>
+
+      <div class="only-hist">
         <div class="sb-label"><span><span class="step">2</span>PLMN</span></div>
         <input class="db-inp" id="f-plmn" type="text" value="425-02" placeholder="MCC-MNC, e.g. 425-02" autocomplete="off" spellcheck="false" oninput="onPlmnInput()" onkeydown="if(event.key==='Enter') buildFromDb()">
         <div class="hint" id="plmn-note"></div>
@@ -371,7 +421,11 @@
       <div>
         <div class="sb-label"><span><span class="step">3</span>Period &amp; technology</span></div>
         <div class="row2">
-          <select class="db-inp" id="f-days" onchange="autoDetect()">
+          <select class="db-inp only-live" id="f-win" onchange="liveNow()" title="How far back each refresh looks">
+            <option value="15">Last 15 min</option><option value="30">Last 30 min</option><option value="60" selected>Last hour</option>
+            <option value="180">Last 3 hours</option><option value="360">Last 6 hours</option><option value="1440">Last 24 hours</option>
+          </select>
+          <select class="db-inp only-hist" id="f-days" onchange="autoDetect()">
             <option value="3">Last 3 days</option><option value="7">Last 7 days</option>
             <option value="14" selected>Last 14 days</option><option value="30">Last 30 days</option>
           </select>
@@ -380,9 +434,22 @@
             <label class="chk"><input type="checkbox" id="f-nr" checked> NR</label>
           </div>
         </div>
+        <div class="row2 only-live" style="margin-top:8px">
+          <select class="db-inp" id="f-tick" onchange="liveReschedule()" title="How often the queries run again">
+            <option value="30">Refresh every 30 s</option><option value="60" selected>Refresh every minute</option><option value="120">Refresh every 2 min</option><option value="300">Refresh every 5 min</option>
+          </select>
+          <select class="db-inp" id="f-hist" title="A cell on air now that was not received here in this many days is flagged as never seen before">
+            <option value="0">No history check</option><option value="3">Known = seen in 3 days</option><option value="7" selected>Known = seen in 7 days</option><option value="14">Known = seen in 14 days</option>
+          </select>
+        </div>
       </div>
 
-      <div>
+      <div class="only-live">
+        <button class="btn btn-primary" id="btn-live" onclick="toggleLive()"><span class="material-icons">sensors</span> Start live view</button>
+        <div class="hint">No database? <span class="link" onclick="startLiveDemo()">Play a synthetic live demo</span></div>
+      </div>
+
+      <div class="only-hist">
         <button class="btn btn-primary" id="btn-build" onclick="buildFromDb()"><span class="material-icons">hub</span> Build graph</button>
         <div class="hint">No database? <span class="link" onclick="loadDemo()">Load synthetic demo network</span></div>
       </div>
@@ -407,7 +474,7 @@
   <main>
     <div id="topbar">
       <div class="seg" id="seg-view">
-        <button data-v="map" class="active" title="Sites and relations on the map">Map</button><button data-v="graph" title="Relationship graph">Graph</button><button data-v="split" title="Graph and map side by side">Split</button><button data-v="3d" title="3D hierarchy model">3D</button><button data-v="table" title="Every cell with its KPIs">Inventory</button>
+        <button data-v="map" class="active" title="Sites and relations on the map">Map</button><button data-v="graph" title="Relationship graph">Graph</button><button data-v="split" title="Graph and map side by side">Split</button><button data-v="3d" class="only-hist" title="3D hierarchy model">3D</button><button data-v="table" title="Every cell with its KPIs">Inventory</button>
       </div>
       <span class="tb-lbl">Show</span>
       <select id="c-level" onchange="rebuild()"><option value="site">Sites</option><option value="cell">Cells (sectors)</option></select>
@@ -431,9 +498,10 @@
         </div>
       </div>
       <span style="flex:1"></span>
-      <span class="upd" id="upd"></span>
-      <span class="tb-lbl">Refresh</span>
-      <select id="c-refresh" onchange="setRefresh()" title="Re-run the queries on a timer"><option value="0">Manual</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select>
+      <span class="live-pill only-live" id="live-pill"><i></i><span id="live-txt">LIVE OFF</span></span>
+      <span class="upd only-hist" id="upd"></span>
+      <span class="tb-lbl only-hist">Refresh</span>
+      <select id="c-refresh" class="only-hist" onchange="setRefresh()" title="Re-run the queries on a timer"><option value="0">Manual</option><option value="5">Every 5 min</option><option value="15">Every 15 min</option><option value="60">Every hour</option></select>
       <button class="tb-btn open" id="btn-alerts" onclick="toggleAlerts()"><span class="material-icons">notifications</span>Alerts</button>
     </div>
     <div id="demo-banner">SYNTHETIC DEMO DATA — generated in the browser, not real network measurements</div>
@@ -480,9 +548,10 @@
       <div id="detail"></div>
     </div>
     <div id="alerts">
+      <div id="live-box" class="only-live"></div>
       <div id="al-head">
         <div class="t"><span class="material-icons">notifications_active</span>Alerts<span class="n" id="al-n"></span></div>
-        <div class="al-tabs" id="al-tabs"><button data-d="" class="on">All</button><button data-d="SOC">SOC · security</button><button data-d="NOC">NOC · network</button></div>
+        <div class="al-tabs" id="al-tabs"><button data-d="" class="on">All</button><button data-d="SOC">SOC · security</button><button data-d="NOC">NOC · network</button><button data-d="FEED" class="only-live">Feed</button></div>
         <div class="al-sevs" id="al-sevs"></div>
         <div class="al-opt"><label><input type="checkbox" id="al-hide" checked onchange="renderAlerts()"> Hide acknowledged</label><span id="al-acked"></span></div>
       </div>
@@ -633,9 +702,16 @@ function sqlParts(cols, opts){
   const ID = has('cell_nci')
     ? `if(toString(tech) = 'NR', ifNull(toString(cell_nci), ''), ifNull(toString(cell_eci), ''))`
     : `ifNull(toString(cell_eci), '')`;
-  const K = `concat(toString(tech), ':', ${ID})`;
+  // Live mode reads every network at once, so the PLMN becomes part of the cell key (two operators can reuse one ECI).
+  const OP = `concat(toString(ifNull(network_mcc, 0)), '-', leftPad(toString(toUInt32OrZero(toString(network_mnc))), 2, '0'))`;
+  const K = opts.all ? `concat(${OP}, '/', toString(tech), ':', ${ID})` : `concat(toString(tech), ':', ${ID})`;
   const b = opts.bbox, techs = opts.techs.map(t=>`'${t}'`).join(',');
   const mcc = String(parseInt(opts.mcc,10)), mnc = String(parseInt(opts.mnc,10));
+  const DEV = has('deviceInfo_deviceId') ? 'deviceInfo_deviceId' : `''`;
+  // Roaming: a foreign SIM where the SIM is reported (home country known), else the device's own roaming flag.
+  const HAS_SIM = has('sim_mcc') ? `ifNull(sim_mcc, 0) > 0` : '0';
+  const ROAM_SIM = has('sim_mcc') ? `(ifNull(sim_mcc, 0) > 0 AND ifNull(sim_mcc, 0) != ifNull(network_mcc, 0))` : '0';
+  const ROAM_FLAG = has('network_isRoaming') ? `(NOT (${HAS_SIM}) AND ifNull(network_isRoaming = true, 0))` : '0';
   const polySql = b.poly ? `
       AND pointInPolygon((toFloat64(${LNG}), toFloat64(${LAT})), [${b.poly.map(q=>`(${q[1].toFixed(6)}, ${q[0].toFixed(6)})`).join(', ')}])` : '';
   // Rules from the Flycomm ClickHouse data reference: bound the time on both sides (future-dated rows exist),
@@ -645,9 +721,10 @@ function sqlParts(cols, opts){
     (has('bin_lat') && has('bin_lon') ? `
       AND bin_lat BETWEEN ${fl(b.la0)} AND ${fl(b.la1)} AND bin_lon BETWEEN ${fl(b.lo0)} AND ${fl(b.lo1)}` : '');
   const clean = (has('quality_flags') ? ` AND quality_flags = ''` : '') + (has('appManipulated') ? ` AND ifNull(toUInt8(appManipulated), 0) = 0` : '');
-  const geoWhere = `timestamp > now() - INTERVAL ${opts.days} DAY AND timestamp <= now()
+  const since = opts.minutes ? `${Math.round(opts.minutes)} MINUTE` : `${opts.days} DAY`;
+  const geoWhere = `timestamp > now() - INTERVAL ${since} AND timestamp <= now()
       AND ${space}${clean}`;
-  const plmnWhere = `ifNull(network_mcc, -1) = ${mcc} AND toUInt32OrZero(toString(network_mnc)) = ${mnc}`;
+  const plmnWhere = opts.all ? `ifNull(network_mcc, 0) > 0` : `ifNull(network_mcc, -1) = ${mcc} AND toUInt32OrZero(toString(network_mnc)) = ${mnc}`;
   const WHERE = `${geoWhere}
       AND ${plmnWhere}
       AND toString(tech) IN (${techs})
@@ -662,7 +739,8 @@ function sqlParts(cols, opts){
       AND ${SERVING}`;
   const KT = `if(${LEGACY}, 'LEGACY:any', ${K})`;
   const opt = (c, expr) => has(c) ? expr : `''`;
-  return { has, LAT, LNG, SESS, ID, K, KT, WHERE, WHERE_T, SERVING, geoWhere, space, clean, plmnWhere, opt };
+  return { has, LAT, LNG, SESS, ID, K, KT, WHERE, WHERE_T, SERVING, geoWhere, space, clean, plmnWhere, opt,
+    OP, DEV, HAS_SIM, ROAM_SIM, ROAM_FLAG, techs, live:!!opts.all, minN: opts.all ? 1 : 5 };
 }
 function qCells(p){
   const W = `pow(10, (greatest(least(ifNull(toFloat64(signal_rsrp), -120), -50), -130) + 130) / 20)`; // RSRP-weighted → pulls the estimate toward the site
@@ -683,11 +761,12 @@ function qCells(p){
       ${p.has('signal_timingAdvance') ? `countIf(signal_timingAdvance BETWEEN 0 AND 2000)` : '0'} AS tan,
       ${p.has('signal_timingAdvance') ? `quantileIf(0.5)(signal_timingAdvance, signal_timingAdvance BETWEEN 0 AND 2000)` : 'NULL'} AS ta,
       ${p.has('source') ? 'uniqExact(source)' : '0'} AS srcn,
-      ${p.has('deviceInfo_deviceId') ? `uniqExactIf(deviceInfo_deviceId, deviceInfo_deviceId != '')` : '0'} AS devn
+      ${p.has('deviceInfo_deviceId') ? `uniqExactIf(deviceInfo_deviceId, deviceInfo_deviceId != '')` : '0'} AS devn${p.live ? `,
+      any(${p.OP}) AS op, topK(1)(toString(network_operator))[1] AS opn, uniqExactIf(${p.DEV}, ${p.ROAM_SIM} OR ${p.ROAM_FLAG}) AS ro` : ''}
     FROM ${TABLE}
     WHERE ${p.WHERE}
     GROUP BY k
-    HAVING n >= 5
+    HAVING n >= ${p.minN}
     ORDER BY n DESC
     LIMIT 20000`;
 }
@@ -750,12 +829,12 @@ async function loadRegistry(opts, cellRows){
 }
 function qBins(p){
   // Top-3 serving cells per ~100 m bin → cells sharing a bin overlap spatially.
-  return `SELECT round(${p.LAT}, 3) AS la, round(${p.LNG}, 3) AS lo, ${p.K} AS k, count() AS c
+  return `SELECT round(${p.LAT}, 3) AS la, round(${p.LNG}, 3) AS lo, ${p.K} AS k, count() AS c${p.live ? `, any(${p.OP}) AS op` : ''}
     FROM ${TABLE}
     WHERE ${p.WHERE}
     GROUP BY la, lo, k HAVING c >= 2
     ORDER BY la, lo, c DESC
-    LIMIT 3 BY la, lo
+    LIMIT 3 BY la, lo${p.live ? ', op' : ''}
     LIMIT 150000`;
 }
 function qAreaOps(p){
@@ -775,6 +854,9 @@ async function detectOperators(quiet){
 let DATA = null;      // { cells: Map, cellEdges: Map, meta }
 let G = null;         // current level graph { nodes, edges, byId }
 let selected = null, hovered = null;
+let MODE = 'hist';    // 'hist' = one PLMN over days · 'live' = every network over the last minutes, on a timer
+const LIVE = { on:false, demo:false, timer:0, busy:false, tick:0, run:0, feed:[], fed:new Set(), prevOps:null, prevRo:null, known:new Map(), checked:new Set(),
+  histBusy:false, histFail:0, opFilter:'', expected:[], opColors:new Map(), demoState:null, err:'', p:null, opts:null };
 
 function processRows(cellRows, transRows, binRows, meta){
   const cells = new Map();
@@ -783,12 +865,13 @@ function processRows(cellRows, transRows, binRows, meta){
     const id = Number(r.id); if(!isFinite(id) || id<=0) continue;
     const tech = r.t ?? r.tech, nr = tech === 'NR';
     const siteNum = Math.floor(id / (nr ? 4096 : 256));   // NR: assumes a 24-bit gNB ID
-    cells.set(r.k, { k:r.k, tech, id, pci:r.pci, tac:String(r.tac??''), tacn:+r.tacn||1, band:String(r.band||''), bname:r.bname||'', arfcn:String(r.arfcn||''),
+    const op = r.op || '';                                 // set in live mode only
+    cells.set(r.k, { k:r.k, tech, id, op, opn:r.opn || '', ro:+r.ro||0, pci:r.pci, tac:String(r.tac??''), tacn:+r.tacn||1, band:String(r.band||''), bname:r.bname||'', arfcn:String(r.arfcn||''),
       n:+r.n, s:+r.s, lat:+r.lat, lng:+r.lng, slat:+(r.slat??r.lat), slng:+(r.slng??r.lng), rsrp:r.rsrp==null?null:+r.rsrp, snr:r.snr==null?null:+r.snr, last:r.last,
       sc:+r.sc||0, ta:(r.ta==null||isNaN(+r.ta))?null:+r.ta, tan:+r.tan||0, srcn:+r.srcn||0, devn:+(r.devn ?? r.s)||0, out:0, down:0,
       fts:+r.fts||0, lts:+r.lts||0, days:+r.days||0, pcin:+r.pcin||1, tacs:String(r.tacs ?? r.tac ?? '').split(',').filter(x=>x!==''),
       spr: Math.hypot((+r.sdla||0)*111, (+r.sdlo||0)*111*Math.cos((+r.lat||0)*Math.PI/180)),
-      site:`${tech}:${siteNum}`, siteNum, sector: id % (nr ? 4096 : 256) });
+      site:`${op ? op+'/' : ''}${tech}:${siteNum}`, siteNum, sector: id % (nr ? 4096 : 256) });
   }
   const cellEdges = new Map();
   const edge = (a,b) => { const key = a<b ? a+'|'+b : b+'|'+a; let e = cellEdges.get(key); if(!e){ e={a:a<b?a:b, b:a<b?b:a, ho:0, ov:0}; cellEdges.set(key,e);} return e; };
@@ -800,7 +883,7 @@ function processRows(cellRows, transRows, binRows, meta){
     ca.out += +r.n; edge(r.a,r.b).ho += +r.n; hoTotal += +r.n;
   }
   let cur = null, list = [];
-  const flush = () => { for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++) edge(list[i],list[j]).ov++; };
+  const flush = () => { for(let i=0;i<list.length;i++) for(let j=i+1;j<list.length;j++) if(cells.get(list[i]).op === cells.get(list[j]).op) edge(list[i],list[j]).ov++; };   // overlap = same network only
   for(const r of binRows||[]){ if(!cells.has(r.k)) continue; const key=r.la+','+r.lo; if(key!==cur){ flush(); cur=key; list=[]; } list.push(r.k); }
   flush();
   let refTs = 0; for(const c of cells.values()) if(c.lts > refTs) refTs = c.lts;
@@ -814,18 +897,19 @@ function mode(arr, wfn){ const m=new Map(); for(const x of arr){ const [v,w]=wfn
 function buildLevel(){
   const level = $('c-level').value, etype = $('c-etype').value, min = Math.max(1, +$('c-min').value||1);
   const nodes = [], byId = new Map();
+  const shown = DATA.meta.live && LIVE.opFilter ? [...DATA.cells.values()].filter(c => c.op === LIVE.opFilter) : [...DATA.cells.values()];
   if(level === 'cell'){
-    for(const c of DATA.cells.values()){
-      const n = { id:c.k, label:`${c.siteNum}-${c.sector}`, tech:c.tech, tac:c.tac, band:c.band, rsrp:c.rsrp, n:c.n, s:c.s, lat:c.slat, lng:c.slng, cells:[c], intraHo:0 };
+    for(const c of shown){
+      const n = { id:c.k, label:`${c.siteNum}-${c.sector}`, op:c.op, hot:!!c.hot, tech:c.tech, tac:c.tac, band:c.band, rsrp:c.rsrp, n:c.n, s:c.s, lat:c.slat, lng:c.slng, cells:[c], intraHo:0 };
       nodes.push(n); byId.set(n.id,n);
     }
   } else {
     const groups = new Map();
-    for(const c of DATA.cells.values()){ if(!groups.has(c.site)) groups.set(c.site,[]); groups.get(c.site).push(c); }
+    for(const c of shown){ if(!groups.has(c.site)) groups.set(c.site,[]); groups.get(c.site).push(c); }
     for(const [sid, cs] of groups){
       const N = cs.reduce((a,c)=>a+c.n,0);
       const rs = cs.filter(c=>c.rsrp!=null), rn = rs.reduce((a,c)=>a+c.n,0);
-      const n = { id:sid, label:String(cs[0].siteNum), tech:cs[0].tech, tac:mode(cs,c=>[c.tac,c.n]), band:mode(cs,c=>[c.band,c.n]),
+      const n = { id:sid, label:String(cs[0].siteNum), op:cs[0].op, hot:cs.some(c=>c.hot), tech:cs[0].tech, tac:mode(cs,c=>[c.tac,c.n]), band:mode(cs,c=>[c.band,c.n]),
         rsrp: rn ? rs.reduce((a,c)=>a+c.rsrp*c.n,0)/rn : null, n:N, s:cs.reduce((a,c)=>a+c.s,0),
         lat:cs.reduce((a,c)=>a+c.slat*c.n,0)/N, lng:cs.reduce((a,c)=>a+c.slng*c.n,0)/N, cells:cs.sort((a,b)=>a.sector-b.sector), intraHo:0 };
       nodes.push(n); byId.set(n.id,n);
@@ -835,6 +919,7 @@ function buildLevel(){
   for(const e of DATA.cellEdges.values()){
     const ca = DATA.cells.get(e.a), cb = DATA.cells.get(e.b);
     const A = level==='cell' ? e.a : ca.site, B = level==='cell' ? e.b : cb.site;
+    if(!byId.has(A) || !byId.has(B)) continue;
     if(A === B){ byId.get(A).intraHo += e.ho; continue; }
     const key = A<B ? A+'|'+B : B+'|'+A; let x = agg.get(key);
     if(!x){ x = { source:A<B?A:B, target:A<B?B:A, ho:0, ov:0 }; agg.set(key,x); }
@@ -845,7 +930,7 @@ function buildLevel(){
     const okHo = x.ho >= min, okOv = x.ov >= min;
     if(!((etype!=='ov' && okHo) || (etype!=='ho' && okOv))) continue;
     const a = byId.get(x.source), b = byId.get(x.target);
-    x.a = a; x.b = b; x.km = haversine(a,b); x.xtac = a.tac !== b.tac; x.xtech = a.tech !== b.tech;
+    x.a = a; x.b = b; x.km = haversine(a,b); x.xop = a.op !== b.op; x.xtac = !x.xop && a.tac !== b.tac; x.xtech = a.tech !== b.tech;
     x.w = etype==='ov' ? x.ov : etype==='ho' ? x.ho : x.ho*2 + x.ov;
     edges.push(x);
   }
@@ -874,6 +959,9 @@ const AT = {
   test_plmn:    { dom:'SOC', sev:2, t:'Invalid or test PLMN in the area', d:'A PLMN that is not assigned to any real network (MCC 000, 001 or 999) was received here.' },
   new_cell:     { dom:'SOC', sev:1, t:'Newly appeared cell', d:'First seen in the last 48 hours of the period. Usually a roll-out — worth a glance when it is unexpected.' },
   lone_carrier: { dom:'SOC', sev:1, t:'Carrier used by a single cell', d:'The only cell on its channel in the whole area.' },
+  unexpected_plmn:{ dom:'SOC', sev:3, t:'Network that should not serve here', d:'Devices in the area are served right now by a network that is not on your list of networks that belong here.' },
+  unknown_cell: { dom:'SOC', sev:2, t:'Cell never seen here before', d:'On air now, but not received in this area during the look-back days. A roll-out — or a transmitter that has just arrived.' },
+  hostile_sim:  { dom:'SOC', sev:2, t:'Device with a hostile-nation SIM', d:'A device whose SIM is from Iran (432), Syria (417) or Iraq (418) is being served in the area.' },
   foreign_plmn: { dom:'SOC', sev:0, t:'Foreign PLMN in the area', d:'Another country\'s network was received here — normal near borders, otherwise a lead.' },
   // NOC — things that degrade service
   site_down:    { dom:'NOC', sev:3, t:'Site silent — possible outage', d:'No sample from any cell of the site for more than 3 days, although it was active earlier in the period.' },
@@ -899,10 +987,10 @@ const dts = ts => ts ? new Date(ts*1000).toISOString().slice(0,16).replace('T','
 function scoreThreats(cdeg, sites){
   const cells = [...DATA.cells.values()], m = DATA.meta, period = +m.days || 14, ref = DATA.refTs, winStart = ref - period*86400;
   const reg = m.registry && m.registry.usable ? m.registry : null, base = m.baseline || null;
-  const sitePos = [], tacSites = new Map();
-  for(const [sid, cs] of sites){ const N = cs.reduce((a,c)=>a+c.n,0), tac = mode(cs, c=>[c.tac,c.n]);
-    sitePos.push({ sid, tac, lat:cs.reduce((a,c)=>a+c.slat*c.n,0)/N, lng:cs.reduce((a,c)=>a+c.slng*c.n,0)/N });
-    tacSites.set(tac, (tacSites.get(tac)||0)+1); }
+  const spBy = new Map(), tacSites = new Map();   // a cell is compared with the grid of its own network
+  for(const [sid, cs] of sites){ const N = cs.reduce((a,c)=>a+c.n,0), tac = mode(cs, c=>[c.tac,c.n]), op = cs[0].op;
+    (spBy.get(op) || spBy.set(op, []).get(op)).push({ sid, tac, lat:cs.reduce((a,c)=>a+c.slat*c.n,0)/N, lng:cs.reduce((a,c)=>a+c.slng*c.n,0)/N });
+    tacSites.set(op+'|'+tac, (tacSites.get(op+'|'+tac)||0)+1); }
   const medSc = d3.median(cells.filter(c=>c.sc>0), c=>c.sc) || 0;
   const taCells = cells.filter(c=>c.tan>=5), taLow = taCells.length ? taCells.filter(c=>c.ta!=null && c.ta<=1).length/taCells.length : 1;
   const totOut = cells.reduce((a,c)=>a+c.out,0), totDown = cells.reduce((a,c)=>a+c.down,0), areaDown = totOut+totDown ? totDown/(totOut+totDown) : 0;
@@ -911,14 +999,14 @@ function scoreThreats(cdeg, sites){
     const hit = (w, t) => { ev.push({ w, t }); sum += w; };
     c.threat = { score:0, level:0, ev, notes };
     if(c.n < 3) continue;
-    const dev = c.devn || c.s || 0;
+    const dev = c.devn || c.s || 0, sitePos = spBy.get(c.op) || [];
     // 1 · identity that no real cell would have
     const resv = c.tacs.concat(c.tac).find(t => ['0','65534','65535'].includes(String(t)));
     if(resv !== undefined) hit(30, `TAC ${resv} is reserved — never assigned to a live cell`);
     if(c.tacn > 1) hit(10, `Reported under ${c.tacn} different TACs`);
     if(c.pcin > 1) hit(10, `Received with ${c.pcin} different PCIs`);
     // 2 · it does not belong to the grid around it (a fake cell uses a foreign TAC to force a location update)
-    if(resv === undefined && sitePos.length >= 10 && (tacSites.get(c.tac)||0) <= Math.max(1, Math.floor(sitePos.length*0.01))){
+    if(resv === undefined && sitePos.length >= 10 && (tacSites.get(c.op+'|'+c.tac)||0) <= Math.max(1, Math.floor(sitePos.length*0.01))){
       const near = sitePos.filter(x => x.sid !== c.site).map(x => ({ x, d:haversine({ lat:c.slat, lng:c.slng }, x) })).sort((a,b)=>a.d-b.d).slice(0,5);
       if(near.length >= 3 && near.every(o => o.x.tac !== c.tac)) hit(20, `TAC ${c.tac} is used by none of the ${near.length} nearest sites (they use ${mode(near, o=>[o.x.tac,1])})`);
     }
@@ -967,10 +1055,10 @@ function threatHtml(c){
     ${t.notes.map(x => `<div class="nt">${esc(x)}</div>`).join('')}</div>`;
 }
 
-function computeAlerts(){
+function computeAlerts(keepNew){
   const A = [], cells = DATA.cells, m = DATA.meta, ref = DATA.refTs, period = +m.days || 14;
-  const scope = `${m.mcc||'demo'}-${m.mnc||''}`;
-  const nodeOf = c => G.level==='cell' ? c.k : c.site, cname = c => `${c.siteNum}-${c.sector}`;
+  const scope = m.live ? 'live' : `${m.mcc||'demo'}-${m.mnc||''}`;
+  const nodeOf = c => G.level==='cell' ? c.k : c.site, cname = c => `${c.op ? c.op+' · ' : ''}${c.siteNum}-${c.sector}`, sname = c => `${c.op ? c.op+' · ' : ''}${c.siteNum}`;
   const add = (type, ent, text, o={}) => A.push({ id:`${scope}|${type}|${ent}`, type, sev:AT[type].sev, dom:AT[type].dom, ent, text, node:o.node||null, other:o.other||null, cells:o.cells||[], rank:o.rank||0 });
 
   // per-cell relation count + site grouping
@@ -979,7 +1067,7 @@ function computeAlerts(){
   for(const c of cells.values()) (sites.get(c.site) || sites.set(c.site,[]).get(c.site)).push(c);
   const all = [...cells.values()];
   const medN = d3.median(all, c=>c.n) || 0, medSpr = d3.median(all.filter(c=>c.spr>0), c=>c.spr) || 0;
-  const chUse = new Map(); for(const c of all) if(c.arfcn) chUse.set(c.tech+c.arfcn, (chUse.get(c.tech+c.arfcn)||0)+1);
+  const chKey = c => c.op+c.tech+c.arfcn, chUse = new Map(); for(const c of all) if(c.arfcn) chUse.set(chKey(c), (chUse.get(chKey(c))||0)+1);
 
   // ── SOC ──
   scoreThreats(cdeg, sites);
@@ -996,10 +1084,11 @@ function computeAlerts(){
     if(transient) add('transient', cname(c), `1 day only (${dts(c.fts).slice(0,10)}) · ${c.s||1} device${c.s>1?'s':''} · <b>${c.rsrp.toFixed(0)} dBm</b> · TAC ${esc(c.tac)}`, o);
     else if(period >= 7 && c.fts && ref - c.fts <= 48*3600) add('new_cell', cname(c), `first seen ${dts(c.fts)} · ${fmt(c.n)} samples · TAC ${esc(c.tac)}`, { ...o, rank:c.fts });
     if(c.spr > Math.max(3, medSpr*4) && c.n >= 20) add('wide', cname(c), `spread <b>${c.spr.toFixed(1)} km</b> (area median ${medSpr.toFixed(2)} km) · ${fmt(c.n)} samples`, { ...o, rank:c.spr });
-    if(all.length >= 30 && c.arfcn && chUse.get(c.tech+c.arfcn) === 1) add('lone_carrier', cname(c), `${c.tech} ch <b>${esc(c.arfcn)}</b> · band ${esc(c.band||'?')} · ${fmt(c.n)} samples`, o);
+    if(!m.live && all.length >= 30 && c.arfcn && chUse.get(chKey(c)) === 1) add('lone_carrier', cname(c), `${c.tech} ch <b>${esc(c.arfcn)}</b> · band ${esc(c.band||'?')} · ${fmt(c.n)} samples`, o);
   }
-  for(const [sid, cs] of sites) if(cs.length === 1 && !cdeg.get(cs[0].k) && cs[0].n < medN && sites.size >= 10)
-    add('orphan', String(cs[0].siteNum), `${cs[0].tech} · TAC ${esc(cs[0].tac)} · PCI ${esc(cs[0].pci)} · ${fmt(cs[0].n)} samples`, { node:nodeOf(cs[0]), cells:[cs[0].k], rank:-cs[0].n });
+  // (a short live window is too sparse for "has no neighbours / only one on its carrier" to mean anything)
+  if(!m.live) for(const [sid, cs] of sites) if(cs.length === 1 && !cdeg.get(cs[0].k) && cs[0].n < medN && sites.size >= 10)
+    add('orphan', sname(cs[0]), `${cs[0].tech} · TAC ${esc(cs[0].tac)} · PCI ${esc(cs[0].pci)} · ${fmt(cs[0].n)} samples`, { node:nodeOf(cs[0]), cells:[cs[0].k], rank:-cs[0].n });
   for(const o of (m.areaOps || [])){
     const mcc = String(o.mcc), id = `${mcc}-${String(o.mnc).padStart(2,'0')}`, txt = `${esc(o.name||'unnamed')} · ${fmt(+o.n)} samples in the area`;
     if(+mcc === +m.mcc) continue;
@@ -1007,12 +1096,29 @@ function computeAlerts(){
     else if(['000','001','999','0','1'].includes(mcc)) add('test_plmn', id, txt, { rank:+o.n });
     else add('foreign_plmn', id, `${MCC_NAMES[mcc]||'MCC '+mcc} · ${txt}`, { rank:+o.n });
   }
+  if(m.live){
+    // who is serving devices here right now, and should they be
+    for(const o of (m.liveOps || [])){
+      const mcc = o.op.split('-')[0], own = all.filter(c => c.op === o.op).sort((x,y) => y.n - x.n);
+      const oo = { node: own[0] ? nodeOf(own[0]) : null, cells: own.slice(0,300).map(c=>c.k), rank:+o.dev };
+      const txt = `${esc(o.name||'unnamed')} · <b>${fmt(+o.dev)}</b> device${+o.dev===1?'':'s'} · ${fmt(+o.n)} samples · ${fmt(+o.cells)} cell${+o.cells===1?'':'s'}`;
+      if(HOSTILE_MCC.has(mcc)) add('hostile_plmn', o.op, `${MCC_NAMES[mcc]} · ${txt}`, oo);
+      else if(isTestMcc(mcc)) add('test_plmn', o.op, txt, oo);
+      else if(!isExpected(o.op)) add('unexpected_plmn', o.op, `${MCC_NAMES[mcc]||'MCC '+mcc} · ${txt}`, oo);
+    }
+    for(const r of (m.roam || [])) if(HOSTILE_MCC.has(String(r.home)))
+      add('hostile_sim', `SIM ${r.home} on ${r.op}`, `${MCC_NAMES[String(r.home)]} SIM · <b>${fmt(+r.dev)}</b> device${+r.dev===1?'':'s'} · ${fmt(+r.n)} samples`, { rank:+r.dev });
+    const base = m.baseline;
+    if(base) for(const c of all) if(c.n >= 2 && base.checked.has(c.k) && !base.map.get(c.k))
+      add('unknown_cell', cname(c), `not received in the previous ${base.back} d · ${c.s||1} device${c.s>1?'s':''} · ${fmt(c.n)} samples · TAC ${esc(c.tac)}${c.rsrp==null?'':' · '+c.rsrp.toFixed(0)+' dBm'}`, { node:nodeOf(c), cells:[c.k], rank:c.n });
+  }
 
   // ── NOC ──
   const nbrs = new Map();
   for(const e of DATA.cellEdges.values()){
     if(e.ho < 2 && e.ov < 3) continue;
     const a = cells.get(e.a), b = cells.get(e.b);
+    if(a.op !== b.op) continue;
     if(a.arfcn && a.arfcn === b.arfcn && a.pci === b.pci && a.pci !== '')
       add('pci_collision', `${cname(a)} ↔ ${cname(b)}`, `PCI <b>${esc(a.pci)}</b> · ch ${esc(a.arfcn)} · ${fmt(e.ho)} cell changes`, { node:nodeOf(a), other:nodeOf(b), cells:[a.k,b.k], rank:e.ho });
     if(e.ho >= 2){ (nbrs.get(a.k)||nbrs.set(a.k,[]).get(a.k)).push(b); (nbrs.get(b.k)||nbrs.set(b.k,[]).get(b.k)).push(a); }
@@ -1037,14 +1143,15 @@ function computeAlerts(){
   const hoE = G.edges.filter(e=>e.ho>=G.min), medKm = d3.median(hoE, e=>e.km) || 0.5, thr = Math.max(2, medKm*4);
   for(const e of hoE) if(e.km > thr) add('overshoot', `${e.a.label} ↔ ${e.b.label}`, `<b>${e.km.toFixed(1)} km</b> apart (usual ${medKm.toFixed(2)} km) · ${fmt(e.ho)} cell changes`, { node:e.a.id, other:e.b.id, cells:[...e.a.cells, ...e.b.cells].map(c=>c.k), rank:e.km });
   const medNode = d3.median(G.nodes, n=>n.n) || 0;
-  for(const n of G.nodes) if(n.deg === 0 && n.n >= Math.max(30, medNode)) add('isolated', n.label, `${n.tech} · TAC ${esc(n.tac)} · ${fmt(n.n)} samples`, { node:n.id, cells:n.cells.map(c=>c.k), rank:n.n });
+  if(!m.live) for(const n of G.nodes) if(n.deg === 0 && n.n >= Math.max(30, medNode)) add('isolated', n.label, `${n.tech} · TAC ${esc(n.tac)} · ${fmt(n.n)} samples`, { node:n.id, cells:n.cells.map(c=>c.k), rank:n.n });
   for(const e of G.edges.filter(e=>e.xtac && e.ho>0).sort((a,b)=>b.ho-a.ho).slice(0,12))
     add('tac_border', `${e.a.label} ↔ ${e.b.label}`, `TAC ${esc(e.a.tac)} / ${esc(e.b.tac)} · <b>${fmt(e.ho)}</b> cell changes`, { node:e.a.id, other:e.b.id, rank:e.ho });
 
   A.sort((x,y) => y.sev - x.sev || (x.type < y.type ? -1 : x.type > y.type ? 1 : 0) || y.rank - x.rank);
   // what is new since the previous refresh
   const ids = new Set(A.map(a=>a.id));
-  newAlertIds = prevAlertIds ? new Set([...ids].filter(i => !prevAlertIds.has(i))) : new Set();
+  const fresh = prevAlertIds ? [...ids].filter(i => !prevAlertIds.has(i)) : [];
+  newAlertIds = new Set(keepNew ? [...newAlertIds].filter(i => ids.has(i)).concat(fresh) : fresh);   // keepNew: a re-run inside one refresh keeps the NEW marks
   prevAlertIds = ids;
   ALERTS = A;
   // attach to nodes and cells
@@ -1060,6 +1167,7 @@ function computeAlerts(){
 
 function alertVisible(a){ return (!alDom || a.dom === alDom) && (!alSev.size || alSev.has(a.sev)) && !($('al-hide').checked && ACK.has(a.id)); }
 function renderAlerts(){
+  if(alDom === 'FEED'){ renderFeed(); return; }
   if(!DATA) return;
   const inDom = ALERTS.filter(a => !alDom || a.dom === alDom), open = inDom.filter(a => !ACK.has(a.id));
   $('al-sevs').innerHTML = [4,3,2,1,0].map(s => { const n = open.filter(a=>a.sev===s).length;
@@ -1106,6 +1214,7 @@ function focusAlerts(dom){ toggleAlerts(true); alDom = dom; alSev = new Set([4,3
 // ══════════════ KPI STRIP ══════════════
 function renderKpis(){
   if(!DATA || !G){ $('kpis').innerHTML = ''; return; }
+  if(DATA.meta.live){ renderKpisLive(); return; }
   const cells = [...DATA.cells.values()], open = ALERTS.filter(a => !ACK.has(a.id));
   const cnt = (dom, s) => open.filter(a => a.dom===dom && a.sev===s).length;
   const al = (dom, label) => { const c = cnt(dom,4), h = cnt(dom,3), md = cnt(dom,2), col = c ? SEVS[4].c : h ? SEVS[3].c : md ? SEVS[2].c : '#22c55e';
@@ -1136,13 +1245,13 @@ function renderTable(){
   if(!DATA){ $('tbl').innerHTML = ''; $('tbl-cnt').textContent = 'No data yet — build a graph first'; return; }
   const q = $('tbl-q').value.trim().toLowerCase(), only = $('tbl-al').checked;
   const val = (c,k) => k==='cell' ? c.siteNum*10000+c.sector : (k==='tac'||k==='pci'||k==='band'||k==='arfcn') ? (+c[k]||0) : k==='sev' ? c.sev*1000+c.alerts.length : k==='threat' ? c.threat.score : c[k];
-  let rows = [...DATA.cells.values()].filter(c => (!only || c.alerts.length) && (!q || `${c.siteNum}-${c.sector} ${c.tech} tac${c.tac} pci${c.pci} b${c.band} ${c.arfcn} ${c.alerts.map(a=>AT[a.type].t).join(' ')}`.toLowerCase().includes(q)));
+  let rows = [...DATA.cells.values()].filter(c => (!only || c.alerts.length) && (!q || `${c.op} ${c.siteNum}-${c.sector} ${c.tech} tac${c.tac} pci${c.pci} b${c.band} ${c.arfcn} ${c.alerts.map(a=>AT[a.type].t).join(' ')}`.toLowerCase().includes(q)));
   rows.sort((a,b) => { const x=val(a,tSort.k), y=val(b,tSort.k); return (x==null?-1e18:x) < (y==null?-1e18:y) ? -tSort.d : (x==null?-1e18:x) > (y==null?-1e18:y) ? tSort.d : b.n - a.n; });
   $('tbl-cnt').textContent = `${rows.length} of ${DATA.cells.size} cells` + (rows.length > 600 ? ' · showing the first 600' : '');
   const selK = selected ? new Set(selected.cells.map(c=>c.k)) : null;
   $('tbl').innerHTML = `<tr>${TCOLS.map(([k,l,cl]) => `<th class="${cl||''} ${tSort.k===k?'sorted':''}" data-k="${k}">${l}${tSort.k===k ? (tSort.d<0?' ↓':' ↑') : ''}</th>`).join('')}</tr>` +
     rows.slice(0,600).map(c => `<tr class="r ${selK && selK.has(c.k)?'sel':''}" data-k="${esc(c.k)}">
-      <td class="l"><b>${c.siteNum}-${c.sector}</b></td><td class="l">${c.tech}</td><td>${esc(c.tac)}</td><td>${esc(c.pci)}</td><td>${esc(c.band||'–')}</td><td>${esc(c.arfcn||'–')}</td>
+      <td class="l">${c.op ? `<span style="color:${opColor(c.op)}">${esc(c.op)}</span> ` : ''}<b>${c.siteNum}-${c.sector}</b></td><td class="l">${c.tech}</td><td>${esc(c.tac)}</td><td>${esc(c.pci)}</td><td>${esc(c.band||'–')}</td><td>${esc(c.arfcn||'–')}</td>
       <td>${fmt(c.n)}</td><td>${fmt(c.s)}</td><td style="${c.rsrp!=null&&c.rsrp<=-110?'color:#fca5a5':''}">${c.rsrp==null?'–':c.rsrp.toFixed(0)}</td><td>${c.snr==null?'–':c.snr.toFixed(1)}</td>
       <td>${c.days||'–'}</td><td>${dts(c.fts)}</td><td>${dts(c.lts)}</td>
       <td style="font-weight:600;color:${c.threat.level===3?SEVS[4].c:c.threat.level===2?SEVS[3].c:c.threat.level===1?SEVS[2].c:'var(--text-dim)'}">${c.threat.score||'–'}</td>
@@ -1156,7 +1265,7 @@ $('tbl').addEventListener('click', ev => {
 
 // ══════════════ AUTO REFRESH ══════════════
 let refreshT = 0;
-function setRefresh(){ clearInterval(refreshT); const m = +$('c-refresh').value; if(m) refreshT = setInterval(() => { if(DATA && DATA.meta.source === 'clickhouse' && !$('btn-build').disabled) buildFromDb(true); }, m*60000); }
+function setRefresh(){ clearInterval(refreshT); const m = +$('c-refresh').value; if(m) refreshT = setInterval(() => { if(MODE === 'hist' && DATA && DATA.meta.source === 'clickhouse' && !$('btn-build').disabled) buildFromDb(true); }, m*60000); }
 function stamp(){ $('upd').textContent = 'Updated ' + new Date().toTimeString().slice(0,5); }
 
 // ══════════════ COLOUR ══════════════
@@ -1169,6 +1278,10 @@ function recolor(){
     const sc = d3.scaleLinear().domain([-120,-105,-90,-75]).range(['#ef4444','#f59e0b','#22c55e','#06b6d4']).clamp(true);
     colorOf = n => n.rsrp==null ? '#64748b' : sc(n.rsrp);
     legendItems = [['#ef4444','≤ -120 dBm'],['#f59e0b','-105'],['#22c55e','-90'],['#06b6d4','≥ -75']];
+  } else if(mode_ === 'op'){
+    const w = new Map(); for(const n of G.nodes) w.set(n.op, (w.get(n.op)||0)+1);
+    colorOf = n => opColor(n.op);
+    legendItems = [...w.entries()].sort((a,b)=>b[1]-a[1]).slice(0,14).map(([v,c]) => [opColor(v), `${v||'?'} (${c})`]);
   } else {
     const key = mode_==='tac' ? n=>n.tac : mode_==='band' ? n=>n.band : n=>n.tech;
     const w = new Map(); for(const n of G.nodes) w.set(key(n), (w.get(key(n))||0)+1);
@@ -1183,7 +1296,7 @@ function recolor(){
   $('legend').style.display = '';
   if(view==='3d') build3D();
   $('legend').innerHTML = `<div class="lg-t">${$('c-color').selectedOptions[0].text}</div>` + legendItems.map(([c,l])=>`<span class="lg-i"><span class="sw" style="background:${c}"></span>${esc(l)}</span>`).join('') +
-    `<div class="lg-t" style="margin-top:6px">Edges</div><span class="lg-i"><span class="ln" style="border-color:#5b7fb5"></span>same TAC</span><span class="lg-i"><span class="ln" style="border-color:#22d3ee"></span>crosses TAC</span><span class="lg-i"><span class="sw" style="border:2px solid #ef4444;background:none"></span>critical alert</span><span class="lg-i"><span class="sw" style="border:2px solid #f59e0b;background:none"></span>high alert</span>` +
+    `<div class="lg-t" style="margin-top:6px">Edges</div><span class="lg-i"><span class="ln" style="border-color:#5b7fb5"></span>same TAC</span><span class="lg-i"><span class="ln" style="border-color:#22d3ee"></span>crosses TAC</span>${DATA && DATA.meta.live ? '<span class="lg-i"><span class="ln" style="border-color:#f472b6"></span>between networks</span><span class="lg-i"><span class="sw" style="border:1.5px solid #fff;background:none"></span>sampled just now</span>' : ''}<span class="lg-i"><span class="sw" style="border:2px solid #ef4444;background:none"></span>critical alert</span><span class="lg-i"><span class="sw" style="border:2px solid #f59e0b;background:none"></span>high alert</span>` +
     (G.etype==='both' ? `<span class="lg-i"><span class="ln" style="border-color:#5b7fb5;border-top-style:dashed"></span>overlap only</span>` : '');
   draw(); drawMap();
 }
@@ -1225,7 +1338,7 @@ function fitGraph(){
   const k = Math.min(8, 0.88 / Math.max((xs[1]-xs[0])/W, (ys[1]-ys[0])/H, 1e-6));
   d3.select(canvas).call(zoom.transform, d3.zoomIdentity.translate(W/2 - k*(xs[0]+xs[1])/2, H/2 - k*(ys[0]+ys[1])/2).scale(k));
 }
-function edgeStyle(e){ const ovOnly = G.etype==='both' && e.ho < G.min; return { col: e.xtac ? '34,211,238' : '91,127,181', dash: ovOnly }; }
+function edgeStyle(e){ const ovOnly = G.etype==='both' && e.ho < G.min; return { col: e.xop ? '244,114,182' : e.xtac ? '34,211,238' : '91,127,181', dash: ovOnly }; }
 function draw(){
   ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,W,H);
   if(!G) return;
@@ -1247,7 +1360,7 @@ function draw(){
     ctx.globalAlpha = on ? 1 : 0.15;
     ctx.fillStyle = n.color || '#60a5fa';
     ctx.beginPath(); ctx.arc(n.x, n.y, n.r*rs, 0, 6.2832); ctx.fill();
-    if(n.tech==='NR'){ ctx.strokeStyle='rgba(255,255,255,.75)'; ctx.lineWidth=1/tf.k; ctx.stroke(); }
+    if(n.tech==='NR' || n.hot){ ctx.strokeStyle = n.hot ? '#fff' : 'rgba(255,255,255,.75)'; ctx.lineWidth=(n.hot?1.6:1)/tf.k; ctx.stroke(); }
     if(n.sev >= 3){ ctx.strokeStyle=SEVS[n.sev].c; ctx.lineWidth=2/tf.k; ctx.beginPath(); ctx.arc(n.x, n.y, n.r*rs+3/tf.k, 0, 6.2832); ctx.stroke(); }
     if(n===selected || n===hovered){ ctx.strokeStyle='#fff'; ctx.lineWidth=2/tf.k; ctx.beginPath(); ctx.arc(n.x,n.y,n.r*rs+2.5/tf.k,0,6.2832); ctx.stroke(); }
   }
@@ -1290,11 +1403,11 @@ function renderDetail(){
   const n = selected, row = (k,v) => `<tr><td>${k}</td><td class="v">${v}</td></tr>`;
   const nb = n.nb.map(e=>({ e, o: e.a===n ? e.b : e.a })).sort((x,y)=>y.e.w-x.e.w);
   const tacs = [...new Set(n.cells.map(c=>c.tac))], bands = [...new Set(n.cells.map(c=>c.band).filter(Boolean))];
-  d.innerHTML = `<h3><span class="sw" style="width:10px;height:10px;border-radius:50%;background:${n.color};display:inline-block"></span>${n.tech} ${G.level==='site'?'site':'cell'} ${esc(n.label)}<span class="material-icons x" onclick="select(null)">close</span></h3>
+  d.innerHTML = `<h3><span class="sw" style="width:10px;height:10px;border-radius:50%;background:${n.color};display:inline-block"></span>${n.op ? esc(n.op)+' · ' : ''}${n.tech} ${G.level==='site'?'site':'cell'} ${esc(n.label)}<span class="material-icons x" onclick="select(null)">close</span></h3>
     <div class="sub">${n.lat.toFixed(5)}, ${n.lng.toFixed(5)} (estimated)</div>
     ${threatHtml(n.cells.slice().sort((a,b)=>(b.threat?b.threat.score:0)-(a.threat?a.threat.score:0))[0])}
     ${(n.alerts||[]).filter(a=>!a.type.startsWith('attacker_')).slice(0,6).map(a=>`<div class="d-al" style="--c:${SEVS[a.sev].c}"><b>${esc(AT[a.type].t)}</b><span>${a.text}</span></div>`).join('')}
-    <table>${row('TAC', esc(tacs.join(', ')))}${row('Bands', esc(bands.join(', ')||'–'))}${row('Samples', fmt(n.n))}${row('Devices', fmt(n.s))}
+    <table>${n.op ? row('Network', esc(n.op) + (n.cells[0].opn ? ' · '+esc(n.cells[0].opn) : '')) + row('Roaming devices', fmt(n.cells.reduce((a,c)=>a+c.ro,0))) : ''}${row('TAC', esc(tacs.join(', ')))}${row('Bands', esc(bands.join(', ')||'–'))}${row('Samples', fmt(n.n))}${row('Devices', fmt(n.s))}
       ${row('Median RSRP', n.rsrp==null?'–':n.rsrp.toFixed(0)+' dBm')}${row('Relations', n.deg)}${G.level==='site'?row('Intra-site changes', fmt(n.intraHo)):''}</table>
     <div class="sec">${G.level==='site'?'Cells':'Cell'}</div>
     <table><tr><th>Sec</th><th>PCI</th><th>Band</th><th>Ch</th><th>RSRP</th><th>n</th></tr>
@@ -1334,9 +1447,9 @@ function drawMap(){
   for(const n of G.nodes){
     const on = !selSet || selSet.has(n);
     if(n.sev >= 3) L.circleMarker([n.lat,n.lng], { renderer:mapRenderer, radius: Math.max(2.5, n.r*0.75)+4, color:SEVS[n.sev].c, weight:2, fill:false, opacity:on?0.95:0.25, interactive:false }).addTo(nodeLayer);
-    const m = L.circleMarker([n.lat,n.lng], { renderer:mapRenderer, radius: Math.max(2.5, n.r*0.75), color: n===selected ? '#fff' : (n.tech==='NR' ? 'rgba(255,255,255,.7)' : 'rgba(10,22,40,.9)'), weight: n===selected?2:1, fillColor:n.color, fillOpacity:on?0.95:0.2, opacity:on?1:0.2 }).addTo(nodeLayer);
+    const m = L.circleMarker([n.lat,n.lng], { renderer:mapRenderer, radius: Math.max(2.5, n.r*0.75), color: (n===selected || n.hot) ? '#fff' : (n.tech==='NR' ? 'rgba(255,255,255,.7)' : 'rgba(10,22,40,.9)'), weight: n===selected?2:(n.hot?1.5:1), fillColor:n.color, fillOpacity:on?0.95:0.2, opacity:on?1:0.2 }).addTo(nodeLayer);
     m.on('click', () => select(n, false));
-    m.bindTooltip(`${n.tech} ${n.label} · TAC ${n.tac}`, { direction:'top', opacity:0.9 });
+    m.bindTooltip(`${n.op ? n.op+' · ' : ''}${n.tech} ${n.label} · TAC ${n.tac}`, { direction:'top', opacity:0.9 });
   }
 }
 
@@ -1510,6 +1623,361 @@ async function buildFromDb(keep){
   finally{ btn.disabled = false; btn.innerHTML = '<span class="material-icons">hub</span> Build graph'; }
 }
 
+// ══════════════ LIVE MODE ══════════════
+// The same graph, map and alert engine, fed by a short rolling window that is re-read on a timer — and for EVERY network
+// received in the area, not one PLMN. On top of that: which networks serve here now, which of them should not, how many
+// devices are roaming, and a feed of what changed between two refreshes.
+function parseExpect(v){
+  const list = [], bad = [];
+  for(const tok of String(v||'').split(/[,;\n]+/).map(s=>s.trim()).filter(Boolean)){
+    if(/^\d{3}$/.test(tok)) list.push({ mcc:tok });
+    else { const p = parsePlmn(tok); if(p) list.push(p); else bad.push(tok); }
+  }
+  return { list, bad };
+}
+function isExpected(op){
+  if(!LIVE.expected.length) return true;
+  const [mcc, mnc] = String(op).split('-');
+  return LIVE.expected.some(e => +e.mcc === +mcc && (e.mnc === undefined || +e.mnc === +mnc));
+}
+const isTestMcc = mcc => ['000','001','999','0','1'].includes(String(mcc));
+function onExpectInput(){
+  const { list, bad } = parseExpect($('f-expect').value), note = $('expect-note');
+  LIVE.expected = list;
+  try{ localStorage.setItem('ng_expect', $('f-expect').value); }catch(e){}
+  if(bad.length){ note.className = 'hint bad'; note.textContent = `Could not read "${bad[0]}" — write a country code (425) or a full PLMN (425-02), separated by commas.`; }
+  else if(!list.length){ note.className = 'hint'; note.textContent = 'Empty — no network is treated as out of place. Hostile and test PLMNs still raise alerts.'; }
+  else { note.className = 'hint';
+    note.innerHTML = list.map(e => `<b>${e.mcc}${e.mnc!==undefined?'-'+e.mnc:''}</b>${e.mnc===undefined ? ' '+esc(MCC_NAMES[e.mcc]||'')+' (all its networks)' : ''}`).join(', ') + '. Any other network serving a device here raises an alert.'; }
+  if(DATA && DATA.meta.live && G){ computeAlerts(true); recolor(); renderLiveBox(); feedAlerts(); }
+}
+function opColor(op){
+  if(!LIVE.opColors.has(op)) LIVE.opColors.set(op, HOSTILE_MCC.has(String(op).split('-')[0]) ? '#ef4444' : PALETTE[LIVE.opColors.size % PALETTE.length]);
+  return LIVE.opColors.get(op);
+}
+function resetData(){
+  if(sim) sim.stop();
+  DATA = null; G = null; selected = null; hovered = null; ALERTS = []; prevAlertIds = null; newAlertIds = new Set();
+  $('kpis').innerHTML = ''; $('legend').style.display = 'none'; $('demo-banner').style.display = 'none'; $('ins-wrap').style.display = 'none';
+  $('empty').style.display = 'flex'; $('g3-empty').style.display = 'flex'; $('live-box').innerHTML = '';
+  $('al-sevs').innerHTML = ''; $('al-n').textContent = ''; $('al-acked').textContent = '';
+  $('al-list').innerHTML = `<div class="al-empty"><span class="material-icons">notifications_none</span>${MODE === 'live'
+    ? 'Choose the area and <b>Start live view</b>.<br>Networks, roamers and alerts appear here and update on their own.'
+    : 'Type a PLMN, choose the area and <b>Build graph</b>.<br>Alerts appear here, most severe first.'}</div>`;
+  renderDetail(); draw(); drawMap(); drawBbox(); renderTable();
+}
+function setMode(m){
+  if(m === MODE) return;
+  if(LIVE.on) stopLive();
+  MODE = m; document.body.classList.toggle('live', m === 'live');
+  document.querySelectorAll('#mode-seg button').forEach(b => b.classList.toggle('active', b.dataset.m === m));
+  const sel = $('c-color'), opt = sel.querySelector('option[value="op"]');
+  if(m === 'live' && !opt) sel.insertAdjacentHTML('afterbegin', '<option value="op">Network</option>');
+  if(m !== 'live' && opt) opt.remove();
+  sel.value = m === 'live' ? 'op' : 'tac';
+  // a short window has few samples per cell: show every relation, by movement or by shared coverage
+  $('c-min').value = m === 'live' ? 1 : 3; $('c-etype').value = m === 'live' ? 'both' : 'ho';
+  if(m === 'live' && view === '3d') setView('map');
+  if(alDom === 'FEED'){ alDom = ''; document.querySelectorAll('#al-tabs button').forEach(x => x.classList.toggle('on', x.dataset.d === '')); }
+  if(m === 'live' && !$('f-expect').value.trim()){ const p = parsePlmn($('f-plmn').value); $('f-expect').value = p ? p.mcc : '425'; }
+  clearStatus(); resetData(); onExpectInput(); setPill();
+}
+
+// ── queries ──
+function qLiveOps(p){
+  const D = p.DEV;
+  return `SELECT ${p.OP} AS op, topK(1)(toString(network_operator))[1] AS name, count() AS n, uniqExact(${D}) AS dev,
+      uniqExactIf(${D}, ${p.ROAM_SIM}) AS ros, uniqExactIf(${D}, ${p.ROAM_FLAG}) AS rof, uniqExactIf(${D}, ${p.HAS_SIM}) AS simdev,
+      uniqExactIf(${p.K}, ${p.ID} NOT IN (${BAD_ID_SQL})) AS cells,
+      countIf(toString(tech) = 'NR') AS nr, countIf(toString(tech) = 'LTE') AS lte, countIf(toString(tech) IN ('GSM','WCDMA','CDMA')) AS leg,
+      quantileIf(0.5)(signal_rsrp, signal_rsrp < 0) AS rsrp, toUnixTimestamp(max(timestamp)) AS lts
+    FROM ${TABLE}
+    WHERE ${p.geoWhere}
+      AND ${p.SERVING} AND ifNull(network_mcc, 0) > 0
+    GROUP BY op WITH TOTALS
+    ORDER BY dev DESC
+    LIMIT 60`;
+}
+function qLiveRoam(p){
+  return `SELECT toString(sim_mcc) AS home, ${p.OP} AS op, uniqExact(${p.DEV}) AS dev, count() AS n
+    FROM ${TABLE}
+    WHERE ${p.geoWhere}
+      AND ${p.SERVING} AND ifNull(network_mcc, 0) > 0 AND ${p.ROAM_SIM}
+    GROUP BY home, op
+    ORDER BY dev DESC
+    LIMIT 80`;
+}
+const tlStep = minutes => minutes <= 60 ? 1 : minutes <= 360 ? 5 : 30;
+function qLiveTimeline(p, minutes){
+  return `SELECT toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL ${tlStep(minutes)} MINUTE)) AS t, count() AS n, uniqExact(${p.DEV}) AS dev
+    FROM ${TABLE}
+    WHERE ${p.geoWhere}
+      AND ${p.SERVING}
+    GROUP BY t
+    ORDER BY t`;
+}
+// Was the cell received in this area BEFORE the live window? Asked once per cell, the first time it shows up.
+function qLiveKnown(p, back, minutes, cand){
+  const ids = [...new Set(cand.map(c => `'${String(c.id).replace(/[^0-9]/g,'')}'`))].join(',');
+  return `SELECT ${p.K} AS k, count() AS n, uniqExact(toDate(timestamp)) AS days
+    FROM ${TABLE}
+    WHERE timestamp > now() - INTERVAL ${back} DAY AND timestamp <= now() - INTERVAL ${minutes} MINUTE
+      AND ${p.space}${p.clean}
+      AND toString(tech) IN (${p.techs})
+      AND ${p.ID} IN (${ids})
+    GROUP BY k`;
+}
+
+// ── run ──
+function setPill(){
+  const el = $('live-pill'), t = $('live-txt'); el.className = 'live-pill only-live';
+  if(!LIVE.on){ t.textContent = 'LIVE OFF'; return; }
+  const age = DATA && DATA.refTs ? Date.now()/1000 - DATA.refTs : null;
+  if(LIVE.err){ el.classList.add('late'); t.textContent = 'LIVE · update failed'; }
+  else if(age != null && age > 900){ el.classList.add('late'); t.textContent = `LIVE · data ${age < 5400 ? Math.round(age/60)+' min' : hrs(age)} behind`; }
+  else { el.classList.add('on'); t.textContent = 'LIVE · ' + new Date().toTimeString().slice(0,8); }
+}
+function toggleLive(){ if(LIVE.on) stopLive(); else startLive(false); }
+function startLiveDemo(){ startLive(true); }
+function startLive(demo){
+  clearStatus();
+  try{ bbox(); techList(); }catch(e){ status('Error: '+e.message, 'err'); return; }
+  if(LIVE.on) stopLive();
+  Object.assign(LIVE, { on:true, demo:!!demo, busy:false, tick:0, run:LIVE.run+1, feed:[], fed:new Set(), prevOps:null, prevRo:null, known:new Map(), checked:new Set(),
+    histBusy:false, histFail:0, opFilter:'', demoState:null, opColors:new Map(), err:'', p:null, opts:null });
+  resetData(); onExpectInput();
+  $('demo-banner').style.display = demo ? 'block' : 'none';
+  $('btn-live').innerHTML = '<span class="material-icons">stop_circle</span> Stop live view'; $('btn-live').classList.add('stop');
+  setPill(); liveTick(); liveReschedule();
+}
+function stopLive(){
+  LIVE.on = false; LIVE.run++; clearInterval(LIVE.timer);
+  $('btn-live').innerHTML = '<span class="material-icons">sensors</span> Start live view'; $('btn-live').classList.remove('stop');
+  feedPush(0, 'Live view stopped', 'The picture on screen is frozen at the last update.');
+  setPill(); if(alDom === 'FEED') renderAlerts();
+}
+function liveReschedule(){ clearInterval(LIVE.timer); if(LIVE.on) LIVE.timer = setInterval(liveTick, LIVE.demo ? 4000 : (+$('f-tick').value || 60)*1000); }
+function liveNow(){ if(LIVE.on) liveTick(); }
+async function liveTick(){
+  if(!LIVE.on || LIVE.busy) return;
+  LIVE.busy = true; const run = LIVE.run, t0 = performance.now();
+  try{
+    const P = LIVE.demo ? demoLivePayload() : await liveFetch();
+    if(!LIVE.on || run !== LIVE.run) return;
+    LIVE.tick++; LIVE.err = '';
+    liveApply(P);
+    clearStatus();
+    status(`Live · ${P.cells.length} cells · ${P.ops.length} networks · last ${P.opts.minutes} min · ${((performance.now()-t0)/1000).toFixed(1)}s`, 'ok');
+    for(const n of P.notes || []) status(n, 'err');
+    if(!P.cells.length) status('No cell sample in the window — widen the window or the area', 'err');
+    liveHistory();
+  }catch(e){ if(run === LIVE.run){ LIVE.err = e.message; clearStatus(); status('Live update failed: '+e.message.substring(0,240), 'err'); } }
+  finally{ LIVE.busy = false; setPill(); }
+}
+async function liveFetch(){
+  const cols = await loadSchema();
+  const minutes = +$('f-win').value || 60;
+  const opts = { bbox:bbox(), techs:techList(), minutes, days:minutes/1440, all:true };
+  const p = sqlParts(cols, opts), notes = [], none = { data:[] };
+  const q = async (name, sql, optional) => { try{ return await executeClickHouseQuery(sql); }
+    catch(e){ if(!optional) throw e; notes.push(`${name} failed: ${e.message.substring(0,160)}`); return none; } };
+  const [cells, trans, bins, ops, roam, tl] = await Promise.all([
+    q('Cells', qCells(p)),
+    p.SESS ? q('Cell changes', qTransitions(p), true) : none,
+    q('Overlap', qBins(p), true),
+    q('Networks', qLiveOps(p)),
+    p.has('sim_mcc') ? q('Roamers by home country', qLiveRoam(p), true) : none,
+    q('Activity', qLiveTimeline(p, minutes), true) ]);
+  return { opts, p, cells:cells.data, trans:trans.data, bins:bins.data, ops:ops.data, totals:ops.totals || null, roam:roam.data, tl:tl.data, notes };
+}
+function liveSums(m){
+  const ops = m.liveOps || [], t = m.liveTotals, g = k => t && t[k] != null ? +t[k] : ops.reduce((a,o) => a + (+o[k]||0), 0);
+  return { dev:g('dev'), n:g('n'), ros:g('ros'), rof:g('rof'), simdev:g('simdev') };
+}
+function liveApply(P){
+  const first = !DATA || !DATA.meta.live, back = +$('f-hist').value || 0;
+  LIVE.p = P.p || null; LIVE.opts = P.opts;
+  processRows(P.cells, P.trans, P.bins, { ...P.opts, live:true, source:LIVE.demo ? 'demo' : 'clickhouse', areaOps:[], liveOps:P.ops, liveTotals:P.totals, roam:P.roam, tl:P.tl,
+    registry:null, baseline: back ? { map:LIVE.known, checked:LIVE.checked, back } : null });
+  for(const o of P.ops) if(+o.lts > DATA.refTs) DATA.refTs = +o.lts;
+  const hotSec = Math.max(180, 3 * (LIVE.demo ? 60 : (+$('f-tick').value || 60)));
+  for(const c of DATA.cells.values()) c.hot = c.lts >= DATA.refTs - hotSec;   // sampled in the last few minutes
+  if(LIVE.opFilter && !P.ops.some(o => o.op === LIVE.opFilter)) LIVE.opFilter = '';
+  if(first){ G = null; selected = null; prevAlertIds = null; rebuild(); fitBbox(); }
+  else { rebuild(); if(sim) sim.alpha(0.12); }   // keep the layout calm between refreshes
+  liveFeedDiff(P, first); renderLiveBox();
+}
+async function liveHistory(){
+  const back = +$('f-hist').value || 0;
+  if(!back || LIVE.demo || LIVE.histBusy || LIVE.histFail >= 2 || !DATA || !DATA.meta.live || !LIVE.p) return;
+  const cand = [...DATA.cells.values()].filter(c => !LIVE.checked.has(c.k)).sort((a,b) => a.n - b.n).slice(0, 1500);
+  if(!cand.length) return;
+  LIVE.histBusy = true; const run = LIVE.run, t0 = performance.now();
+  try{
+    const rows = (await executeClickHouseQuery(qLiveKnown(LIVE.p, back, LIVE.opts.minutes, cand))).data;
+    if(run !== LIVE.run) return;
+    for(const c of cand) LIVE.checked.add(c.k);
+    for(const r of rows) LIVE.known.set(r.k, { n:+r.n, days:+r.days });
+    const unk = cand.filter(c => !LIVE.known.has(c.k)).length;
+    status(`History: ${cand.length} cells checked against the previous ${back} d — ${unk} never seen before · ${((performance.now()-t0)/1000).toFixed(1)}s`, unk ? undefined : 'ok');
+    if(LIVE.on && DATA && DATA.meta.live && G){ computeAlerts(true); recolor(); renderTable(); feedAlerts(); }
+  }catch(e){ if(run === LIVE.run){ LIVE.histFail++; status('History check failed (new cells cannot be told from known ones): '+e.message.substring(0,180), 'err'); } }
+  finally{ LIVE.histBusy = false; }
+}
+
+// ── feed: what changed between two refreshes ──
+function feedPush(sev, title, text){ LIVE.feed.unshift({ ts:Date.now(), sev, title, text:text || '' }); if(LIVE.feed.length > 300) LIVE.feed.length = 300; }
+function feedAlerts(first){
+  const pool = ALERTS.filter(a => !LIVE.fed.has(a.id) && (first ? a.sev >= 3 : (newAlertIds.has(a.id) && a.sev >= 2)));
+  for(const a of pool.slice(0, 12).reverse()) feedPush(a.sev, AT[a.type].t, `<b>${esc(a.ent)}</b> · ${a.text}`);
+  if(pool.length > 12) feedPush(1, `${pool.length - 12} more new alerts`, 'They are in the alert list.');
+  for(const a of pool) LIVE.fed.add(a.id);
+  if(alDom === 'FEED') renderAlerts();
+}
+function liveFeedDiff(P, first){
+  const now = new Map(P.ops.map(o => [o.op, o])), s = liveSums(DATA.meta), ro = s.ros + s.rof;
+  if(!LIVE.prevOps) feedPush(0, 'Live view started', `${P.cells.length} cells · ${P.ops.length} networks · ${fmt(s.dev)} devices in the last ${P.opts.minutes} min`);
+  else {
+    for(const [op, o] of now) if(!LIVE.prevOps.has(op) && isExpected(op)) feedPush(0, 'Network appeared', `<b>${esc(op)}</b> ${esc(o.name||'')} · ${fmt(+o.dev)} device${+o.dev===1?'':'s'}`);
+    for(const op of LIVE.prevOps.keys()) if(!now.has(op)) feedPush(0, 'Network no longer seen', `<b>${esc(op)}</b> · no sample left in the window`);
+    if(LIVE.prevRo != null && Math.abs(ro - LIVE.prevRo) >= Math.max(3, LIVE.prevRo*0.3)) feedPush(1, ro > LIVE.prevRo ? 'Roaming devices rising' : 'Roaming devices falling', `${LIVE.prevRo} → <b>${ro}</b> devices`);
+  }
+  LIVE.prevOps = now; LIVE.prevRo = ro;
+  feedAlerts(first);
+}
+function renderFeed(){
+  $('al-sevs').innerHTML = ''; $('al-acked').textContent = '';
+  $('al-n').textContent = `${LIVE.feed.length} event${LIVE.feed.length===1?'':'s'}`;
+  $('al-list').innerHTML = LIVE.feed.length ? LIVE.feed.map(f => `<div class="fd" style="--c:${SEVS[f.sev].c}">
+      <span class="ft">${new Date(f.ts).toTimeString().slice(0,8)}</span><div><b>${esc(f.title)}</b>${f.text ? `<span>${f.text}</span>` : ''}</div></div>`).join('')
+    : '<div class="al-empty"><span class="material-icons">dynamic_feed</span>Nothing yet. Each refresh adds what changed:<br>new alerts, networks that appear or vanish, roaming swings.</div>';
+}
+
+// ── "Serving now" panel ──
+function renderLiveBox(){
+  const box = $('live-box');
+  if(!DATA || !DATA.meta.live){ box.innerHTML = ''; return; }
+  const m = DATA.meta, ops = m.liveOps || [], s = liveSums(m), maxDev = Math.max(1, ...ops.map(o => +o.dev));
+  const rows = ops.map(o => { const mcc = o.op.split('-')[0], ro = (+o.ros||0) + (+o.rof||0);
+    const tag = HOSTILE_MCC.has(mcc) ? `<span class="svb" style="--c:${SEVS[4].c}">Hostile</span>` : isTestMcc(mcc) ? `<span class="svb" style="--c:${SEVS[2].c}">Test</span>`
+      : !isExpected(o.op) ? `<span class="svb" style="--c:${SEVS[3].c}">Not expected</span>` : '';
+    return `<tr data-op="${esc(o.op)}" class="${LIVE.opFilter === o.op ? 'on' : ''}" title="${esc(o.name||'unnamed')} · ${fmt(+o.n)} serving samples · LTE ${fmt(+o.lte)} · NR ${fmt(+o.nr)} · 2G/3G ${fmt(+o.leg)}${o.rsrp==null?'':' · median '+(+o.rsrp).toFixed(0)+' dBm'} — click to show only this network">
+      <td><i style="background:${opColor(o.op)}"></i><b>${esc(o.op)}</b></td>
+      <td class="nm">${tag || esc(o.name || MCC_NAMES[mcc] || '')}</td>
+      <td class="num"><span class="bar"><u style="width:${Math.round(100*(+o.dev)/maxDev)}%"></u></span>${fmt(+o.dev)}</td>
+      <td class="num">${ro ? fmt(ro) : '–'}</td><td class="num">${fmt(+o.cells)}</td></tr>`; }).join('');
+  const homes = new Map(); for(const r of m.roam || []) homes.set(String(r.home), (homes.get(String(r.home))||0) + (+r.dev||0));
+  const hl = [...homes.entries()].sort((a,b) => b[1]-a[1]);
+  box.innerHTML = `<div class="lb-h"><span class="material-icons">cell_tower</span>Serving now<span class="w">last ${m.minutes} min${LIVE.opFilter ? ` · <span class="link" onclick="liveFilter('')">show all</span>` : ''}</span></div>
+    ${ops.length ? `<table class="lops"><tr><th>Network</th><th></th><th class="num">Devices</th><th class="num">Roam</th><th class="num">Cells</th></tr>${rows}</table>` : '<div class="lb-n">No serving sample in the window.</div>'}
+    <div class="lb-h" style="margin-top:9px"><span class="material-icons">flight_takeoff</span>Roaming devices<span class="w">${fmt(s.ros + s.rof)} of ${fmt(s.dev)}</span></div>
+    ${hl.length ? `<div class="lb-r">${hl.slice(0,8).map(([h,n]) => `<span class="seen ${HOSTILE_MCC.has(h)?'hot':''}" title="SIM country code ${esc(h)}">${esc(MCC_NAMES[h] || 'MCC '+h)} <b>${n}</b></span>`).join('')}${hl.length > 8 ? `<span class="seen">+${hl.length-8}</span>` : ''}</div>` : ''}
+    <div class="lb-n">${s.ros ? `${fmt(s.ros)} by SIM country (home known)` : 'No device with a foreign SIM'}${s.rof ? ` · ${fmt(s.rof)} by the roaming flag only (home unknown)` : ''}. ${fmt(s.simdev)} of ${fmt(s.dev)} devices report their SIM.</div>`;
+}
+function liveFilter(op){ LIVE.opFilter = LIVE.opFilter === op ? '' : op; if(DATA && DATA.meta.live){ rebuild(); if(sim) sim.alpha(0.3); renderLiveBox(); } }
+$('live-box').addEventListener('click', ev => { const tr = ev.target.closest('tr[data-op]'); if(tr) liveFilter(tr.dataset.op); });
+
+// ── KPI strip ──
+function spark(vals, col){
+  if(!vals || vals.length < 2) return '';
+  const w = 86, h = 20, mx = Math.max(1, ...vals), pts = vals.map((v,i) => `${(i*w/(vals.length-1)).toFixed(1)},${(h - 1 - (h-2)*v/mx).toFixed(1)}`).join(' ');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+}
+function renderKpisLive(){
+  const m = DATA.meta, cells = [...DATA.cells.values()], open = ALERTS.filter(a => !ACK.has(a.id)), ops = m.liveOps || [], s = liveSums(m);
+  const cnt = (dom, sv) => open.filter(a => a.dom===dom && a.sev===sv).length;
+  const al = (dom, label) => { const c = cnt(dom,4), h = cnt(dom,3), md = cnt(dom,2), col = c ? SEVS[4].c : h ? SEVS[3].c : md ? SEVS[2].c : '#22c55e';
+    return `<div class="kpi alert" style="--c:${col}" onclick="focusAlerts('${dom}')" title="Show the critical and high ${dom} alerts">
+      <div class="kl">${label}</div><div class="kv" style="color:${col}">${c+h}<small>critical + high</small></div><div class="ks">${c} critical · ${h} high · ${md} medium</div></div>`; };
+  const tile = (l,v,sub,x) => `<div class="kpi" ${x||''}><div class="kl">${l}</div><div class="kv">${v}</div><div class="ks">${sub}</div></div>`;
+  const t3 = cells.filter(c=>c.threat && c.threat.level===3).length, t2 = cells.filter(c=>c.threat && c.threat.level===2).length, t1 = cells.filter(c=>c.threat && c.threat.level===1).length;
+  const tc = t3 ? SEVS[4].c : t2 ? SEVS[3].c : t1 ? SEVS[2].c : '#22c55e';
+  const atk = `<div class="kpi alert" style="--c:${tc}" onclick="focusAlerts('SOC')" title="Cells scored as possible fake base stations">
+      <div class="kl">Attacker cells</div><div class="kv" style="color:${tc}">${t3+t2}<small>suspect${t3+t2===1?'':'s'}</small></div><div class="ks">${t3} probable · ${t2} suspected · ${t1} to verify</div></div>`;
+  const out = ops.filter(o => { const mcc = o.op.split('-')[0]; return HOSTILE_MCC.has(mcc) || isTestMcc(mcc) || !isExpected(o.op); });
+  const host = out.some(o => HOSTILE_MCC.has(o.op.split('-')[0])), oc = host ? SEVS[4].c : out.length ? SEVS[3].c : '#22c55e';
+  const unexp = `<div class="kpi alert" style="--c:${oc}" onclick="focusAlerts('SOC')" title="Networks serving devices here that are not on your list">
+      <div class="kl">Out-of-place networks</div><div class="kv" style="color:${oc}">${out.length}<small>of ${ops.length} serving</small></div><div class="ks">${out.length ? esc(out.slice(0,3).map(o=>o.op).join(' · ')) + (out.length>3?' …':'') : 'all belong here'}</div></div>`;
+  const ro = s.ros + s.rof, homes = new Set((m.roam||[]).map(r => String(r.home))).size;
+  const tl = m.tl || [], step = tlStep(m.minutes), lastN = tl.length ? +tl[tl.length-1].n : 0;
+  const age = DATA.refTs ? Date.now()/1000 - DATA.refTs : null, late = age != null && age > 900;
+  $('kpis').innerHTML = atk + unexp + al('SOC','Security alerts') + al('NOC','Network alerts') +
+    tile('Devices now', fmt(s.dev) + spark(tl.map(x => +x.dev), '#60a5fa'), `${fmt(cells.length)} cells · ${fmt(s.n)} samples`, `title="Devices with a serving sample in the window. The line is devices per ${step} min."`) +
+    tile('Roaming', fmt(ro) + `<small>${s.dev ? (100*ro/s.dev).toFixed(ro/s.dev < 0.1 ? 1 : 0) : 0}%</small>`, homes ? `${homes} home countr${homes===1?'y':'ies'} identified` : 'home country not reported') +
+    tile('Latest sample', age==null ? '–' : `<span style="color:${late?'var(--orange)':'inherit'}">${age < 5400 ? Math.max(1,Math.round(age/60))+'<small>min ago</small>' : hrs(age)+'<small>ago</small>'}</span>`,
+      late ? 'the feed is behind — not live' : `${fmt(lastN)} samples in the last ${step} min`);
+}
+
+// ── synthetic live demo (clearly labelled; feeds the same pipeline as the DB rows) ──
+function demoLiveInit(){
+  let seed = 11; const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647;
+  const b = bbox(), R = 6, C = 6, mid = { lat:(b.la0+b.la1)/2, lng:(b.lo0+b.lo1)/2 };
+  const nets = [ { op:'425-01', name:'Demo operator A', base:20000, w:1 }, { op:'425-02', name:'Demo operator B', base:40000, w:0.8 }, { op:'425-03', name:'Demo operator C', base:60000, w:0.6 } ];
+  const mk = (net, tech, id, pci, tac, band, arfcn, lat, lng, load) => ({ op:net.op, name:net.name, tech, id, pci, tac, band, arfcn, lat, lng, k:`${net.op}/${tech}:${id}`, rsrp0:-112+30*rnd(), base:3+30*load*rnd(), ro: rnd() < 0.14 ? 1 + Math.floor(rnd()*2) : 0 });
+  const cells = [], pairs = [], near = haversine({ lat:b.la0, lng:b.lo0 }, { lat:b.la0+(b.la1-b.la0)/R, lng:b.lo0+(b.lo1-b.lo0)/C }) * 1.1;
+  nets.forEach((net, ni) => {
+    const sites = [];
+    for(let i=0;i<R;i++) for(let j=0;j<C;j++){
+      if(rnd() < 0.15) continue;
+      const lat = b.la0 + (i+0.5+(rnd()-0.5)*0.6)*(b.la1-b.la0)/R, lng = b.lo0 + (j+0.5+(rnd()-0.5)*0.6)*(b.lo1-b.lo0)/C;
+      if(b.poly && !inPoly(lat, lng, b.poly)) continue;
+      const enb = net.base + sites.length*3, tac = 1000*(ni+1) + (lat > mid.lat ? 1 : 2), load = (0.3+rnd())*net.w, s = { lat, lng, cells:[] };
+      for(let sec=0; sec<3; sec++){ const ang = sec*2.094 + 0.5; s.cells.push(mk(net, 'LTE', enb*256+sec, (enb*3+sec)%504, tac, 3, 1650+ni*25, lat+Math.cos(ang)*0.0012, lng+Math.sin(ang)*0.0014, load)); }
+      if(rnd() < 0.25) s.cells.push(mk(net, 'NR', (900000+enb)*4096+1, (enb*7)%1008, tac, 78, 636666+ni*100, lat, lng, load));
+      sites.push(s); cells.push(...s.cells);
+    }
+    for(let x=0;x<sites.length;x++) for(let y=x+1;y<sites.length;y++) if(haversine(sites[x], sites[y]) < near) pairs.push([sites[x], sites[y]]);
+    for(const s of sites) pairs.push([s, s]);
+  });
+  const fnet = { op:'416-01', name:'Demo neighbour-country network' }, foreign = [];
+  for(let i=0;i<3;i++) foreign.push(mk(fnet, 'LTE', (70010+i*3)*256+1, 120+i, 301, 3, 1725, b.la0+(0.25+0.25*i)*(b.la1-b.la0), b.lo1-(0.04+0.03*i)*(b.lo1-b.lo0), 0.3));
+  const rogue = mk(nets[1], 'LTE', 990001*256+1, 401, 65535, 3, 1675, mid.lat+(b.la1-b.la0)*0.06, mid.lng+(b.lo1-b.lo0)*0.05, 0.3); rogue.rsrp0 = -68;
+  const hostile = mk({ op:'432-11', name:'' }, 'LTE', 55001*256+2, 222, 4411, 3, 1800, mid.lat-(b.la1-b.la0)*0.2, mid.lng+(b.lo1-b.lo0)*0.22, 0.2); hostile.rsrp0 = -101;
+  return { rnd, b, cells, pairs, foreign, rogue, hostile, t0:{} };
+}
+function demoLivePayload(){
+  const S = LIVE.demoState || (LIVE.demoState = demoLiveInit()), rnd = S.rnd, tick = LIVE.tick + 1;
+  const minutes = +$('f-win').value || 60, now = Math.floor(Date.now()/1000), win = minutes*60, scale = Math.sqrt(minutes/60);
+  const rows = [], on = new Map();
+  const put = (d, n, dev, o) => { const r = { k:d.k, t:d.tech, id:String(d.id), pci:String(d.pci), tac:String(d.tac), tacn:1, band:String(d.band), bname:(d.tech==='NR'?'n':'B')+d.band, arfcn:String(d.arfcn), n, s:dev,
+      lat:d.lat, lng:d.lng, slat:d.lat, slng:d.lng, rsrp:d.rsrp0+(rnd()-0.5)*4, snr:2+14*rnd(), last:'', fts:now-Math.floor(win*(0.5+0.5*rnd())), lts:now-Math.floor(win*rnd()*rnd()), days:1, pcin:1, tacs:String(d.tac),
+      sdla:0.002, sdlo:0.002, sc:3+Math.floor(rnd()*4), tan:Math.min(n,20), ta:2+Math.floor(rnd()*12), srcn:2, devn:dev, op:d.op, opn:d.name, ro:0, ...o };
+    rows.push(r); on.set(d.k, r); return r; };
+  const know = d => { LIVE.known.set(d.k, { n:5000, days:7 }); LIVE.checked.add(d.k); };
+  for(const d of S.cells){ know(d); if(rnd() < 0.08) continue;
+    const n = Math.max(1, Math.round(d.base*scale*(0.4+1.2*rnd()))), dev = Math.max(1, Math.round(n/6));
+    put(d, n, dev, { ro:d.ro }); }
+  if(tick >= 2) for(const d of S.foreign){ know(d); const n = 6+Math.floor(rnd()*14); put(d, n, 2+Math.floor(rnd()*3), {}); }
+  const first = (key) => S.t0[key] || (S.t0[key] = now - 60);
+  if(tick >= 3){ LIVE.checked.add(S.rogue.k); put(S.rogue, 12+tick, 3, { sc:1, ta:0, tan:9, sdla:0.0004, sdlo:0.0004, fts:first('rogue'), lts:now-20, rsrp:-68 }); }
+  if(tick >= 5){ LIVE.checked.add(S.hostile.k); put(S.hostile, 6, 1, { fts:first('hostile'), lts:now-40, sdla:0.0006, sdlo:0.0006 }); }
+  const trans = [], bins = [];
+  for(const [a, c] of S.pairs){
+    const A = a.cells.filter(x => on.has(x.k)), B = c.cells.filter(x => on.has(x.k)); if(!A.length || !B.length || rnd() < 0.35) continue;
+    const ca = A[Math.floor(rnd()*A.length)], cb = B[Math.floor(rnd()*B.length)]; if(ca === cb) continue;
+    trans.push({ a:ca.k, b:cb.k, n:1+Math.floor(rnd()*6*scale), s:1 });
+    if(a !== c){ const la = ((a.lat+c.lat)/2).toFixed(3), lo = ((a.lng+c.lng)/2).toFixed(3); bins.push({ la, lo, k:ca.k, c:5 }, { la, lo, k:cb.k, c:4 }); }
+  }
+  const anyB = S.cells.filter(x => x.op === '425-02' && on.has(x.k)).sort((x,y) => haversine(x,S.rogue) - haversine(y,S.rogue))[0];
+  if(tick >= 3){ trans.push({ a:S.rogue.k, b:'LEGACY:any', n:5, s:3 }); if(anyB) trans.push({ a:anyB.k, b:S.rogue.k, n:3, s:3 }); }
+  const anyA = S.cells.filter(x => x.op === '425-01' && on.has(x.k)).sort((x,y) => haversine(x,S.foreign[0]) - haversine(y,S.foreign[0]))[0];
+  if(tick >= 2 && anyA) trans.push({ a:anyA.k, b:S.foreign[0].k, n:2, s:2 });
+  bins.sort((x,y) => x.la === y.la ? (x.lo < y.lo ? -1 : x.lo > y.lo ? 1 : 0) : (x.la < y.la ? -1 : 1));
+  const by = new Map();
+  for(const r of rows){ let o = by.get(r.op); if(!o){ o = { op:r.op, name:r.opn, n:0, dev:0, ro:0, cells:0, nr:0, lte:0, leg:0, rs:0, lts:0 }; by.set(r.op, o); }
+    o.n += r.n; o.dev += r.s; o.ro += r.ro; o.cells++; o[r.t === 'NR' ? 'nr' : 'lte'] += r.n; o.rs += r.rsrp; if(r.lts > o.lts) o.lts = r.lts; }
+  const HOMES = ['262','310','234','250','416'], roam = [];
+  const ops = [...by.values()].map(o => { const dev = Math.max(1, Math.round(o.dev*0.85)), ros = Math.round(o.ro*0.7), rof = o.ro - ros;
+    for(let i=0, left=ros; i<HOMES.length && left>0; i++){ const d = i === HOMES.length-1 ? left : Math.ceil(left/2); roam.push({ home:HOMES[i], op:o.op, dev:d, n:d*7 }); left -= d; }
+    return { op:o.op, name:o.name, n:Math.round(o.n*1.15), dev, ros, rof, simdev:Math.round(dev*0.1), cells:o.cells, nr:o.nr, lte:o.lte, leg:Math.round(o.n*0.15), rsrp:o.rs/o.cells, lts:o.lts }; })
+    .sort((x,y) => y.dev - x.dev);
+  if(tick >= 6){ roam.push({ home:'417', op:'425-01', dev:1, n:9 }); const o = ops.find(x => x.op === '425-01'); if(o) o.ros++; }
+  const sum = k => ops.reduce((a,o) => a + o[k], 0), totals = { dev:sum('dev'), n:sum('n'), ros:sum('ros'), rof:sum('rof'), simdev:sum('simdev') };
+  const step = tlStep(minutes)*60, tl = [];
+  for(let t = Math.floor((now-win)/step)*step; t <= now; t += step){ const dev = Math.max(1, Math.round(totals.dev/8 * (1 + 0.25*Math.sin(t/900) + 0.12*Math.sin(t/137)))); tl.push({ t, n:dev*6, dev }); }
+  return { opts:{ bbox:S.b, techs:['LTE','NR'], minutes, days:minutes/1440, all:true }, p:null, cells:rows, trans, bins, ops, totals, roam, tl };
+}
+
 // ══════════════ SYNTHETIC DEMO (clearly labelled; feeds the same pipeline as the DB rows) ══════════════
 function loadDemo(){
   clearStatus();
@@ -1599,7 +2067,7 @@ function exportPng(){
   const c = document.createElement('canvas'); c.width=canvas.width; c.height=canvas.height; const x=c.getContext('2d');
   x.fillStyle='#0a1628'; x.fillRect(0,0,c.width,c.height); x.drawImage(canvas,0,0);
   x.fillStyle='rgba(226,232,240,.85)'; x.font=`${12*dpr}px Inter, sans-serif`;
-  const m = DATA.meta; x.fillText(m.source==='demo' ? 'SYNTHETIC DEMO DATA' : `PLMN ${m.mcc}-${m.mnc} · last ${m.days} d · ${G.nodes.length} ${G.level}s · ${G.edges.length} relations`, 14*dpr, c.height-14*dpr);
+  const m = DATA.meta; x.fillText(m.source==='demo' ? 'SYNTHETIC DEMO DATA' : m.live ? `Live · all networks · last ${m.minutes} min · ${new Date().toISOString().slice(0,16).replace('T',' ')} UTC · ${G.nodes.length} ${G.level}s` : `PLMN ${m.mcc}-${m.mnc} · last ${m.days} d · ${G.nodes.length} ${G.level}s · ${G.edges.length} relations`, 14*dpr, c.height-14*dpr);
   download('network-graph.png', c.toDataURL('image/png'));
 }
 function exportCsv(){
@@ -1635,7 +2103,9 @@ document.querySelectorAll('#seg-view button').forEach(btn => btn.onclick = () =>
 try{ if(localStorage.getItem('ng_help_min')) $('g3-help').classList.add('min'); }catch(e){}
 new ResizeObserver(() => { map.invalidateSize(); if(!G && !areaDrawer && map.getSize().x > 50) fitBbox(); }).observe($('map-pane'));   // keep the area framed until a graph exists
 resize(); fitBbox(); loadCredentials(); onPlmnInput();
-if(/[?&]demo=1/.test(location.search)) loadDemo();
+try{ $('f-expect').value = localStorage.getItem('ng_expect') || ''; }catch(e){}
+if(/[?&]live=1/.test(location.search)){ setMode('live'); if(/[?&]demo=1/.test(location.search)) startLive(true); }
+else if(/[?&]demo=1/.test(location.search)) loadDemo();
 </script>
 </body>
 </html>
