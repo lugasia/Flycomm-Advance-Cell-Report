@@ -15,6 +15,7 @@
     { href: 'cell-footprint.html',  icon: 'hexagon',         name: 'Cell Footprint', desc: 'Coverage of a single cell' },
     { href: 'gnss-spoofing.html',   icon: 'gps_off',         name: 'GNSS Spoofing',  desc: 'Devices reporting a position their cell cannot serve' },
     { group: 'Monitor' },
+    { href: 'noc.html',                 icon: 'monitor_heart',   name: 'Network Continuity', desc: 'Every operator, every area: now against the last 24 hours' },
     { href: 'db-dashboard.html',        icon: 'insights',        name: 'DB Dashboard', desc: 'Live KPIs of the measurements table' },
     { href: 'regulator-dashboard.html', icon: 'account_balance', name: 'Regulator',    desc: 'Country-level users and operators' },
     { href: 'roaming.html',             icon: 'flight_takeoff',  name: 'Roaming SLA',  desc: 'Service quality roaming subscribers get' },

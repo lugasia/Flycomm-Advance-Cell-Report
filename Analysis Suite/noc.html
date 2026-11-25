@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Analysis Suite — Network Continuity</title>
+  <link rel="icon" type="image/png" href="Favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css">
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="https://unpkg.com/h3-js@4.1.0/dist/h3-js.umd.js"></script>
+  <script src="basemap.js"></script>
+  <style>
+    :root {
+      --navy:#0a1628; --card:#162038; --card2:#1c2a48; --card-border:#1e3a5f; --accent:#3b82f6; --accent2:#60a5fa;
+      --red:#ef4444; --orange:#f59e0b; --cyan:#06b6d4; --green:#22c55e; --purple:#a78bfa;
+      --text:#e2e8f0; --text-muted:#94a3b8; --text-dim:#64748b;
+    }
+    * { box-sizing:border-box; margin:0; padding:0; }
+    html, body { height:100%; }
+    body { font-family:'Inter',system-ui,sans-serif; background:var(--navy); color:var(--text); font-size:13px; overflow:hidden; }
+    .mono { font-family:'JetBrains Mono',monospace; }
+    #app { display:flex; height:100vh; }
+
+    /* ── left: setup ── */
+    #sb { width:292px; min-width:292px; background:var(--card); border-right:1px solid var(--card-border); display:flex; flex-direction:column; min-height:0; }
+    #sb-head { padding:14px 16px 12px; border-bottom:1px solid var(--card-border); }
+    #sb-head h1 { font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+    #sb-head h1 .material-icons { font-size:19px; color:var(--accent2); }
+    #sb-head p { font-size:11px; color:var(--text-muted); margin-top:4px; line-height:1.45; }
+    #sb-body { flex:1; overflow-y:auto; padding:14px 16px 20px; display:flex; flex-direction:column; gap:16px; }
+    #sb-body::-webkit-scrollbar, #rp-body::-webkit-scrollbar { width:5px; }
+    #sb-body::-webkit-scrollbar-thumb, #rp-body::-webkit-scrollbar-thumb { background:var(--card-border); border-radius:3px; }
+    .lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-muted); margin-bottom:7px; display:flex; align-items:center; }
+    .step { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:rgba(59,130,246,.2); color:var(--accent2); font-size:10px; font-weight:700; margin-right:7px; }
+    .inp { width:100%; background:var(--navy); border:1px solid var(--card-border); border-radius:7px; padding:8px 10px; color:var(--text); font:500 12px 'JetBrains Mono',monospace; outline:none; }
+    .inp:focus { border-color:var(--accent); }
+    select.inp { font-family:'Inter',sans-serif; }
+    .row2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .hint { font-size:10.5px; color:var(--text-dim); margin-top:6px; line-height:1.5; }
+    .hint.bad { color:#fca5a5; }
+    .link { color:var(--accent2); cursor:pointer; text-decoration:underline; text-decoration-color:rgba(96,165,250,.35); }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:100%; padding:9px 14px; border-radius:8px; border:none; cursor:pointer; font:500 13px 'Inter',sans-serif; }
+    .btn .material-icons { font-size:16px; }
+    .btn-primary { background:var(--accent); color:#fff; }
+    .btn-primary:hover { background:#2563eb; }
+    .btn-sec { background:var(--navy); color:var(--text); border:1px solid var(--card-border); font-size:12px; padding:7px 10px; }
+    .btn-sec:hover, .btn-sec.on { border-color:var(--accent); color:var(--accent2); }
+    .btn.stop { background:rgba(239,68,68,.14); color:#fca5a5; box-shadow:inset 0 0 0 1px rgba(239,68,68,.5); }
+    #conn-bar { display:flex; align-items:center; gap:8px; padding:8px 10px; background:var(--navy); border:1px solid var(--card-border); border-radius:7px; cursor:pointer; font-size:12px; color:var(--text-muted); }
+    #conn-bar span:nth-child(2) { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .dot { width:8px; height:8px; border-radius:50%; background:var(--text-dim); flex-shrink:0; }
+    .dot.connected { background:var(--green); } .dot.connecting { background:var(--orange); } .dot.disconnected { background:var(--red); }
+    #conn-panel { display:none; margin-top:8px; padding:10px; background:var(--navy); border:1px solid var(--card-border); border-radius:7px; }
+    #conn-panel.open { display:block; }
+    #conn-panel label { display:block; font-size:10.5px; color:var(--text-muted); margin:7px 0 3px; }
+    #conn-panel label:first-child { margin-top:0; }
+    .tg { display:flex; align-items:center; gap:9px; padding:6px 0; font-size:12px; cursor:pointer; }
+    .tg input { accent-color:var(--accent); width:14px; height:14px; }
+    .tg .n { margin-left:auto; font:600 10.5px 'JetBrains Mono',monospace; color:var(--text-muted); background:var(--navy); border-radius:9px; padding:1px 7px; }
+    .tg .n.hot { color:#fca5a5; background:rgba(239,68,68,.16); }
+    #status { font:11px/1.55 'JetBrains Mono',monospace; color:var(--text-muted); white-space:pre-wrap; word-break:break-word; }
+    #status .ok { color:#86efac; } #status .err { color:#fca5a5; }
+
+    /* ── centre: map ── */
+    main { flex:1; position:relative; min-width:0; }
+    #map { position:absolute; inset:0; background:#0a1220; }
+    .leaflet-container { background:#0a1220; font-family:'Inter',sans-serif; }
+    .ov { position:absolute; z-index:600; }
+    #kbar { top:12px; left:50%; transform:translateX(-50%); display:flex; background:rgba(22,32,56,.94); border:1px solid var(--card-border); border-radius:11px; overflow-x:auto; box-shadow:0 10px 30px rgba(0,0,0,.4); max-width:calc(100% - 120px); }
+    #kbar .k { padding:9px 18px; border-right:1px solid var(--card-border); text-align:left; white-space:nowrap; }
+    #kbar .k:last-child { border-right:none; }
+    #kbar .k b { display:block; font:700 20px 'JetBrains Mono',monospace; line-height:1.15; }
+    #kbar .k span { font-size:10.5px; color:var(--text-muted); }
+    #kbar .k.c b { cursor:pointer; }
+    #focus { top:12px; left:54px; display:none; align-items:center; gap:8px; background:rgba(22,32,56,.94); border:1px solid var(--accent); border-radius:20px; padding:6px 8px 6px 12px; font-size:12px; font-weight:600; }
+    #focus i { width:9px; height:9px; border-radius:50%; }
+    #focus .x { cursor:pointer; color:var(--text-muted); font-size:16px; }
+    #banner { top:74px; left:50%; transform:translateX(-50%); display:none; background:rgba(245,158,11,.16); border:1px solid rgba(245,158,11,.5); color:#fcd34d; font-size:11.5px; font-weight:600; padding:6px 14px; border-radius:8px; white-space:nowrap; }
+    #legend { left:12px; bottom:12px; background:rgba(22,32,56,.94); border:1px solid var(--card-border); border-radius:10px; padding:10px 12px; font-size:11px; color:var(--text-muted); max-width:250px; }
+    #legend div { display:flex; align-items:center; gap:8px; margin:3px 0; }
+    #legend i { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+    #legend p { margin-top:7px; padding-top:7px; border-top:1px solid var(--card-border); font-size:10px; line-height:1.45; color:var(--text-dim); }
+    #tl { left:276px; right:12px; bottom:12px; background:rgba(22,32,56,.94); border:1px solid var(--card-border); border-radius:10px; padding:8px 12px 6px; display:none; }
+    #tl .th { white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:10px; font-size:10.5px; color:var(--text-muted); margin-bottom:2px; }
+    #tl .th b { color:var(--text); font-weight:600; }
+    #tl svg { display:block; width:100%; height:74px; }
+    #empty { inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
+    #empty div { background:rgba(22,32,56,.92); border:1px solid var(--card-border); border-radius:12px; padding:20px 26px; text-align:center; color:var(--text-muted); font-size:13px; line-height:1.6; max-width:380px; }
+    #empty .material-icons { font-size:32px; color:var(--accent2); display:block; margin:0 auto 6px; }
+    .area-pill { background:rgba(10,22,40,.92); border:1.5px solid var(--c); border-radius:14px; padding:3px 10px; font:600 11px 'Inter',sans-serif; color:var(--text); white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,.45); display:inline-flex; align-items:center; gap:6px; transform:translate(-50%,-150%); }
+    .area-pill::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--c); }
+    .leaflet-popup-content-wrapper { background:var(--card); color:var(--text); border:1px solid var(--card-border); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.5); }
+    .leaflet-popup-tip { background:var(--card); border:1px solid var(--card-border); }
+    .leaflet-popup-content { margin:11px 13px; font-size:11.5px; line-height:1.5; min-width:270px; }
+    .pp h4 { font-size:12.5px; margin-bottom:2px; }
+    .pp .sub { color:var(--text-muted); font-size:10.5px; margin-bottom:7px; }
+    .pp table { width:100%; border-collapse:collapse; font:11px 'JetBrains Mono',monospace; }
+    .pp th { text-align:right; font:700 9px 'Inter',sans-serif; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); padding:2px 4px; }
+    .pp th:first-child, .pp td:first-child { text-align:left; }
+    .pp td { text-align:right; padding:3px 4px; border-top:1px solid rgba(30,58,95,.7); white-space:nowrap; }
+
+    /* ── right: status ── */
+    #rp { width:396px; min-width:396px; background:var(--card); border-left:1px solid var(--card-border); display:flex; flex-direction:column; min-height:0; }
+    #rp-head { padding:13px 16px; border-bottom:1px solid var(--card-border); display:flex; align-items:center; gap:10px; }
+    #rp-head h2 { font-size:14px; font-weight:600; }
+    #rp-head .sub { font:500 10.5px 'JetBrains Mono',monospace; color:var(--text-muted); margin-top:1px; }
+    .pill { margin-left:auto; display:inline-flex; align-items:center; gap:7px; font:700 10.5px 'JetBrains Mono',monospace; padding:4px 10px; border-radius:20px; border:1px solid var(--card-border); color:var(--text-dim); white-space:nowrap; }
+    .pill i { width:7px; height:7px; border-radius:50%; background:var(--text-dim); }
+    .pill.on { color:#86efac; border-color:rgba(34,197,94,.5); } .pill.on i { background:var(--green); animation:pl 1.5s infinite; }
+    .pill.late { color:#fcd34d; border-color:rgba(245,158,11,.5); } .pill.late i { background:var(--orange); }
+    @keyframes pl { 0% { box-shadow:0 0 0 0 rgba(34,197,94,.6); } 100% { box-shadow:0 0 0 7px rgba(34,197,94,0); } }
+    #rp-body { flex:1; overflow-y:auto; padding:14px 16px 24px; }
+    .big { display:flex; align-items:baseline; gap:12px; }
+    .big b { font:700 38px 'JetBrains Mono',monospace; letter-spacing:-.02em; }
+    .big span { font-size:11.5px; color:var(--text-muted); line-height:1.45; }
+    .sec { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.08em; color:var(--text-dim); margin:18px 0 8px; display:flex; align-items:center; }
+    .sec span { margin-left:auto; font-weight:500; text-transform:none; letter-spacing:0; }
+    .ops { border:1px solid var(--card-border); border-radius:10px; overflow:hidden; }
+    .op { display:flex; align-items:center; gap:10px; padding:9px 11px; border-bottom:1px solid var(--card-border); cursor:pointer; }
+    .op:last-child { border-bottom:none; }
+    .op:hover { background:rgba(59,130,246,.07); }
+    .op.on { background:rgba(59,130,246,.15); box-shadow:inset 3px 0 0 var(--accent); }
+    .op i { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+    .op .nm { flex:1; min-width:0; }
+    .op .nm b { display:block; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .op .nm span { font:10.5px 'JetBrains Mono',monospace; color:var(--text-muted); }
+    .op .v { text-align:right; }
+    .op .v b { display:block; font:700 14px 'JetBrains Mono',monospace; }
+    .op .v span { font-size:10.5px; color:var(--text-muted); white-space:nowrap; }
+    .op .v span.bad { color:#fca5a5; }
+    .mx { width:100%; border-collapse:separate; border-spacing:3px; font:10.5px 'JetBrains Mono',monospace; }
+    .mx th { font:600 9.5px 'Inter',sans-serif; color:var(--text-muted); padding:2px; text-align:center; line-height:1.3; }
+    .mx th small { display:block; color:var(--text-dim); font-weight:500; }
+    .mx td { text-align:center; padding:5px 2px; border-radius:5px; line-height:1.3; background:var(--navy); }
+    .mx td.nm { text-align:left; background:none; font:500 11px 'Inter',sans-serif; color:var(--text-muted); white-space:nowrap; padding-right:6px; cursor:pointer; }
+    .mx td b { display:block; font-weight:600; }
+    .mx td small { font-size:9.5px; opacity:.85; }
+    .mx td.g { background:rgba(34,197,94,.13); color:#86efac; } .mx td.o { background:rgba(245,158,11,.15); color:#fcd34d; } .mx td.r { background:rgba(239,68,68,.17); color:#fca5a5; } .mx td.x { color:var(--text-dim); }
+    .it { display:flex; gap:10px; padding:8px 10px; border-left:3px solid var(--c); background:var(--navy); border-radius:0 7px 7px 0; margin-bottom:6px; cursor:pointer; font-size:11.5px; line-height:1.45; }
+    .it:hover { background:#0e1d35; }
+    .it b { display:block; color:var(--text); font-weight:600; }
+    .it span { color:var(--text-muted); font-family:'JetBrains Mono',monospace; font-size:10.5px; }
+    .it .tag { margin-left:auto; align-self:flex-start; font:700 9px 'Inter',sans-serif; text-transform:uppercase; letter-spacing:.06em; color:var(--c); background:color-mix(in srgb, var(--c) 16%, transparent); border-radius:4px; padding:2px 6px; white-space:nowrap; }
+    .none { font-size:11.5px; color:var(--text-dim); padding:10px; border:1px dashed var(--card-border); border-radius:8px; text-align:center; line-height:1.5; }
+    .st { width:100%; border-collapse:collapse; font:10.5px 'JetBrains Mono',monospace; }
+    .st th { text-align:right; font:700 9px 'Inter',sans-serif; text-transform:uppercase; letter-spacing:.06em; color:var(--text-dim); padding:3px 5px; }
+    .st th:first-child, .st td:first-child { text-align:left; }
+    .st td { text-align:right; padding:4px 5px; border-top:1px solid rgba(30,58,95,.7); white-space:nowrap; }
+    .st tr.r { cursor:pointer; } .st tr.r:hover td { background:rgba(59,130,246,.08); }
+    .note { font-size:10.5px; color:var(--text-dim); line-height:1.5; margin-top:16px; padding-top:12px; border-top:1px solid var(--card-border); }
+    @media (max-width:1500px) { #rp { width:340px; min-width:340px; } #sb { width:264px; min-width:264px; } #legend p { display:none; } #kbar .k { padding:8px 12px; } #kbar .k b { font-size:17px; } #tl { left:12px; bottom:190px; } }
+    #demo-tag { display:none; background:rgba(245,158,11,.14); color:#fcd34d; font-size:10.5px; font-weight:700; padding:5px 16px; border-bottom:1px solid rgba(245,158,11,.35); letter-spacing:.04em; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <aside id="sb">
+    <div id="sb-head">
+      <h1><span class="material-icons">monitor_heart</span>Network Continuity</h1>
+      <p>Is every operator still serving every area? The last minutes against a 24-hour baseline, from crowd samples.</p>
+    </div>
+    <div class="tool-switcher"></div>
+    <div id="sb-body">
+      <div>
+        <div class="lbl">Database</div>
+        <div id="conn-bar" onclick="$('conn-panel').classList.toggle('open')"><div class="dot" id="conn-dot"></div><span id="conn-label">Not connected — click to configure</span><span class="material-icons" style="font-size:16px">settings</span></div>
+        <div id="conn-panel">
+          <label>Host</label><input class="inp" id="db-host" placeholder="your-instance.clickhouse.cloud">
+          <label>Port</label><input class="inp" id="db-port" placeholder="8443" style="width:100px">
+          <label>Database</label><input class="inp" id="db-name" value="default">
+          <label>Username</label><input class="inp" id="db-user" placeholder="default">
+          <label>Password</label><input class="inp" type="password" id="db-pass">
+          <button class="btn btn-sec" style="margin-top:10px" onclick="testConnection()"><span class="material-icons">sync</span>Test connection</button>
+        </div>
+      </div>
+
+      <div>
+        <div class="lbl"><span class="step">1</span>Area</div>
+        <div class="row2">
+          <select class="inp" id="f-area" onchange="onAreaPick()">
+            <option value="29.45,33.35,34.20,35.92">Israel — all</option>
+            <option value="32.40,33.35,34.85,35.92">North</option>
+            <option value="31.70,32.45,34.55,35.30">Centre</option>
+            <option value="29.45,31.75,34.20,35.50">South</option>
+            <option value="custom">Drawn box</option>
+          </select>
+          <button class="btn btn-sec" id="btn-draw" onclick="startDraw()"><span class="material-icons">crop_square</span>Draw box</button>
+        </div>
+        <div class="row2" style="margin-top:8px">
+          <select class="inp" id="f-res" onchange="onResPick()" title="Size of one map cell">
+            <option value="0">Cell size: automatic</option><option value="6">Cells of ~36 km² (H3 6)</option><option value="7">Cells of ~5 km² (H3 7)</option><option value="8">Cells of ~0.7 km² (H3 8)</option>
+          </select>
+          <div class="hint" id="area-note" style="margin-top:0;align-self:center"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="lbl"><span class="step">2</span>Networks to monitor</div>
+        <input class="inp" id="f-plmn" value="425" placeholder="425   or   425-01, 425-02, 425-03" autocomplete="off" spellcheck="false" oninput="onPlmnInput()">
+        <div class="hint" id="plmn-note"></div>
+      </div>
+
+      <div>
+        <div class="lbl"><span class="step">3</span>Compare now with the last 24 hours</div>
+        <div class="row2">
+          <select class="inp" id="f-win" title="What counts as now">
+            <option value="30">Now = last 30 min</option><option value="60" selected>Now = last hour</option><option value="120">Now = last 2 hours</option><option value="180">Now = last 3 hours</option>
+          </select>
+          <select class="inp" id="f-tick" onchange="reschedule()" title="How often now is re-read. The 24-hour baseline is re-read every 30 minutes.">
+            <option value="60">Refresh every minute</option><option value="120" selected>Refresh every 2 min</option><option value="300">Refresh every 5 min</option><option value="900">Refresh every 15 min</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <button class="btn btn-primary" id="btn-run" onclick="toggleRun()"><span class="material-icons">play_arrow</span>Start monitoring</button>
+        <div class="hint">No database? <span class="link" onclick="start(true)">Play a synthetic outage scenario</span></div>
+      </div>
+
+      <div>
+        <div class="lbl">Show on the map</div>
+        <label class="tg"><input type="checkbox" id="l-hex" checked onchange="draw()">Service by area</label>
+        <label class="tg"><input type="checkbox" id="l-sites" checked onchange="draw()">Silent sites<span class="n" id="n-sites">–</span></label>
+        <label class="tg"><input type="checkbox" id="l-plmn" checked onchange="draw()">Out-of-place networks<span class="n" id="n-plmn">–</span></label>
+        <label class="tg"><input type="checkbox" id="l-gnss" onchange="onGnssToggle()">GNSS spoofing<span class="n" id="n-gnss">off</span></label>
+        <div class="hint">GNSS spoofing runs its own 24-hour scan of the area — slower, so it is off until you ask for it.</div>
+      </div>
+
+      <div><div id="status"></div></div>
+    </div>
+  </aside>
+
+  <main>
+    <div id="map"></div>
+    <div class="ov" id="kbar" style="display:none"></div>
+    <div class="ov" id="focus"></div>
+    <div class="ov" id="banner"></div>
+    <div class="ov" id="legend">
+      <div><i style="background:#2f8f7f"></i>Serving as usual</div>
+      <div><i style="background:#f59e0b"></i>Partly down, or quality dropped</div>
+      <div><i style="background:#ef4444"></i>No service where there normally is</div>
+      <div><i style="background:#3a4a66"></i>Too few samples to tell</div>
+      <div><i style="background:none;border:2px solid #a78bfa"></i>Out-of-place network received</div>
+      <div><i style="background:none;border:2px solid #ef4444;border-radius:50%"></i>Silent site</div>
+      <p>Fainter colour = only some of the operators are affected there.</p>
+    </div>
+    <div class="ov" id="tl"></div>
+    <div class="ov" id="empty"><div><span class="material-icons">monitor_heart</span>Choose the area and the networks, then <b>Start monitoring</b>.<br>The map fills with one cell per area, coloured by whether each network still serves it.</div></div>
+  </main>
+
+  <aside id="rp">
+    <div id="rp-head">
+      <div><h2>Network status</h2><div class="sub" id="rp-sub">not running</div></div>
+      <span class="pill" id="pill"><i></i><span id="pill-t">OFF</span></span>
+    </div>
+    <div id="demo-tag">SYNTHETIC SCENARIO — generated in the browser, not real measurements</div>
+    <div id="rp-body"><div class="none">Nothing to show yet.</div></div>
+  </aside>
+</div>
+<script src="suite-nav.js" defer></script>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]));
+const fmt = n => n == null || isNaN(n) ? '–' : n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e4 ? Math.round(n/1e3)+'k' : n >= 1e3 ? (n/1e3).toFixed(1)+'k' : String(Math.round(n));
+const pct = v => v == null ? '–' : (v >= 0.9995 ? '100' : (100*v).toFixed(v >= 0.99 ? 2 : 1)) + '%';
+const TABLE = 'measurements_year_geo', CREDS_KEY = 'clickhouse_credentials';
+
+// ══════════════ WHAT COUNTS AS A PROBLEM — tune here ══════════════
+const T = {
+  minExp: 8,        // need at least this many samples EXPECTED now to judge an area/site at all (8 → zero by chance is 1 in 3,000)
+  minHours: 10,     // …and the network must have been seen there in at least this many of the 24 baseline hours
+  down: 0.15,       // observed / expected below this = no service
+  partial: 0.5,     // below this = partly down
+  pMax: 0.0005,     // and the shortfall must be this unlikely by chance (Poisson)
+  rsrpDrop: 8,      // dB below the baseline median = quality dropped
+  legacyRise: 0.3,  // share of samples on 2G/3G up by this much = quality dropped
+  baseEvery: 30,    // minutes between re-reads of the 24-hour baseline
+  staleMin: 20,     // newest sample older than this = the feed itself is behind
+};
+const HOSTILE = new Set(['432','417','418']);
+const MCC = { '425':'Israel','416':'Jordan','602':'Egypt','420':'Saudi Arabia','417':'Syria','418':'Iraq','432':'Iran','415':'Lebanon','280':'Cyprus','286':'Turkey','202':'Greece','262':'Germany','310':'USA','234':'UK','250':'Russia','208':'France' };
+const OPCOL = ['#60a5fa','#f472b6','#34d399','#a78bfa','#fbbf24','#22d3ee','#fb923c','#c084fc'];
+const CITIES = [['Kiryat Shmona',33.207,35.570],['Katzrin',32.992,35.690],['Safed',32.965,35.496],['Nahariya',33.005,35.094],['Acre',32.928,35.076],['Karmiel',32.914,35.292],['Haifa bay',32.810,35.050],['Tiberias',32.794,35.531],['Nazareth',32.700,35.297],['Afula',32.608,35.289],["Beit She'an",32.497,35.497],['Hadera',32.434,34.919],['Netanya',32.321,34.853],['Herzliya',32.166,34.843],['Tel Aviv',32.080,34.780],['Petah Tikva',32.087,34.887],['Rishon LeZion',31.964,34.804],['Rehovot',31.894,34.811],["Modi'in",31.899,35.010],['Jerusalem',31.778,35.214],['Beit Shemesh',31.745,34.988],['Ashdod',31.801,34.643],['Ashkelon',31.669,34.571],['Kiryat Gat',31.610,34.764],['Sderot and the Gaza border',31.525,34.596],['Netivot',31.420,34.588],['Ofakim',31.314,34.620],["Be'er Sheva",31.252,34.791],['Arad',31.258,35.213],['Dimona',31.069,35.033],['Yeruham',30.988,34.930],['Mitzpe Ramon',30.610,34.801],['Eilat',29.558,34.948]];
+const km = (a, b, c, d) => { const r = Math.PI/180, x = Math.sin((c-a)*r/2)**2 + Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2; return 12742*Math.asin(Math.sqrt(x)); };
+function placeName(lat, lng){ let best = null, bd = 1e9; for(const [n, la, lo] of CITIES){ const d = km(lat, lng, la, lo); if(d < bd){ bd = d; best = n; } }
+  return bd <= 18 ? best : bd <= 45 ? `near ${best}` : `${lat.toFixed(2)}, ${lng.toFixed(2)}`; }
+
+// ══════════════ CONNECTION (shared credentials with the rest of the suite) ══════════════
+let statusLines = [];
+function status(msg, cls){ statusLines.push(cls ? `<span class="${cls}">${esc(msg)}</span>` : esc(msg)); $('status').innerHTML = statusLines.slice(-8).join('\n'); }
+function clearStatus(){ statusLines = []; $('status').innerHTML = ''; }
+function setConn(state, label){ $('conn-dot').className = 'dot ' + state; $('conn-label').textContent = label; }
+async function ch(sql){
+  const host = $('db-host').value.trim(), port = $('db-port').value.trim() || '8443', db = $('db-name').value.trim() || 'default', user = $('db-user').value.trim(), pass = $('db-pass').value;
+  if(!host || !user || !pass) throw new Error('Fill in the database connection first');
+  const resp = await fetch(`https://${host}:${port}/?database=${encodeURIComponent(db)}&default_format=JSON`, { method:'POST', headers:{ 'Authorization':'Basic ' + btoa(`${user}:${pass}`), 'Content-Type':'text/plain' }, body:sql });
+  if(!resp.ok){ const t = await resp.text(); let m = `HTTP ${resp.status}`; try{ const j = JSON.parse(t); m = j.exception || t; }catch(e){ m = t || m; } throw new Error(m); }
+  const json = await resp.json(); if(json.exception) throw new Error(json.exception); return json;
+}
+async function testConnection(silent){
+  setConn('connecting', 'Connecting…');
+  try{ const r = await ch('SELECT version() AS version'); setConn('connected', 'Connected · v' + String(r.data[0].version).split('.').slice(0,2).join('.'));
+    try{ localStorage.setItem(CREDS_KEY, JSON.stringify({ host:$('db-host').value.trim(), port:$('db-port').value.trim() || '8443', database:$('db-name').value.trim() || 'default', user:$('db-user').value.trim(), password:btoa($('db-pass').value) })); }catch(e){}
+    if(!silent) $('conn-panel').classList.remove('open');
+  }catch(e){ setConn('disconnected', 'Error: ' + e.message.substring(0,50)); if(!silent) $('conn-panel').classList.add('open'); }
+}
+function loadCredentials(){
+  let c = null; try{ c = JSON.parse(localStorage.getItem(CREDS_KEY) || 'null'); }catch(e){}
+  if(!c){ return; }
+  if(c.host) $('db-host').value = c.host; if(c.port) $('db-port').value = c.port; if(c.database) $('db-name').value = c.database; if(c.user) $('db-user').value = c.user;
+  try{ if(c.password) $('db-pass').value = atob(c.password); }catch(e){}
+  if(c.host && c.user && c.password) testConnection(true);
+}
+
+// ══════════════ SETUP: area, networks ══════════════
+const S = { on:false, demo:false, run:0, timer:0, busy:false, baseAt:0, base:new Map(), now:new Map(), sBase:new Map(), sNow:new Map(), tl:[], gnss:null, gnssBusy:false,
+  ops:[], names:new Map(), cells:new Map(), sites:[], foreign:[], areas:[], avail:new Map(), all:null, D:1, stale:false, lts:0, focus:'', res:6, win:60, bbox:null, mon:[], demoS:null, tick:0 };
+let drawer = null;
+function bbox(){ const v = $('f-area').value; if(v !== 'custom'){ const [a,b,c,d] = v.split(',').map(Number); return { la0:a, la1:b, lo0:c, lo1:d }; } return S.custom; }
+function areaKm2(b){ return km(b.la0, b.lo0, b.la1, b.lo0) * km((b.la0+b.la1)/2, b.lo0, (b.la0+b.la1)/2, b.lo1); }
+function pickRes(b){ const r = +$('f-res').value; if(r) return r; const a = areaKm2(b); return a > 6000 ? 6 : a > 500 ? 7 : 8; }
+function areaNote(){ const b = bbox(); if(!b){ $('area-note').textContent = ''; return; } const a = areaKm2(b), r = pickRes(b), per = { 6:36.1, 7:5.16, 8:0.74 }[r];
+  $('area-note').innerHTML = `${fmt(a)} km² · up to ${fmt(a/per)} cells` + (a/per > 6000 ? '<br><span style="color:var(--orange)">Many cells — pick a larger size.</span>' : ''); }
+function onAreaPick(){ if($('f-area').value === 'custom' && !S.custom){ startDraw(); return; } showArea(true); }
+function onResPick(){ areaNote(); if(S.on) restart(); }
+function parsePlmns(v){
+  const list = [], bad = [];
+  for(const tok of String(v || '').split(/[,;\n]+/).map(s => s.trim()).filter(Boolean)){
+    let m;
+    if(/^\d{3}$/.test(tok)) list.push({ mcc:+tok });
+    else if((m = tok.match(/^(\d{3})\s*[-\s\/.:]?\s*(\d{2,3})$/))) list.push({ mcc:+m[1], mnc:+m[2] });
+    else bad.push(tok);
+  }
+  return { list, bad };
+}
+function onPlmnInput(){
+  const { list, bad } = parsePlmns($('f-plmn').value), n = $('plmn-note');
+  try{ localStorage.setItem('noc_plmn', $('f-plmn').value); }catch(e){}
+  if(bad.length){ n.className = 'hint bad'; n.textContent = `Could not read "${bad[0]}" — write a country code (425) or full PLMNs (425-01, 425-02), separated by commas.`; return null; }
+  if(!list.length){ n.className = 'hint bad'; n.textContent = 'Type at least one country code or PLMN.'; return null; }
+  n.className = 'hint';
+  n.innerHTML = list.map(e => `<b>${e.mcc}${e.mnc !== undefined ? '-' + String(e.mnc).padStart(2,'0') : ''}</b>${e.mnc === undefined ? ` ${esc(MCC[e.mcc] || '')} (all its networks)` : ''}`).join(', ') + '. Every other network received here is reported as out of place.';
+  return list;
+}
+const monitored = op => { const [a, b] = op.split('-'); return S.mon.some(e => e.mcc === +a && (e.mnc === undefined || e.mnc === +b)); };
+const opColor = op => OPCOL[Math.max(0, S.ops.indexOf(op)) % OPCOL.length];
+const opName = op => S.names.get(op) || op;
+
+// ══════════════ SQL ══════════════
+let _cols = null;
+async function schema(){
+  if(_cols) return _cols;
+  const r = await ch(`SELECT name, type FROM system.columns WHERE database = currentDatabase() AND table = '${TABLE}'`);
+  _cols = new Map(r.data.map(x => [x.name, x.type]));
+  if(!_cols.size) throw new Error(`Table ${TABLE} not found in this database`);
+  return _cols;
+}
+const BAD_ID = `'', '0', '268435455', '68719476735', '2147483647', '9223372036854775807'`;
+function parts(cols, o){
+  const has = c => cols.has(c), b = o.bbox, fl = v => (Math.floor(v*10)/10).toFixed(1);
+  const h3c = 'h3_res' + o.res; if(!has(h3c)) throw new Error(`Column ${h3c} is missing — pick another cell size`);
+  const HX = /Int/.test(cols.get(h3c)) ? `h3ToString(toUInt64(ifNull(${h3c}, 0)))` : `toString(${h3c})`;
+  const OP = `concat(toString(ifNull(network_mcc, 0)), '-', leftPad(toString(toUInt32OrZero(toString(network_mnc))), 2, '0'))`;
+  const ID = has('cell_nci') ? `if(tech = 'NR', ifNull(toString(cell_nci), ''), ifNull(toString(cell_eci), ''))` : `ifNull(toString(cell_eci), '')`;
+  const LEG = `tech IN ('GSM', 'WCDMA', 'CDMA')`;
+  // bin_lat / bin_lon lead the primary key; clean serving rows only; never trust a future timestamp
+  const where = mins => `timestamp > now() - INTERVAL ${mins} MINUTE AND timestamp <= now()
+    AND bin_lat BETWEEN ${fl(b.la0)} AND ${fl(b.la1)} AND bin_lon BETWEEN ${fl(b.lo0)} AND ${fl(b.lo1)}
+    AND location_lat_rounded BETWEEN ${b.la0} AND ${b.la1} AND location_lng_rounded BETWEEN ${b.lo0} AND ${b.lo1}
+    AND neighborNo IS NULL${has('quality_flags') ? ` AND quality_flags = ''` : ''}`;
+  const byMcc = new Map(); for(const e of o.mon){ if(!byMcc.has(e.mcc)) byMcc.set(e.mcc, []); byMcc.get(e.mcc).push(e.mnc); }
+  const MON = '(' + [...byMcc].map(([m, l]) => l.includes(undefined) ? `network_mcc = ${m}` : `(network_mcc = ${m} AND toUInt32OrZero(toString(network_mnc)) IN (${l.join(', ')}))`).join(' OR ') + ')';
+  return { has, HX, OP, ID, LEG, where, MON, h3c };
+}
+// One row per map cell × network. kind 'base' = the 24 hours, monitored networks; 'now' = the window, every network.
+function qHex(p, kind, mins){
+  const base = kind === 'base';
+  return `SELECT ${p.HX} AS hx, ${p.OP} AS op, count() AS n, uniq(deviceInfo_deviceId) AS d,${base ? `
+      uniq(deviceInfo_deviceId, toStartOfHour(timestamp)) AS dh, uniq(toStartOfHour(timestamp)) AS hrs,` : ''}
+      uniqIf(${p.ID}, ${p.ID} NOT IN (${BAD_ID})) AS c, quantileIf(0.5)(signal_rsrp, signal_rsrp < 0 AND NOT ${p.LEG}) AS r, countIf(${p.LEG}) AS leg,
+      toUnixTimestamp(max(timestamp)) AS lts, topK(1)(toString(network_operator))[1] AS name
+    FROM ${TABLE}
+    WHERE ${p.where(mins)}
+      AND ifNull(network_mcc, 0) > 0${base ? ` AND ${p.MON}` : ''}
+    GROUP BY hx, op${base ? `
+    HAVING n >= 3` : ''}`;
+}
+// One row per network × site × band. A site that was sampled all day and is not sampled now is the outage signal.
+function qSites(p, kind, mins){
+  const base = kind === 'base';
+  return `SELECT ${p.OP} AS op, toString(tech) AS t, intDiv(toUInt64OrZero(${p.ID}), if(tech = 'NR', 4096, 256)) AS s, ${p.has('band_number') ? `ifNull(toString(band_number), '')` : `''`} AS b,
+      count() AS n,${base ? ` uniq(toStartOfHour(timestamp)) AS hrs, avg(location_lat_rounded) AS la, avg(location_lng_rounded) AS lo,` : ''} toUnixTimestamp(max(timestamp)) AS lts
+    FROM ${TABLE}
+    WHERE ${p.where(mins)}
+      AND ${p.MON} AND tech IN ('LTE', 'NR') AND ${p.ID} NOT IN (${BAD_ID})
+    GROUP BY op, t, s, b${base ? `
+    HAVING n >= 30` : ''}`;
+}
+function qTimeline(p){
+  return `SELECT ${p.OP} AS op, toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL 30 MINUTE)) AS t, count() AS n, uniq(deviceInfo_deviceId) AS d
+    FROM ${TABLE}
+    WHERE ${p.where(1440)}
+      AND ${p.MON}
+    GROUP BY op, t
+    ORDER BY t`;
+}
+// Devices served by a cell that lives in the area, but reporting a position 50 km or more away (same test as the GNSS Spoofing page).
+function qGnss(b){
+  const fl = v => (Math.floor(v*10)/10).toFixed(1), time = `timestamp > now() - INTERVAL 24 HOUR AND timestamp <= now()`, srv = `tech = 'LTE' AND neighborNo IS NULL AND ifNull(cell_ecgi, '') != ''`;
+  return `WITH area_cells AS (
+      SELECT cell_ecgi, any(network_mcc) AS mcc FROM ${TABLE}
+      WHERE ${time} AND bin_lat BETWEEN ${fl(b.la0)} AND ${fl(b.la1)} AND bin_lon BETWEEN ${fl(b.lo0)} AND ${fl(b.lo1)}
+        AND location_lat_rounded BETWEEN ${b.la0} AND ${b.la1} AND location_lng_rounded BETWEEN ${b.lo0} AND ${b.lo1} AND ${srv}
+      GROUP BY cell_ecgi HAVING count() >= 10 ),
+    per AS (
+      SELECT cell_ecgi, bin_lat, bin_lon, count() AS n, uniq(deviceInfo_deviceId) AS dev, uniqState(deviceInfo_deviceId) AS dev_st, max(timestamp) AS t1, any(network_PLMN) AS plmn
+      FROM ${TABLE}
+      WHERE ${time} AND ${srv} AND network_mcc IN (SELECT mcc FROM area_cells) AND cell_ecgi IN (SELECT cell_ecgi FROM area_cells)
+      GROUP BY cell_ecgi, bin_lat, bin_lon ),
+    ranked AS (
+      SELECT cell_ecgi, bin_lat, bin_lon, n, dev_st, t1, plmn, first_value((bin_lat, bin_lon)) OVER w AS home, first_value(n) OVER w AS home_n, sum(n) OVER (PARTITION BY cell_ecgi) AS tot
+      FROM per WINDOW w AS (PARTITION BY cell_ecgi ORDER BY dev DESC, n DESC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) )
+    SELECT round(home.1 + 0.05, 2) AS la, round(home.2 + 0.05, 2) AS lo, round(bin_lat + 0.05, 2) AS sla, round(bin_lon + 0.05, 2) AS slo,
+      sum(n) AS n, uniqMerge(dev_st) AS dev, uniqExact(cell_ecgi) AS cells, toUnixTimestamp(max(t1)) AS t1, topK(1)(plmn)[1] AS plmn
+    FROM ranked
+    WHERE tot >= 10 AND home_n / tot >= 0.5 AND geoDistance(home.2, home.1, bin_lon, bin_lat) > 50000
+      AND home.1 BETWEEN ${(+fl(b.la0) - 0.001).toFixed(3)} AND ${(+fl(b.la1) + 0.001).toFixed(3)} AND home.2 BETWEEN ${(+fl(b.lo0) - 0.001).toFixed(3)} AND ${(+fl(b.lo1) + 0.001).toFixed(3)}
+    GROUP BY la, lo, sla, slo HAVING dev >= 2
+    ORDER BY n DESC LIMIT 500`;
+}
+
+// ══════════════ RUN ══════════════
+function toggleRun(){ if(S.on) stop(); else start(false); }
+function restart(){ const d = S.demo; stop(); start(d); }
+function start(demo){
+  clearStatus();
+  const mon = onPlmnInput(), b = bbox();
+  if(!mon){ status('Fix the list of networks first', 'err'); return; }
+  if(!b){ status('Draw the area first', 'err'); return; }
+  if(typeof h3 === 'undefined'){ status('The H3 library could not be loaded — the map cells cannot be drawn', 'err'); return; }
+  if(S.on) stop();
+  Object.assign(S, { on:true, demo:!!demo, run:S.run+1, busy:false, baseAt:0, base:new Map(), now:new Map(), sBase:new Map(), sNow:new Map(), tl:[], gnss:null, ops:[], names:new Map(),
+    cells:new Map(), sites:[], foreign:[], areas:[], focus:'', bbox:b, mon, res:pickRes(b), win:+$('f-win').value || 60, demoS:null, tick:0, err:'' });
+  $('demo-tag').style.display = demo ? 'block' : 'none'; $('empty').style.display = 'none';
+  $('btn-run').innerHTML = '<span class="material-icons">stop</span>Stop monitoring'; $('btn-run').classList.add('stop'); $('btn-run').classList.remove('btn-primary');
+  hexLayer.clearLayers(); hexObj.clear(); showArea(true); setPill(); tick(); reschedule();
+}
+function stop(){
+  S.on = false; S.run++; clearInterval(S.timer);
+  $('btn-run').innerHTML = '<span class="material-icons">play_arrow</span>Start monitoring'; $('btn-run').classList.remove('stop'); $('btn-run').classList.add('btn-primary');
+  setPill();
+}
+function reschedule(){ clearInterval(S.timer); if(S.on) S.timer = setInterval(tick, S.demo ? 5000 : (+$('f-tick').value || 120)*1000); }
+async function tick(){
+  if(!S.on || S.busy) return;
+  S.busy = true; const run = S.run, t0 = performance.now();
+  try{
+    if(S.demo) demoTick();
+    else {
+      const cols = await schema(), p = parts(cols, S), needBase = !S.baseAt || Date.now() - S.baseAt > T.baseEvery*60000;
+      if(needBase){
+        status('Reading the 24-hour baseline…');
+        const [hb, sb, tl] = await Promise.all([ ch(qHex(p, 'base', 1440)), ch(qSites(p, 'base', 1440)).catch(e => { status('Sites baseline failed: ' + e.message.substring(0,160), 'err'); return { data:[] }; }),
+          ch(qTimeline(p)).catch(e => { status('Timeline failed: ' + e.message.substring(0,160), 'err'); return { data:[] }; }) ]);
+        if(run !== S.run) return;
+        S.base = new Map(hb.data.map(r => [r.hx + '|' + r.op, r])); S.sBase = new Map(sb.data.map(r => [`${r.op}|${r.t}|${r.s}|${r.b}`, r])); S.tl = tl.data; S.baseAt = Date.now();
+        status(`Baseline: ${hb.data.length} area × network rows · ${sb.data.length} site × band rows · ${((performance.now()-t0)/1000).toFixed(1)}s`, 'ok');
+      }
+      const t1 = performance.now();
+      const [hn, sn] = await Promise.all([ ch(qHex(p, 'now', S.win)), ch(qSites(p, 'now', S.win)).catch(e => { status('Sites now failed: ' + e.message.substring(0,160), 'err'); return { data:[] }; }) ]);
+      if(run !== S.run) return;
+      S.now = new Map(hn.data.map(r => [r.hx + '|' + r.op, r])); S.sNow = new Map(sn.data.map(r => [`${r.op}|${r.t}|${r.s}|${r.b}`, r]));
+      if(!needBase) clearStatus();
+      status(`Now (last ${S.win} min): ${hn.data.length} rows · ${((performance.now()-t1)/1000).toFixed(1)}s · ${new Date().toTimeString().slice(0,8)}`, 'ok');
+      if($('l-gnss').checked && needBase) loadGnss();
+    }
+    S.tick++; S.err = ''; compute(); render();
+  }catch(e){ if(run === S.run){ S.err = e.message; status('Update failed: ' + e.message.substring(0,260), 'err'); } }
+  finally{ S.busy = false; setPill(); }
+}
+async function loadGnss(){
+  if(S.gnssBusy || !S.on || S.demo) return;
+  S.gnssBusy = true; $('n-gnss').textContent = '…'; const run = S.run, t0 = performance.now();
+  try{ const r = await ch(qGnss(S.bbox)); if(run !== S.run) return; S.gnss = r.data; status(`GNSS spoofing: ${r.data.length} displaced groups · ${((performance.now()-t0)/1000).toFixed(1)}s`, r.data.length ? undefined : 'ok'); render(); }
+  catch(e){ status('GNSS scan failed: ' + e.message.substring(0,200), 'err'); $('n-gnss').textContent = 'failed'; }
+  finally{ S.gnssBusy = false; }
+}
+function onGnssToggle(){ if($('l-gnss').checked && S.on && !S.demo && !S.gnss) loadGnss(); else { if(!$('l-gnss').checked) $('n-gnss').textContent = 'off'; draw(); renderPanel(); } }
+
+// ══════════════ THE JUDGEMENT: now against the baseline ══════════════
+function poisCdf(k, mu){ let p = Math.exp(-mu), s = p; for(let i = 1; i <= k; i++){ p *= mu/i; s += p; } return Math.min(1, s); }
+function compute(){
+  const scale = S.win / 1440;
+  // networks, biggest first
+  const w = new Map(); for(const r of S.base.values()){ w.set(r.op, (w.get(r.op) || 0) + (+r.dh || +r.n)); if(r.name && !S.names.has(r.op)) S.names.set(r.op, r.name); }
+  S.ops = [...w.entries()].sort((a,b) => b[1]-a[1]).slice(0, 8).map(x => x[0]);
+  // Fewer people are out at 4 am than at noon. D = how busy "now" is compared with the day's average, taken as the
+  // median over all busy area × network pairs, so one outage cannot drag it down.
+  const ratios = [];
+  for(const [k, r] of S.base){ const e = +r.n * scale; if(e >= 15){ const q = S.now.get(k); ratios.push((q ? +q.n : 0) / e); } }
+  ratios.sort((a,b) => a-b);
+  const med = ratios.length ? ratios[Math.floor(ratios.length/2)] : 1;
+  S.lts = 0; for(const r of S.now.values()) if(+r.lts > S.lts) S.lts = +r.lts;
+  S.stale = (S.now.size === 0) || med < 0.2 || (S.lts && Date.now()/1000 - S.lts > T.staleMin*60);
+  S.D = Math.max(0.2, Math.min(3, med || 1));
+  // area × network
+  S.cells = new Map();
+  const cell = hx => S.cells.get(hx) || S.cells.set(hx, { hx, ops:new Map(), foreign:[], w:0 }).get(hx);
+  for(const [k, r] of S.base){
+    if(!S.ops.includes(r.op)) continue;
+    const q = S.now.get(k), exp = +r.n * scale * S.D, obs = q ? +q.n : 0, wgt = (+r.dh || +r.n/8) / 24;
+    let st = 'ok', why = '';
+    if(S.stale || exp < T.minExp || (+r.hrs || 24) < T.minHours) st = 'na';
+    else {
+      const ratio = obs / exp, p = poisCdf(obs, exp);
+      if(ratio < T.down && p < T.pMax){ st = 'down'; why = `${obs} samples where about ${Math.round(exp)} are usual`; }
+      else if(ratio < T.partial && p < T.pMax){ st = 'part'; why = `${obs} samples where about ${Math.round(exp)} are usual`; }
+      else if(q && obs >= 10){
+        const lb = +r.leg / Math.max(1, +r.n), ln = +q.leg / obs;
+        if(r.r != null && q.r != null && +q.r <= +r.r - T.rsrpDrop){ st = 'deg'; why = `signal ${(+q.r).toFixed(0)} dBm, usually ${(+r.r).toFixed(0)}`; }
+        else if(ln - lb >= T.legacyRise){ st = 'deg'; why = `${Math.round(ln*100)}% of samples on 2G/3G, usually ${Math.round(lb*100)}%`; }
+      }
+    }
+    const c = cell(r.hx); c.ops.set(r.op, { st, why, exp, obs, base:r, now:q || null, w:wgt }); c.w += wgt;
+  }
+  // networks that should not be here at all
+  const fo = new Map();
+  for(const r of S.now.values()){
+    if(monitored(r.op)) continue;
+    const mcc = r.op.split('-')[0], cls = HOSTILE.has(mcc) ? 'hostile' : ['0','1','999'].includes(mcc) ? 'test' : 'foreign';
+    const c = cell(r.hx); c.foreign.push({ op:r.op, cls, n:+r.n, d:+r.d });
+    const f = fo.get(r.op) || fo.set(r.op, { op:r.op, cls, name:r.name || '', n:0, d:0, hexes:[] }).get(r.op); f.n += +r.n; f.d += +r.d; f.hexes.push(r.hx);
+  }
+  S.foreign = [...fo.values()].sort((a,b) => (b.cls === 'hostile') - (a.cls === 'hostile') || b.d - a.d);
+  // availability, weighted by how many devices are normally in each area
+  const score = { ok:1, deg:1, part:0.5, down:0 };
+  S.avail = new Map(); let A = 0, B = 0;
+  for(const op of S.ops){ let a = 0, b = 0, down = 0, part = 0, deg = 0, na = 0, devs = 0;
+    for(const c of S.cells.values()){ const o = c.ops.get(op); if(!o) continue; if(o.st === 'na'){ na++; continue; } a += o.w * score[o.st]; b += o.w;
+      if(o.st === 'down'){ down++; devs += o.w; } else if(o.st === 'part'){ part++; devs += o.w*0.5; } else if(o.st === 'deg') deg++; }
+    S.avail.set(op, { v: b ? a/b : null, down, part, deg, na, devs, sitesDown:0, sites:0 }); A += a; B += b; }
+  S.all = B ? A/B : null;
+  // sites
+  const sm = new Map(); S.matrix = new Map();
+  for(const [k, r] of S.sBase){
+    if(!S.ops.includes(r.op)) continue;
+    const exp = +r.n * scale * S.D; if(S.stale || exp < T.minExp || (+r.hrs || 24) < T.minHours) continue;
+    const q = S.sNow.get(k), dn = !q || +q.n === 0, id = `${r.op}|${r.t}|${r.s}`;
+    const s = sm.get(id) || sm.set(id, { id, op:r.op, t:r.t, s:r.s, la:0, lo:0, wn:0, bands:[], lts:0 }).get(id);
+    s.la += +r.la * +r.n; s.lo += +r.lo * +r.n; s.wn += +r.n; s.bands.push({ b:r.b, dn, exp, n:+r.n }); if(q && +q.lts > s.lts) s.lts = +q.lts; if(dn && +r.lts > (s.blts || 0)) s.blts = +r.lts;
+    const mk = r.op + '|' + r.t + '|' + r.b, m = S.matrix.get(mk) || S.matrix.set(mk, { n:0, dn:0 }).get(mk); m.n++; if(dn) m.dn++;
+  }
+  S.sites = [];
+  for(const s of sm.values()){ s.la /= s.wn; s.lo /= s.wn; s.dn = s.bands.filter(x => x.dn).length; s.down = s.dn === s.bands.length; const a = S.avail.get(s.op); a.sites++; if(s.down){ a.sitesDown++; S.sites.push(s); } s.partial = !s.down && s.dn > 0; }
+  S.sites.sort((a,b) => b.wn - a.wn);
+  S.siteN = sm.size;
+  computeAreas();
+}
+// Group neighbouring affected cells into named areas.
+function hexState(c, focus){
+  const list = [...c.ops.entries()].filter(([op, o]) => (!focus || op === focus) && o.st !== 'na');
+  if(!list.length) return { st:'na', share:0, n:0 };
+  const down = list.filter(x => x[1].st === 'down').length, part = list.filter(x => x[1].st === 'part' || x[1].st === 'deg').length;
+  return { st: down ? 'down' : part ? 'part' : 'ok', share:(down + part)/list.length, n:list.length, down, part };
+}
+function computeAreas(){
+  const bad = new Map(); for(const c of S.cells.values()){ const h = hexState(c, S.focus); if(h.st === 'down' || h.st === 'part') bad.set(c.hx, h); }
+  const seen = new Set(); S.areas = [];
+  for(const hx of bad.keys()){
+    if(seen.has(hx)) continue;
+    const grp = [], q = [hx]; seen.add(hx);
+    while(q.length){ const x = q.pop(); grp.push(x); for(const nb of h3.gridDisk(x, 1)) if(bad.has(nb) && !seen.has(nb)){ seen.add(nb); q.push(nb); } }
+    let la = 0, lo = 0, devs = 0, down = 0; const ops = new Map();
+    for(const x of grp){ const [a, b] = h3.cellToLatLng(x); la += a; lo += b; const c = S.cells.get(x);
+      for(const [op, o] of c.ops){ if(S.focus && op !== S.focus) continue; if(o.st === 'down'){ devs += o.w; down++; ops.set(op, 'down'); } else if(o.st === 'part' || o.st === 'deg'){ devs += o.w*0.5; if(!ops.has(op)) ops.set(op, 'part'); } } }
+    la /= grp.length; lo /= grp.length;
+    const allOps = S.focus ? 1 : S.ops.length, sev = down ? 'down' : 'part';
+    S.areas.push({ hexes:grp, la, lo, devs, sev, ops, name:placeName(la, lo), wide: !S.focus && [...ops.values()].filter(v => v === 'down').length >= Math.max(2, Math.ceil(allOps*0.6)) });
+  }
+  S.areas.sort((a,b) => (b.sev === 'down') - (a.sev === 'down') || b.devs - a.devs);
+}
+
+// ══════════════ MAP ══════════════
+const map = L.map('map', { preferCanvas:true, zoomControl:true }).setView([31.5, 35.0], 8);
+addDarkBasemap(map, { maxZoom: 16 });
+const rend = L.canvas({ padding: 0.3 });
+const areaLayer = L.layerGroup().addTo(map), hexLayer = L.layerGroup().addTo(map), ringLayer = L.layerGroup().addTo(map), siteLayer = L.layerGroup().addTo(map), gnssLayer = L.layerGroup().addTo(map), pillLayer = L.layerGroup().addTo(map);
+const hexObj = new Map();
+const COL = { ok:'#2f8f7f', part:'#f59e0b', down:'#ef4444', na:'#3a4a66' };
+function showArea(fit){ areaLayer.clearLayers(); areaNote(); const b = bbox(); if(!b) return;
+  L.rectangle([[b.la0, b.lo0], [b.la1, b.lo1]], { color:'#60a5fa', weight:1, dashArray:'6 5', fill:false, interactive:false }).addTo(areaLayer);
+  if(fit && map.getSize().x > 50) map.fitBounds([[b.la0, b.lo0], [b.la1, b.lo1]], { paddingTopLeft:[20, 70], paddingBottomRight:[20, 110] }); }
+function startDraw(){
+  if(drawer){ drawer.disable(); drawer = null; $('btn-draw').classList.remove('on'); return; }
+  drawer = new L.Draw.Rectangle(map, { shapeOptions:{ color:'#60a5fa', weight:2 }, showArea:false }); drawer.enable(); $('btn-draw').classList.add('on');
+}
+map.on('draw:created', e => { const bb = e.layer.getBounds(); S.custom = { la0:+bb.getSouth().toFixed(4), la1:+bb.getNorth().toFixed(4), lo0:+bb.getWest().toFixed(4), lo1:+bb.getEast().toFixed(4) };
+  $('f-area').value = 'custom'; drawer = null; $('btn-draw').classList.remove('on'); showArea(true); if(S.on) restart(); });
+map.on('draw:drawstop', () => { drawer = null; $('btn-draw').classList.remove('on'); });
+function draw(){
+  ringLayer.clearLayers(); siteLayer.clearLayers(); gnssLayer.clearLayers(); pillLayer.clearLayers();
+  const showHex = $('l-hex').checked, live = new Set();
+  for(const c of S.cells.values()){
+    if(!c.ops.size && !c.foreign.length) continue;
+    const h = hexState(c, S.focus), style = { renderer:rend, stroke:true, color:'#0a1628', weight:0.6, opacity:0.9, fillColor:COL[h.st], fillOpacity: !showHex ? 0 : h.st === 'ok' ? 0.5 : h.st === 'na' ? 0.3 : 0.4 + 0.5*h.share };
+    if(S.focus && !c.ops.has(S.focus)){ style.fillOpacity = 0; style.opacity = 0; }
+    let o = hexObj.get(c.hx);
+    if(!o){ o = L.polygon(h3.cellToBoundary(c.hx), style).addTo(hexLayer); o.on('click', ev => hexPopup(c.hx, ev.latlng)); hexObj.set(c.hx, o); } else o.setStyle(style);
+    live.add(c.hx);
+    if($('l-plmn').checked && c.foreign.length && !S.focus)
+      L.polygon(h3.cellToBoundary(c.hx), { renderer:rend, color: c.foreign.some(f => f.cls === 'hostile') ? '#ef4444' : '#a78bfa', weight:2.2, fill:false, dashArray: c.foreign.some(f => f.cls === 'hostile') ? null : '4 3', interactive:false }).addTo(ringLayer);
+  }
+  for(const [hx, o] of hexObj) if(!live.has(hx)){ hexLayer.removeLayer(o); hexObj.delete(hx); }
+  if($('l-sites').checked) for(const s of S.sites){ if(S.focus && s.op !== S.focus) continue;
+    L.circleMarker([s.la, s.lo], { renderer:rend, radius:4.5, color:'#ef4444', weight:2, fillColor:'#0a1628', fillOpacity:0.9 }).addTo(siteLayer)
+      .bindTooltip(`${esc(opName(s.op))} · ${s.t} site ${s.s} — silent on ${s.bands.length} band${s.bands.length > 1 ? 's' : ''}`, { direction:'top', opacity:0.95 }); }
+  if($('l-gnss').checked && S.gnss) for(const g of S.gnss){
+    L.polyline([[+g.la, +g.lo], [+g.sla, +g.slo]], { renderer:rend, color:'#f472b6', weight:1 + Math.min(4, Math.log10(1 + +g.n)), opacity:0.75 }).addTo(gnssLayer)
+      .bindTooltip(`${fmt(+g.dev)} devices served near ${placeName(+g.la, +g.lo)} report a position at ${(+g.sla).toFixed(2)}, ${(+g.slo).toFixed(2)} (${Math.round(km(+g.la, +g.lo, +g.sla, +g.slo))} km away)`, { sticky:true });
+    L.circleMarker([+g.sla, +g.slo], { renderer:rend, radius:6, color:'#f472b6', weight:2, fill:false, interactive:false }).addTo(gnssLayer); }
+  for(const a of S.areas.slice(0, 6)) L.marker([a.la, a.lo], { interactive:false, icon:L.divIcon({ className:'', iconSize:[0,0], html:`<span class="area-pill" style="--c:${a.sev === 'down' ? COL.down : COL.part}">${esc(a.name)}</span>` }) }).addTo(pillLayer);
+}
+function hexPopup(hx, latlng){
+  const c = S.cells.get(hx); if(!c) return;
+  const [la, lo] = h3.cellToLatLng(hx), lab = { ok:['OK', '#86efac'], deg:['Quality', '#fcd34d'], part:['Partial', '#fcd34d'], down:['No service', '#fca5a5'], na:['–', '#64748b'] };
+  const rows = S.ops.filter(op => c.ops.has(op)).map(op => { const o = c.ops.get(op), b = o.base, q = o.now;
+    return `<tr title="${esc(o.why)}"><td><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</td><td style="color:${lab[o.st][1]}">${lab[o.st][0]}</td>
+      <td>${o.obs} / ${o.exp < 10 ? o.exp.toFixed(1) : Math.round(o.exp)}</td><td>${q && q.r != null ? (+q.r).toFixed(0) : '–'} / ${b.r != null ? (+b.r).toFixed(0) : '–'}</td><td>${q ? q.c : 0} / ${b.c}</td></tr>`; }).join('');
+  const fo = c.foreign.map(f => `<div style="color:${f.cls === 'hostile' ? '#fca5a5' : '#c4b5fd'};margin-top:5px">${f.cls === 'hostile' ? 'Hostile-nation network' : 'Out-of-place network'} <b>${esc(f.op)}</b> ${esc(MCC[f.op.split('-')[0]] || '')} · ${f.d} device${f.d === 1 ? '' : 's'} · ${f.n} samples</div>`).join('');
+  L.popup({ maxWidth:420 }).setLatLng(latlng || [la, lo]).setContent(`<div class="pp"><h4>${esc(placeName(la, lo))}</h4><div class="sub mono">${la.toFixed(3)}, ${lo.toFixed(3)} · last ${S.win} min against 24 h</div>
+    ${rows ? `<table><tr><th>Network</th><th>State</th><th>Samples now / usual</th><th>RSRP now / usual</th><th>Cells now / 24 h</th></tr>${rows}</table>` : '<div class="sub">No monitored network has a baseline here.</div>'}${fo}</div>`).openOn(map);
+}
+
+// ══════════════ PANELS ══════════════
+function setPill(){
+  const el = $('pill'), t = $('pill-t'); el.className = 'pill';
+  if(!S.on){ t.textContent = 'OFF'; $('rp-sub').textContent = S.tick ? 'stopped — picture frozen' : 'not running'; return; }
+  if(S.err){ el.classList.add('late'); t.textContent = 'UPDATE FAILED'; }
+  else if(S.stale && S.tick){ el.classList.add('late'); t.textContent = 'FEED BEHIND'; }
+  else { el.classList.add('on'); t.textContent = 'LIVE'; }
+  $('rp-sub').textContent = S.tick ? `updated ${new Date().toTimeString().slice(0,8)} · now = last ${S.win} min` : 'reading…';
+}
+function spark(vals, col, w, h){
+  if(!vals || vals.length < 2) return '';
+  const mx = Math.max(...vals, 1e-9), mn = Math.min(...vals), rg = Math.max(mx - mn, mx*0.15);
+  const pts = vals.map((v, i) => `${(i*w/(vals.length-1)).toFixed(1)},${(h - 2 - (h-4)*(v - (mx - rg))/rg).toFixed(1)}`).join(' ');
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline points="${pts}" fill="none" stroke="${col}" stroke-width="1.4" stroke-linejoin="round"/></svg>`;
+}
+// A network's share of all monitored devices, half hour by half hour. It ignores the day/night rhythm, so a dip is that network's own.
+function shareSeries(){
+  const ts = [...new Set(S.tl.map(r => +r.t))].sort((a,b) => a-b), tot = new Map(), by = new Map();
+  for(const r of S.tl){ tot.set(+r.t, (tot.get(+r.t) || 0) + +r.d); (by.get(r.op) || by.set(r.op, new Map()).get(r.op)).set(+r.t, +r.d); }
+  const out = new Map(); for(const op of S.ops){ const m = by.get(op) || new Map(); out.set(op, ts.map(t => tot.get(t) ? (m.get(t) || 0)/tot.get(t) : 0)); }
+  return { ts, out, tot };
+}
+function render(){ draw(); renderKbar(); renderPanel(); renderTimeline();
+  $('n-sites').textContent = S.sites.length; $('n-sites').className = 'n' + (S.sites.length ? ' hot' : '');
+  $('n-plmn').textContent = S.foreign.length; $('n-plmn').className = 'n' + (S.foreign.some(f => f.cls === 'hostile') ? ' hot' : '');
+  if($('l-gnss').checked && S.gnss){ $('n-gnss').textContent = S.gnss.length; $('n-gnss').className = 'n' + (S.gnss.length ? ' hot' : ''); }
+  $('banner').style.display = S.stale ? 'block' : 'none';
+  $('banner').textContent = S.stale ? (S.lts ? `The feed is behind — newest sample is ${Math.round((Date.now()/1000 - S.lts)/60)} min old. Nothing is judged until it catches up.` : 'No sample at all in the window — the feed may be behind. Nothing is judged.') : '';
+}
+function renderKbar(){
+  const f = S.focus, a = f ? S.avail.get(f) : null, v = f ? a.v : S.all, col = v == null ? 'var(--text-muted)' : v >= 0.99 ? '#86efac' : v >= 0.95 ? '#fcd34d' : '#fca5a5';
+  const sd = f ? a.sitesDown : S.sites.length, devs = S.areas.reduce((x, y) => x + y.devs, 0);
+  const k = (val, lab, c) => `<div class="k"><b style="color:${c || 'var(--text)'}">${val}</b><span>${lab}</span></div>`;
+  $('kbar').style.display = 'flex';
+  $('kbar').innerHTML = k(pct(v), f ? `${esc(opName(f))} availability` : 'availability, all networks', col) + k(sd, 'silent sites', sd ? '#fca5a5' : null) +
+    k(S.areas.length, 'affected areas', S.areas.length ? '#fcd34d' : null) + k(S.foreign.length, 'out-of-place networks', S.foreign.some(x => x.cls === 'hostile') ? '#fca5a5' : S.foreign.length ? '#c4b5fd' : null) +
+    k('~' + fmt(devs), 'devices usually active there, per hour');
+  const fc = $('focus'); fc.style.display = f ? 'flex' : 'none';
+  if(f) fc.innerHTML = `<i style="background:${opColor(f)}"></i>${esc(opName(f))} only<span class="material-icons x" onclick="setFocus('')" title="Back to all networks">close</span>`;
+}
+function setFocus(op){ S.focus = S.focus === op ? '' : op; map.closePopup(); computeAreas(); render(); $('rp-body').scrollTop = 0; }
+function flyTo(la, lo, z){ map.flyTo([la, lo], Math.max(map.getZoom(), z || 10), { duration:0.6 }); }
+function renderPanel(){
+  const f = S.focus, sh = shareSeries(), B = $('rp-body');
+  if(!S.ops.length){ B.innerHTML = `<div class="none">No sample of the monitored networks in this area in the last 24 hours.<br>Check the PLMN list and the area.</div>`; return; }
+  const v = f ? S.avail.get(f).v : S.all, col = v == null ? 'var(--text-muted)' : v >= 0.99 ? '#86efac' : v >= 0.95 ? '#fcd34d' : '#fca5a5';
+  let html = `<div class="big"><b style="color:${col}">${pct(v)}</b><span>${f ? esc(opName(f)) + ' · ' + esc(f) : 'All monitored networks'}<br>availability, weighted by the devices normally in each area</span></div>`;
+  // networks
+  html += `<div class="sec">Networks<span>click one to zoom in</span></div><div class="ops">` + S.ops.map(op => { const a = S.avail.get(op), c = a.v == null ? 'var(--text-muted)' : a.v >= 0.99 ? '#86efac' : a.v >= 0.95 ? '#fcd34d' : '#fca5a5';
+    return `<div class="op ${f === op ? 'on' : ''}" onclick="setFocus('${esc(op)}')"><i style="background:${opColor(op)}"></i><div class="nm"><b>${esc(opName(op))}</b><span>${esc(op)}</span></div>
+      <div title="Share of all monitored devices over 24 h — a dip is this network's own">${spark(sh.out.get(op), opColor(op), 78, 24)}</div>
+      <div class="v"><b style="color:${c}">${pct(a.v)}</b><span class="${a.sitesDown || a.down ? 'bad' : ''}">${a.sitesDown} silent site${a.sitesDown === 1 ? '' : 's'} · ${a.down + a.part} area${a.down + a.part === 1 ? '' : 's'}</span></div></div>`; }).join('') + `</div>`;
+  // network × band
+  const bands = new Map(); for(const k of S.matrix.keys()){ const [op, t, b] = k.split('|'); if(b) bands.set(t + '|' + b, (bands.get(t + '|' + b) || 0) + S.matrix.get(k).n); }
+  const bl = [...bands.entries()].sort((a,b) => b[1]-a[1]).slice(0, 6).map(x => x[0]).sort((a,b) => (a.split('|')[0] > b.split('|')[0] ? 1 : -1) || +a.split('|')[1] - +b.split('|')[1]);
+  if(bl.length){
+    html += `<div class="sec">What is up and what is down · network × band<span>sites answering · silent</span></div><table class="mx"><tr><th></th>${bl.map(x => `<th>${x.split('|')[0] === 'NR' ? 'n' : 'B'}${esc(x.split('|')[1])}<small>${x.split('|')[0]}</small></th>`).join('')}</tr>` +
+      S.ops.filter(op => !f || op === f).map(op => `<tr><td class="nm" onclick="setFocus('${esc(op)}')"><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</td>` + bl.map(x => { const m = S.matrix.get(op + '|' + x);
+        if(!m) return '<td class="x">–</td>'; const r = 1 - m.dn/m.n; return `<td class="${r >= 0.99 ? 'g' : r >= 0.95 ? 'o' : 'r'}" title="${m.n} sites judged, ${m.dn} silent now"><b>${pct(r)}</b><small>${m.dn} ✕</small></td>`; }).join('') + '</tr>').join('') + `</table>`;
+  }
+  // affected areas
+  html += `<div class="sec">Affected areas<span>${S.areas.length || 'none'}</span></div>`;
+  html += S.areas.length ? S.areas.slice(0, 12).map((a, i) => `<div class="it" style="--c:${a.sev === 'down' ? COL.down : COL.part}" onclick="flyTo(${a.la.toFixed(4)}, ${a.lo.toFixed(4)}, ${S.res === 6 ? 10 : 12})">
+      <div><b>${esc(a.name)}</b><span>${[...a.ops.entries()].map(([op, s]) => `${esc(opName(op))}${s === 'down' ? ' ✕' : ' ↓'}`).join(' · ')}<br>${a.hexes.length} cell${a.hexes.length > 1 ? 's' : ''} · ~${fmt(a.devs)} devices/hour usually</span></div>
+      <span class="tag">${a.wide ? 'all networks' : a.sev === 'down' ? 'no service' : 'degraded'}</span></div>`).join('') + (S.areas.length > 12 ? `<div class="hint">+${S.areas.length - 12} smaller areas on the map.</div>` : '')
+    : `<div class="none">${S.stale ? 'Not judged — the feed is behind.' : 'Every area that can be judged is served as usual.'}</div>`;
+  // silent sites (zoom-in only: the list is long otherwise)
+  const ss = S.sites.filter(s => !f || s.op === f);
+  html += `<div class="sec">Silent sites<span>${ss.length} of ${f ? S.avail.get(f).sites : S.siteN} judged</span></div>`;
+  html += ss.length ? `<table class="st"><tr><th>Site</th><th>Bands</th><th>Usual now</th><th>Last heard</th></tr>` + ss.slice(0, f ? 40 : 8).map(s => `<tr class="r" onclick="flyTo(${s.la.toFixed(5)}, ${s.lo.toFixed(5)}, 13)">
+      <td><span style="color:${opColor(s.op)}">●</span> ${s.t} ${s.s}<br><span style="color:var(--text-dim)">${esc(placeName(s.la, s.lo))}</span></td><td>${s.bands.map(x => esc(x.b)).join(', ')}</td>
+      <td>${Math.round(s.bands.reduce((a, x) => a + x.exp, 0))}</td><td>${s.blts ? new Date(s.blts*1000).toTimeString().slice(0,5) : '–'}</td></tr>`).join('') + `</table>` +
+      (ss.length > (f ? 40 : 8) ? `<div class="hint">+${ss.length - (f ? 40 : 8)} more${f ? '' : ' — zoom in on a network to list them'}.</div>` : '')
+    : `<div class="none">No site that is normally sampled is silent.</div>`;
+  // anomalies
+  if(!f){
+    html += `<div class="sec">Out-of-place networks<span>${S.foreign.length || 'none'}</span></div>`;
+    html += S.foreign.length ? S.foreign.slice(0, 10).map(x => { const mcc = x.op.split('-')[0], [la, lo] = h3.cellToLatLng(x.hexes[0]), c = x.cls === 'hostile' ? COL.down : '#a78bfa';
+      return `<div class="it" style="--c:${c}" onclick="flyTo(${la.toFixed(4)}, ${lo.toFixed(4)}, 11)"><div><b>${esc(x.op)} · ${esc(MCC[mcc] || 'MCC ' + mcc)}${x.name ? ' · ' + esc(x.name) : ''}</b>
+        <span>${fmt(x.d)} device${x.d === 1 ? '' : 's'} · ${fmt(x.n)} samples · ${x.hexes.length} cell${x.hexes.length > 1 ? 's' : ''} · ${esc(placeName(la, lo))}</span></div><span class="tag">${x.cls === 'hostile' ? 'hostile' : x.cls === 'test' ? 'test PLMN' : 'not on the list'}</span></div>`; }).join('')
+      : `<div class="none">Only the monitored networks are received.</div>`;
+    if($('l-gnss').checked){
+      html += `<div class="sec">GNSS spoofing<span>${S.gnss ? S.gnss.length : S.gnssBusy ? 'scanning…' : '–'}</span></div>`;
+      html += S.gnss && S.gnss.length ? S.gnss.slice(0, 8).map(g => `<div class="it" style="--c:#f472b6" onclick="map.fitBounds([[${+g.la}, ${+g.lo}], [${+g.sla}, ${+g.slo}]], { padding:[60, 60] })"><div><b>${esc(placeName(+g.la, +g.lo))} → ${(+g.sla).toFixed(2)}, ${(+g.slo).toFixed(2)}</b>
+          <span>${fmt(+g.dev)} devices · ${fmt(+g.n)} samples · ${Math.round(km(+g.la, +g.lo, +g.sla, +g.slo))} km from the cell that serves them</span></div><span class="tag">displaced</span></div>`).join('')
+        : `<div class="none">${S.gnss ? 'No group of devices reports a position far from its serving cell.' : 'Scan not finished yet.'}</div>`;
+    }
+  }
+  html += `<div class="note"><b>How to read this.</b> Everything is inferred from crowd samples, not from the operators' own systems. An area or site is judged only where the network was sampled through at least ${T.minHours} of the last 24 hours and at least ${T.minExp} samples would be expected now; expectation follows how busy the whole area is right now (×${S.D.toFixed(2)} of the daily average). “No service” means the samples that are normally there are missing — a lead for the NOC to confirm, not a confirmed outage.</div>`;
+  B.innerHTML = html;
+}
+function renderTimeline(){
+  const el = $('tl'), sh = shareSeries(); if(sh.ts.length < 3){ el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  const W = 1000, H = 74, ops = S.focus ? [S.focus] : S.ops, t0 = sh.ts[0], t1 = sh.ts[sh.ts.length-1], x = t => (t - t0)/(t1 - t0 || 1)*W;
+  const by = new Map(); for(const r of S.tl) (by.get(r.op) || by.set(r.op, new Map()).get(r.op)).set(+r.t, +r.d);
+  let mx = 1; for(const op of ops) for(const v of (by.get(op) || new Map()).values()) if(v > mx) mx = v;
+  const lines = ops.map(op => { const m = by.get(op) || new Map(); return `<polyline points="${sh.ts.map(t => `${x(t).toFixed(1)},${(H - 14 - (H-20)*(m.get(t) || 0)/mx).toFixed(1)}`).join(' ')}" fill="none" stroke="${opColor(op)}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`; }).join('');
+  const ticks = []; for(let t = Math.ceil(t0/10800)*10800; t <= t1; t += 10800) ticks.push(`<line x1="${x(t)}" y1="0" x2="${x(t)}" y2="${H-12}" stroke="#1e3a5f" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${x(t)}" y="${H-1}" fill="#64748b" font-size="10" text-anchor="middle" font-family="JetBrains Mono">${new Date(t*1000).toTimeString().slice(0,5)}</text>`);
+  const wx = x(t1 + 1800 - S.win*60);
+  el.innerHTML = `<div class="th"><b>Devices per half hour, last 24 h</b>${ops.map(op => `<span><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</span>`).join('')}<span style="margin-left:auto">shaded = now</span></div>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><rect x="${Math.max(0, wx)}" y="0" width="${W - Math.max(0, wx)}" height="${H-12}" fill="rgba(59,130,246,.13)"/>${ticks.join('')}${lines}</svg>`;
+}
+
+// ══════════════ SYNTHETIC SCENARIO (clearly labelled; fills the same tables the queries fill) ══════════════
+function demoInit(){
+  let seed = 23; const rnd = () => (seed = (seed*16807) % 2147483647) / 2147483647;
+  const IL = [[33.28,35.57],[33.09,35.10],[32.83,34.95],[32.10,34.75],[31.60,34.48],[31.22,34.26],[30.50,34.50],[29.50,34.90],[29.56,34.98],[30.60,35.20],[31.10,35.42],[31.50,35.47],[32.40,35.56],[32.70,35.65],[33.25,35.83]];
+  const b = S.bbox, hexes = h3.polygonToCells(IL, S.res).filter(hx => { const [la, lo] = h3.cellToLatLng(hx); return la >= b.la0 && la <= b.la1 && lo >= b.lo0 && lo <= b.lo1; });
+  const POP = { 'Tel Aviv':10, 'Jerusalem':7, 'Haifa bay':6, "Be'er Sheva":4, 'Rishon LeZion':5, 'Petah Tikva':5, 'Netanya':4, 'Ashdod':4 };
+  const ops = [['425-01','Demo Partner'],['425-02','Demo Cellcom'],['425-03','Demo Pelephone'],['425-07','Demo HOT Mobile'],['425-08','Demo Golan']].filter(o => monitored(o[0]));
+  const share = [1, 0.95, 0.9, 0.6, 0.45], bandsOf = [[['LTE','3'],['LTE','1'],['LTE','28'],['NR','78']], [['LTE','3'],['LTE','7'],['LTE','8'],['NR','78']], [['LTE','3'],['LTE','1'],['LTE','8'],['LTE','7']], [['LTE','3'],['LTE','1'],['LTE','28']], [['LTE','3'],['LTE','7'],['LTE','8']]];
+  const area = { 6:36.1, 7:5.16, 8:0.74 }[S.res], cells = [], sites = [];
+  for(const hx of hexes){ const [la, lo] = h3.cellToLatLng(hx); let w = 0.03; for(const [n, cla, clo] of CITIES) w += (POP[n] || 1.4) * Math.exp(-km(la, lo, cla, clo)/9);
+    w *= area/36.1; cells.push({ hx, la, lo, w });
+    ops.forEach(([op], oi) => { const k = Math.min(7, Math.round(w*1.6*share[oi] + rnd()*0.8)); for(let i = 0; i < k; i++){ const s = { op, s:20000*(oi+1) + sites.length, la:la + (rnd()-0.5)*0.04, lo:lo + (rnd()-0.5)*0.05, hx, bands:[] };
+      for(const [t, bnd] of bandsOf[oi]) if(rnd() < (t === 'NR' ? 0.35 : 0.8)) s.bands.push({ t, b:bnd, n:Math.round(200 + 2500*rnd()*Math.min(1.5, w)) }); if(s.bands.length) sites.push(s); } }); }
+  return { rnd, cells, sites, ops, share, t0:Date.now() };
+}
+function demoTick(){
+  const D = S.demoS || (S.demoS = demoInit()), rnd = D.rnd, scale = S.win/1440, now = Math.floor(Date.now()/1000), tick = S.tick + 1, dn = 0.85;
+  const pois = mu => { if(mu > 40) return Math.max(0, Math.round(mu + Math.sqrt(mu)*(rnd() + rnd() + rnd() - 1.5)*1.15)); let L = Math.exp(-mu), k = 0, p = 1; do { k++; p *= rnd(); } while(p > L); return k - 1; };
+  // the scenario: a regional blackout in the north, two networks limping in Haifa bay, one network down on the Gaza border
+  const hit = (la, lo, op) => { const oi = D.ops.findIndex(o => o[0] === op);
+    if(tick >= 2 && km(la, lo, 33.207, 35.570) < 13) return 0;
+    if(tick >= 2 && km(la, lo, 32.810, 35.050) < 9 && (oi === 1 || oi === 4)) return 0.28;
+    if(tick >= 3 && km(la, lo, 31.525, 34.596) < 10 && oi === 2) return 0;
+    return 1; };
+  if(!S.base.size){
+    for(const c of D.cells) D.ops.forEach(([op, name], oi) => { const n = Math.round(9000*c.w*D.share[oi]*(0.7 + 0.6*rnd())); if(n < 3) return;
+      S.base.set(c.hx + '|' + op, { hx:c.hx, op, name, n, d:Math.ceil(n/20), dh:Math.ceil(n/7), hrs:n > 120 ? 24 : n > 40 ? 14 : 6, c:Math.max(1, Math.round(c.w*4)), r:-104 + 16*rnd(), leg:Math.round(n*0.04), lts:now }); });
+    for(const s of D.sites) for(const x of s.bands) S.sBase.set(`${s.op}|${x.t}|${s.s}|${x.b}`, { op:s.op, t:x.t, s:s.s, b:x.b, n:x.n, hrs:x.n > 300 ? 24 : 12, la:s.la, lo:s.lo, lts:now - 600 });
+    S.baseAt = Date.now();
+  }
+  S.now = new Map();
+  for(const [k, r] of S.base){ const [la, lo] = h3.cellToLatLng(r.hx), f = hit(la, lo, r.op), n = pois(r.n*scale*dn*f); if(!n) continue;
+    const quality = tick >= 2 && km(la, lo, 32.794, 35.531) < 8 && r.op === D.ops[0][0];
+    S.now.set(k, { hx:r.hx, op:r.op, name:r.name, n, d:Math.ceil(n/5), c:Math.max(1, Math.round(r.c*Math.min(1, f + 0.2))), r:r.r + (rnd()-0.5)*3 - (quality ? 12 : 0), leg:Math.round(n*(quality ? 0.5 : 0.04)), lts:now - Math.floor(rnd()*90) }); }
+  const near = (la, lo) => D.cells.slice().sort((a,b) => km(a.la, a.lo, la, lo) - km(b.la, b.lo, la, lo))[0];
+  if(tick >= 2 && D.cells.length){ for(const [la, lo] of [[32.50, 35.50], [32.62, 35.55]]){ const c = near(la, lo); S.now.set(c.hx + '|416-01', { hx:c.hx, op:'416-01', name:'Demo Jordanian network', n:14, d:4, c:2, r:-108, leg:0, lts:now - 50 }); }
+    const g = near(33.0, 35.75); S.now.set(g.hx + '|417-01', { hx:g.hx, op:'417-01', name:'', n:6, d:1, c:1, r:-112, leg:0, lts:now - 70 }); }
+  S.sNow = new Map();
+  for(const [k, r] of S.sBase){ const f = hit(+r.la, +r.lo, r.op), dead = rnd() < 0.004, n = dead ? 0 : pois(r.n*scale*dn*(f < 1 && f > 0 ? (rnd() < 0.55 ? 0 : 0.6) : f)); if(n) S.sNow.set(k, { op:r.op, t:r.t, s:r.s, b:r.b, n, lts:now - 60 }); }
+  S.tl = []; const t0 = Math.floor(now/1800)*1800 - 47*1800;
+  for(let i = 0; i < 48; i++){ const t = t0 + i*1800, h = new Date(t*1000).getHours() + new Date(t*1000).getMinutes()/60, diurnal = 0.35 + 0.65*Math.max(0, Math.sin((h - 5)/19*Math.PI));
+    D.ops.forEach(([op], oi) => { const dip = (tick >= 3 && oi === 2 && i >= 46) ? 0.78 : (oi === 1 && i >= 20 && i <= 22) ? 0.6 : 1; S.tl.push({ op, t, n:0, d:Math.round(4200*D.share[oi]*diurnal*dip*(0.97 + 0.06*rnd())) }); }); }
+  S.gnss = tick >= 2 ? [{ la:32.85, lo:35.05, sla:31.75, slo:35.95, n:212, dev:14, cells:9, t1:now - 400, plmn:'425-02' }, { la:32.75, lo:35.05, sla:31.75, slo:35.95, n:64, dev:5, cells:4, t1:now - 900, plmn:'425-01' }] : [];
+}
+
+// ══════════════ INIT ══════════════
+try{ const v = localStorage.getItem('noc_plmn'); if(v) $('f-plmn').value = v; }catch(e){}
+onPlmnInput(); loadCredentials(); showArea(true);
+new ResizeObserver(() => { map.invalidateSize(); if(!S.tick) showArea(true); }).observe($('map'));
+document.addEventListener('keydown', e => { if(e.key === 'Escape' && drawer){ drawer.disable(); drawer = null; $('btn-draw').classList.remove('on'); } });
+if(/[?&]demo=1/.test(location.search)) start(true);
+</script>
+</body>
+</html>
