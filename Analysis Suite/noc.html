@@ -67,7 +67,8 @@
     #status .ok { color:#86efac; } #status .err { color:#fca5a5; }
 
     /* ── centre: map ── */
-    main { flex:1; position:relative; min-width:0; }
+    main { flex:1; display:flex; flex-direction:column; min-width:0; min-height:0; }
+    #stage { flex:1; position:relative; min-height:0; }
     #map { position:absolute; inset:0; background:#0a1220; }
     .leaflet-container { background:#0a1220; font-family:'Inter',sans-serif; }
     .ov { position:absolute; z-index:600; }
@@ -85,18 +86,31 @@
     #legend div { display:flex; align-items:center; gap:8px; margin:3px 0; }
     #legend i { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
     #legend p { margin-top:7px; padding-top:7px; border-top:1px solid var(--card-border); font-size:10px; line-height:1.45; color:var(--text-dim); }
-    #tl { left:276px; right:12px; bottom:12px; background:rgba(22,32,56,.94); border:1px solid var(--card-border); border-radius:10px; padding:8px 12px 6px; display:none; }
-    #tl .th { white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:10px; font-size:10.5px; color:var(--text-muted); margin-bottom:2px; }
+    #tl { flex-shrink:0; background:var(--card); border-top:1px solid var(--card-border); padding:6px 14px 5px; display:none; }
+    #tl .th { white-space:nowrap; overflow:hidden; display:flex; align-items:center; gap:12px; font-size:10.5px; color:var(--text-muted); cursor:pointer; user-select:none; }
     #tl .th b { color:var(--text); font-weight:600; }
-    #tl svg { display:block; width:100%; height:74px; }
+    #tl .th .material-icons { font-size:17px; color:var(--text-muted); }
+    #tl svg { display:block; width:100%; height:74px; margin-top:3px; }
+    #tl.min svg { display:none; }
+    .chips { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+    .chip { display:flex; align-items:center; gap:8px; padding:6px 8px; background:var(--navy); border:1px solid var(--card-border); border-radius:7px; cursor:pointer; min-width:0; }
+    .chip:has(input:checked) { border-color:var(--accent); background:rgba(59,130,246,.12); }
+    .chip input { accent-color:var(--accent); width:14px; height:14px; flex-shrink:0; }
+    .chip div { min-width:0; line-height:1.25; }
+    .chip b { display:block; font-size:11.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .chip span { font:10px 'JetBrains Mono',monospace; color:var(--text-muted); }
+    .pp .why { margin-top:8px; padding:7px 9px; border-left:3px solid var(--c); background:var(--navy); border-radius:0 6px 6px 0; font-size:11px; line-height:1.5; }
+    .pp .why b { color:var(--text); }
+    .pp .foot { margin-top:8px; font-size:10px; color:var(--text-dim); line-height:1.45; }
     #empty { inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; }
     #empty div { background:rgba(22,32,56,.92); border:1px solid var(--card-border); border-radius:12px; padding:20px 26px; text-align:center; color:var(--text-muted); font-size:13px; line-height:1.6; max-width:380px; }
     #empty .material-icons { font-size:32px; color:var(--accent2); display:block; margin:0 auto 6px; }
-    .area-pill { background:rgba(10,22,40,.92); border:1.5px solid var(--c); border-radius:14px; padding:3px 10px; font:600 11px 'Inter',sans-serif; color:var(--text); white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,.45); display:inline-flex; align-items:center; gap:6px; transform:translate(-50%,-150%); }
+    .area-pill { background:rgba(10,22,40,.92); border:1.5px solid var(--c); border-radius:14px; padding:3px 10px; font:600 11px 'Inter',sans-serif; color:var(--text); white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,.45); display:inline-flex; align-items:center; gap:6px; transform:translate(-50%,-150%); cursor:pointer; }
+    .area-pill small { font-weight:500; font-size:10px; color:var(--text-muted); }
     .area-pill::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--c); }
     .leaflet-popup-content-wrapper { background:var(--card); color:var(--text); border:1px solid var(--card-border); border-radius:10px; box-shadow:0 12px 32px rgba(0,0,0,.5); }
     .leaflet-popup-tip { background:var(--card); border:1px solid var(--card-border); }
-    .leaflet-popup-content { margin:11px 13px; font-size:11.5px; line-height:1.5; min-width:270px; }
+    .leaflet-popup-content { margin:11px 13px; font-size:11.5px; line-height:1.5; min-width:330px; }
     .pp h4 { font-size:12.5px; margin-bottom:2px; }
     .pp .sub { color:var(--text-muted); font-size:10.5px; margin-bottom:7px; }
     .pp table { width:100%; border-collapse:collapse; font:11px 'JetBrains Mono',monospace; }
@@ -153,7 +167,7 @@
     .st td { text-align:right; padding:4px 5px; border-top:1px solid rgba(30,58,95,.7); white-space:nowrap; }
     .st tr.r { cursor:pointer; } .st tr.r:hover td { background:rgba(59,130,246,.08); }
     .note { font-size:10.5px; color:var(--text-dim); line-height:1.5; margin-top:16px; padding-top:12px; border-top:1px solid var(--card-border); }
-    @media (max-width:1500px) { #rp { width:340px; min-width:340px; } #sb { width:264px; min-width:264px; } #legend p { display:none; } #kbar .k { padding:8px 12px; } #kbar .k b { font-size:17px; } #tl { left:12px; bottom:190px; } }
+    @media (max-width:1500px) { #rp { width:340px; min-width:340px; } #sb { width:264px; min-width:264px; } #legend p { display:none; } #kbar .k { padding:8px 12px; } #kbar .k b { font-size:17px; } }
     #demo-tag { display:none; background:rgba(245,158,11,.14); color:#fcd34d; font-size:10.5px; font-weight:700; padding:5px 16px; border-bottom:1px solid rgba(245,158,11,.35); letter-spacing:.04em; }
   </style>
 </head>
@@ -162,7 +176,7 @@
   <aside id="sb">
     <div id="sb-head">
       <h1><span class="material-icons">monitor_heart</span>Network Continuity</h1>
-      <p>Is every operator still serving every area? The last minutes against a 24-hour baseline, from crowd samples.</p>
+      <p>Is every operator still serving every area? The last hours against the 24 hours before, from crowd samples.</p>
     </div>
     <div class="tool-switcher"></div>
     <div id="sb-body">
@@ -201,7 +215,9 @@
 
       <div>
         <div class="lbl"><span class="step">2</span>Networks to monitor</div>
-        <input class="inp" id="f-plmn" value="425" placeholder="425   or   425-01, 425-02, 425-03" autocomplete="off" spellcheck="false" oninput="onPlmnInput()">
+        <div class="chips" id="plmn-list"></div>
+        <div class="hint" style="margin:5px 0 8px"><span class="link" onclick="pickAll(true)">Tick all</span> · <span class="link" onclick="pickAll(false)">Clear</span></div>
+        <input class="inp" id="f-plmn" value="" placeholder="Other networks: 416-01, 602-02" autocomplete="off" spellcheck="false" oninput="onPlmnInput(true)">
         <div class="hint" id="plmn-note"></div>
       </div>
 
@@ -236,6 +252,7 @@
   </aside>
 
   <main>
+   <div id="stage">
     <div id="map"></div>
     <div class="ov" id="kbar" style="display:none"></div>
     <div class="ov" id="focus"></div>
@@ -249,8 +266,9 @@
       <div><i style="background:none;border:2px solid #ef4444;border-radius:50%"></i>Silent site</div>
       <p>Fainter colour = only some of the operators are affected there.</p>
     </div>
-    <div class="ov" id="tl"></div>
     <div class="ov" id="empty"><div><span class="material-icons">monitor_heart</span>Choose the area and the networks, then <b>Start monitoring</b>.<br>The map fills with one cell per area, coloured by whether each network still serves it.</div></div>
+   </div>
+   <div id="tl"></div>
   </main>
 
   <aside id="rp">
@@ -273,6 +291,7 @@ const TABLE = 'measurements_year_geo', CREDS_KEY = 'clickhouse_credentials';
 
 // ══════════════ WHAT COUNTS AS A PROBLEM — tune here ══════════════
 const T = {
+  minDev: 3,        // …and only where at least this many different devices made the baseline
   minExp: 8,        // a shortfall is judged only where at least this many samples would be expected now
   down: 0.15,       // observed / expected below this = no service
   partial: 0.5,     // below this = partly down
@@ -338,13 +357,26 @@ function parsePlmns(v){
   }
   return { list, bad };
 }
-function onPlmnInput(){
-  const { list, bad } = parsePlmns($('f-plmn').value), n = $('plmn-note');
-  try{ localStorage.setItem('noc_plmn', $('f-plmn').value); }catch(e){}
-  if(bad.length){ n.className = 'hint bad'; n.textContent = `Could not read "${bad[0]}" — write a country code (425) or full PLMNs (425-01, 425-02), separated by commas.`; return null; }
-  if(!list.length){ n.className = 'hint bad'; n.textContent = 'Type at least one country code or PLMN.'; return null; }
+const PICK = ['425-01', '425-02', '425-03', '425-07', '425-08', '425-09', '425-28', '425-05', '425-06'], PICK_DEF = ['425-01', '425-02', '425-03', '425-07', '425-08', '425-09'];
+function buildPicker(){
+  let sel = null; try{ sel = JSON.parse(localStorage.getItem('noc_sel')); $('f-plmn').value = localStorage.getItem('noc_extra') || ''; }catch(e){}
+  if(!Array.isArray(sel)) sel = PICK_DEF;
+  $('plmn-list').innerHTML = PICK.map(op => `<label class="chip"><input type="checkbox" value="${op}" ${sel.includes(op) ? 'checked' : ''} onchange="onPlmnInput(true)"><div><b>${esc(KNOWN[op].split(' (')[0])}</b><span>${op}</span></div></label>`).join('');
+}
+function pickAll(on){ document.querySelectorAll('#plmn-list input').forEach(i => i.checked = on); onPlmnInput(true); }
+let _plmnT = 0;
+// The networks to monitor = the ticked ones + anything typed in "Other networks". user = the user just changed it.
+function onPlmnInput(user){
+  const sel = [...document.querySelectorAll('#plmn-list input:checked')].map(i => i.value);
+  const { list:extra, bad } = parsePlmns($('f-plmn').value), n = $('plmn-note');
+  try{ localStorage.setItem('noc_sel', JSON.stringify(sel)); localStorage.setItem('noc_extra', $('f-plmn').value); }catch(e){}
+  clearTimeout(_plmnT);
+  if(bad.length){ n.className = 'hint bad'; n.textContent = `Could not read "${bad[0]}" — write full PLMNs (416-01, 602-02) or a country code (416), separated by commas.`; return null; }
+  const list = sel.map(op => ({ mcc:+op.split('-')[0], mnc:+op.split('-')[1] })).concat(extra);
+  if(!list.length){ n.className = 'hint bad'; n.textContent = 'Tick at least one network.'; return null; }
   n.className = 'hint';
-  n.innerHTML = list.map(e => `<b>${e.mcc}${e.mnc !== undefined ? '-' + String(e.mnc).padStart(2,'0') : ''}</b>${e.mnc === undefined ? ` ${esc(MCC[e.mcc] || '')} (all its networks)` : ''}`).join(', ') + '. Every other network received here is reported as out of place.';
+  n.innerHTML = `<b>${list.length}</b> network${list.length === 1 ? '' : 's'} monitored — only these are drawn and judged. Unticked networks from this list are ignored; any other network received in the area is reported as out of place.`;
+  if(user && S.on) _plmnT = setTimeout(restart, 800);
   return list;
 }
 const monitored = op => { const [a, b] = op.split('-'); return S.mon.some(e => e.mcc === +a && (e.mnc === undefined || e.mnc === +b)); };
@@ -519,7 +551,7 @@ function compute(){
     else {
       // Crowd samples come in bursts (a few devices, a few uploads), so sample counts alone mislead. A shortfall counts
       // only if the network also shows up in far fewer half-hours than its own baseline makes likely.
-      const ratio = obs / Math.max(exp, 1e-9), short = ratio < T.partial, sure = exp >= T.minExp && binomCdf(q ? +q.hrs || 1 : 0, slots, pAct(r)) < T.pMax;
+      const ratio = obs / Math.max(exp, 1e-9), short = ratio < T.partial, sure = exp >= T.minExp && +r.d >= T.minDev && binomCdf(q ? +q.hrs || 1 : 0, slots, pAct(r)) < T.pMax;
       if(short && sure){ st = ratio < T.down ? 'down' : 'part'; why = `${obs} samples where about ${Math.round(exp)} are usual`; }
       else if(!obs) st = 'na';                    // nothing now, but too little is usual here to call it
       else if(obs >= 10 && !short){
@@ -533,7 +565,7 @@ function compute(){
   // networks that should not be here at all
   const fo = new Map();
   for(const r of S.now.values()){
-    if(monitored(r.op)) continue;
+    if(monitored(r.op) || KNOWN[r.op]) continue;   // unticked local networks are simply not shown
     const mcc = r.op.split('-')[0], cls = HOSTILE.has(mcc) ? 'hostile' : ['0','1','999'].includes(mcc) ? 'test' : 'foreign';
     const c = cell(r.hx); c.foreign.push({ op:r.op, cls, n:+r.n, d:+r.d });
     const f = fo.get(r.op) || fo.set(r.op, { op:r.op, cls, name:r.name || '', n:0, d:0, hexes:[] }).get(r.op); f.n += +r.n; f.d += +r.d; f.hexes.push(r.hx);
@@ -596,7 +628,7 @@ const hexObj = new Map();
 const COL = { ok:'#14b8a6', part:'#f59e0b', down:'#ef4444', na:'#7c8aa5' };
 function showArea(fit){ areaLayer.clearLayers(); areaNote(); const b = bbox(); if(!b) return;
   L.rectangle([[b.la0, b.lo0], [b.la1, b.lo1]], { color:'#60a5fa', weight:1, dashArray:'6 5', fill:false, interactive:false }).addTo(areaLayer);
-  if(fit && map.getSize().x > 50) map.fitBounds([[b.la0, b.lo0], [b.la1, b.lo1]], { paddingTopLeft:[20, 70], paddingBottomRight:[20, 110] }); }
+  if(fit && map.getSize().x > 50) map.fitBounds([[b.la0, b.lo0], [b.la1, b.lo1]], { paddingTopLeft:[20, 70], paddingBottomRight:[20, 20] }); }
 function startDraw(){
   if(drawer){ drawer.disable(); drawer = null; $('btn-draw').classList.remove('on'); return; }
   drawer = new L.Draw.Rectangle(map, { shapeOptions:{ color:'#60a5fa', weight:2 }, showArea:false }); drawer.enable(); $('btn-draw').classList.add('on');
@@ -625,18 +657,32 @@ function draw(){
     L.polyline([[+g.la, +g.lo], [+g.sla, +g.slo]], { renderer:rend, color:'#f472b6', weight:1 + Math.min(4, Math.log10(1 + +g.n)), opacity:0.75 }).addTo(gnssLayer)
       .bindTooltip(`${fmt(+g.dev)} devices served near ${placeName(+g.la, +g.lo)} report a position at ${(+g.sla).toFixed(2)}, ${(+g.slo).toFixed(2)} (${Math.round(km(+g.la, +g.lo, +g.sla, +g.slo))} km away)`, { sticky:true });
     L.circleMarker([+g.sla, +g.slo], { renderer:rend, radius:6, color:'#f472b6', weight:2, fill:false, interactive:false }).addTo(gnssLayer); }
-  for(const a of S.areas.slice(0, 6)) L.marker([a.la, a.lo], { interactive:false, icon:L.divIcon({ className:'', iconSize:[0,0], html:`<span class="area-pill" style="--c:${a.sev === 'down' ? COL.down : COL.part}">${esc(a.name)}</span>` }) }).addTo(pillLayer);
+  S.areas.slice(0, 6).forEach((a, i) => { const ops = [...a.ops.keys()], what = a.wide ? 'all networks' : esc(opName(ops[0])) + (ops.length > 1 ? ` +${ops.length - 1}` : '');
+    L.marker([a.la, a.lo], { icon:L.divIcon({ className:'', iconSize:[0,0], html:`<span class="area-pill" style="--c:${a.sev === 'down' ? COL.down : COL.part}" title="Click for the explanation">${esc(a.name)}<small>${what} ${a.sev === 'down' ? 'missing' : 'degraded'}</small></span>` }) }).on('click', () => areaPopup(i)).addTo(pillLayer); });
 }
 function hexPopup(hx, latlng){
   const c = S.cells.get(hx); if(!c) return;
-  const [la, lo] = h3.cellToLatLng(hx), lab = { ok:['OK', '#86efac'], deg:['Quality', '#fcd34d'], part:['Partial', '#fcd34d'], down:['No service', '#fca5a5'], na:['–', '#64748b'] };
-  const rows = S.ops.filter(op => c.ops.has(op)).map(op => { const o = c.ops.get(op), b = o.base, q = o.now;
-    return `<tr title="${esc(o.why)}"><td><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</td><td style="color:${lab[o.st][1]}">${lab[o.st][0]}</td>
-      <td>${o.obs} / ${o.exp < 10 ? o.exp.toFixed(1) : Math.round(o.exp)}</td><td>${q && q.r != null ? (+q.r).toFixed(0) : '–'} / ${b.r != null ? (+b.r).toFixed(0) : '–'}</td><td>${q ? q.c : 0} / ${b.c}</td></tr>`; }).join('');
+  const [la, lo] = h3.cellToLatLng(hx), lab = { ok:['OK', '#86efac'], deg:['Quality', '#fcd34d'], part:['Partial', '#fcd34d'], down:['No service', '#fca5a5'], na:['Too few', '#64748b'] };
+  const list = S.ops.filter(op => c.ops.has(op) && (!S.focus || op === S.focus)), hrs = S.win/60, slots = Math.max(1, Math.round(S.win/30)), num = v => v < 10 ? v.toFixed(1) : Math.round(v);
+  const rows = list.map(op => { const o = c.ops.get(op), b = o.base, q = o.now;
+    return `<tr><td><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</td><td style="color:${lab[o.st][1]}">${lab[o.st][0]}</td>
+      <td>${o.obs} / ${num(o.exp)}</td><td>${q ? q.d : 0} / ${b.d}</td><td>${q && q.r != null ? (+q.r).toFixed(0) : '–'} / ${b.r != null ? (+b.r).toFixed(0) : '–'}</td><td>${q ? q.c : 0} / ${b.c}</td></tr>`; }).join('');
+  // in words: what is wrong, and why the page thinks so
+  const bad = list.filter(op => ['down', 'part', 'deg'].includes(c.ops.get(op).st)), ok = list.filter(op => c.ops.get(op).st === 'ok'), names = l => l.map(op => esc(opName(op))).join(l.length === 2 ? ' and ' : ', ');
+  let why = bad.map(op => { const o = c.ops.get(op), b = o.base, q = o.now, col = o.st === 'down' ? COL.down : COL.part;
+    if(o.st === 'deg') return `<div class="why" style="--c:${col}"><b>${esc(opName(op))} — still serving, quality dropped.</b> ${esc(o.why)}.</div>`;
+    const usual = Math.min(slots, Math.max(1, Math.round((+b.hrs || 0)/48 * slots * Math.min(1, S.D)))), seen = q ? Math.min(slots, +q.hrs || 1) : 0;
+    const dead = S.sites.filter(x => x.op === op && h3.latLngToCell(x.la, x.lo, S.res) === hx).length;
+    return `<div class="why" style="--c:${col}"><b>${esc(opName(op))} — ${o.st === 'down' ? 'almost no samples' : 'far fewer samples than usual'}.</b> ${o.obs} sample${o.obs === 1 ? '' : 's'} in the last ${hrs} h, where about ${num(o.exp)} are usual for this place at today's level of activity. It was heard in ${seen} of the ${slots} half-hours; normally in about ${usual}.${dead ? ` ${dead} of its sites that are normally sampled here ${dead === 1 ? 'is' : 'are'} silent.` : ''}</div>`; }).join('');
+  const gone = bad.filter(op => c.ops.get(op).st !== 'deg');
+  if(gone.length)
+    why += `<div class="foot">${ok.length ? `${names(ok)} ${ok.length === 1 ? 'is' : 'are'} sampled here as usual, so people are in this area and reporting — the gap belongs to ${names(gone)}, not to the area.`
+      : 'No monitored network is sampled as usual here. Either several networks are down, or the area emptied out (closure, evacuation) — the samples cannot tell which.'} A lead to confirm, not a confirmed outage.</div>`;
   const fo = c.foreign.map(f => `<div style="color:${f.cls === 'hostile' ? '#fca5a5' : '#c4b5fd'};margin-top:5px">${f.cls === 'hostile' ? 'Hostile-nation network' : 'Out-of-place network'} <b>${esc(f.op)}</b> ${esc(MCC[f.op.split('-')[0]] || '')} · ${f.d} device${f.d === 1 ? '' : 's'} · ${f.n} samples</div>`).join('');
-  L.popup({ maxWidth:420 }).setLatLng(latlng || [la, lo]).setContent(`<div class="pp"><h4>${esc(placeName(la, lo))}</h4><div class="sub mono">${la.toFixed(3)}, ${lo.toFixed(3)} · last ${S.win/60} h against the 24 h before</div>
-    ${rows ? `<table><tr><th>Network</th><th>State</th><th>Samples now / usual</th><th>RSRP now / usual</th><th>Cells now / 24 h</th></tr>${rows}</table>` : '<div class="sub">No monitored network has a baseline here.</div>'}${fo}</div>`).openOn(map);
+  L.popup({ maxWidth:480 }).setLatLng(latlng || [la, lo]).setContent(`<div class="pp"><h4>${esc(placeName(la, lo))}</h4><div class="sub mono">${la.toFixed(3)}, ${lo.toFixed(3)} · last ${hrs} h against the 24 h before</div>
+    ${rows ? `<table><tr><th>Network</th><th>State</th><th>Samples now / usual</th><th>Devices now / 24 h</th><th>RSRP now / usual</th><th>Cells now / 24 h</th></tr>${rows}</table>` : '<div class="sub">No monitored network has a baseline here.</div>'}${why}${fo}</div>`).openOn(map);
 }
+function areaPopup(i){ const a = S.areas[i]; if(!a) return; const hx = a.hexes.find(x => hexState(S.cells.get(x), S.focus).st === 'down') || a.hexes[0]; hexPopup(hx); }
 
 // ══════════════ PANELS ══════════════
 function setPill(){
@@ -682,7 +728,7 @@ function setFocus(op){ S.focus = S.focus === op ? '' : op; map.closePopup(); com
 function flyTo(la, lo, z){ map.flyTo([la, lo], Math.max(map.getZoom(), z || 10), { duration:0.6 }); }
 function renderPanel(){
   const f = S.focus, sh = shareSeries(), B = $('rp-body');
-  if(!S.ops.length){ B.innerHTML = `<div class="none">No sample of the monitored networks in this area in the last 24 hours.<br>Check the PLMN list and the area.</div>`; return; }
+  if(!S.ops.length){ B.innerHTML = `<div class="none">No sample of the monitored networks in this area in the last 24 hours.<br>Check the ticked networks and the area.</div>`; return; }
   const v = f ? S.avail.get(f).v : S.all, col = v == null ? 'var(--text-muted)' : v >= 0.99 ? '#86efac' : v >= 0.95 ? '#fcd34d' : '#fca5a5';
   let html = `<div class="big"><b style="color:${col}">${pct(v)}</b><span>${f ? esc(opName(f)) + ' · ' + esc(f) : 'All monitored networks'}<br>availability, weighted by the devices normally in each area</span></div>`;
   // networks
@@ -738,9 +784,12 @@ function renderTimeline(){
   const lines = ops.map(op => { const m = by.get(op) || new Map(); return `<polyline points="${sh.ts.map(t => `${x(t).toFixed(1)},${(H - 14 - (H-20)*(m.get(t) || 0)/mx).toFixed(1)}`).join(' ')}" fill="none" stroke="${opColor(op)}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`; }).join('');
   const ticks = []; for(let t = Math.ceil(t0/10800)*10800; t <= t1; t += 10800) ticks.push(`<line x1="${x(t)}" y1="0" x2="${x(t)}" y2="${H-12}" stroke="#1e3a5f" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${x(t)}" y="${H-1}" fill="#64748b" font-size="10" text-anchor="middle" font-family="JetBrains Mono">${new Date(t*1000).toTimeString().slice(0,5)}</text>`);
   const wx = x(t1 + 1800 - S.win*60);  // the window sits at the right-hand end
-  el.innerHTML = `<div class="th"><b>Devices per half hour, the baseline day and now</b>${ops.map(op => `<span><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</span>`).join('')}<span style="margin-left:auto">shaded = now</span></div>
+  el.innerHTML = `<div class="th" onclick="tlToggle()" title="Show or hide the chart"><b>Devices sampled per half hour</b>${ops.map(op => `<span><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</span>`).join('')}<span style="margin-left:auto">shaded = now (last ${S.win/60} h)</span><span class="material-icons">${el.classList.contains('min') ? 'expand_less' : 'expand_more'}</span></div>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><rect x="${Math.max(0, wx)}" y="0" width="${W - Math.max(0, wx)}" height="${H-12}" fill="rgba(59,130,246,.13)"/>${ticks.join('')}${lines}</svg>`;
 }
+
+function tlToggle(){ const el = $('tl'); el.classList.toggle('min'); try{ localStorage.setItem('noc_tl_min', el.classList.contains('min') ? '1' : ''); }catch(e){} renderTimeline(); }
+try{ if(localStorage.getItem('noc_tl_min')) $('tl').classList.add('min'); }catch(e){}
 
 // ══════════════ SYNTHETIC SCENARIO (clearly labelled; fills the same tables the queries fill) ══════════════
 function demoInit(){
@@ -788,8 +837,7 @@ function demoTick(){
 }
 
 // ══════════════ INIT ══════════════
-try{ const v = localStorage.getItem('noc_plmn'); if(v) $('f-plmn').value = v; }catch(e){}
-onPlmnInput(); loadCredentials(); showArea(true);
+buildPicker(); onPlmnInput(); loadCredentials(); showArea(true);
 new ResizeObserver(() => { map.invalidateSize(); if(!S.tick) showArea(true); }).observe($('map'));
 document.addEventListener('keydown', e => { if(e.key === 'Escape' && drawer){ drawer.disable(); drawer = null; $('btn-draw').classList.remove('on'); } });
 if(/[?&]demo=1/.test(location.search)) start(true);
