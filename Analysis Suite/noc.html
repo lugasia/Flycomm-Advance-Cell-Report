@@ -206,13 +206,13 @@
       </div>
 
       <div>
-        <div class="lbl"><span class="step">3</span>Compare now with the last 24 hours</div>
+        <div class="lbl"><span class="step">3</span>Compare now with the 24 hours before</div>
         <div class="row2">
-          <select class="inp" id="f-win" title="What counts as now">
-            <option value="30">Now = last 30 min</option><option value="60" selected>Now = last hour</option><option value="120">Now = last 2 hours</option><option value="180">Now = last 3 hours</option>
+          <select class="inp" id="f-win" onchange="if(S.on) restart()" title="What counts as now. Crowd samples arrive in bursts, so a short window leaves most areas with too little to judge.">
+            <option value="120">Now = last 2 hours</option><option value="180">Now = last 3 hours</option><option value="360" selected>Now = last 6 hours</option><option value="720">Now = last 12 hours</option>
           </select>
           <select class="inp" id="f-tick" onchange="reschedule()" title="How often now is re-read. The 24-hour baseline is re-read every 30 minutes.">
-            <option value="60">Refresh every minute</option><option value="120" selected>Refresh every 2 min</option><option value="300">Refresh every 5 min</option><option value="900">Refresh every 15 min</option>
+            <option value="120">Refresh every 2 min</option><option value="300" selected>Refresh every 5 min</option><option value="900">Refresh every 15 min</option>
           </select>
         </div>
       </div>
@@ -241,10 +241,10 @@
     <div class="ov" id="focus"></div>
     <div class="ov" id="banner"></div>
     <div class="ov" id="legend">
-      <div><i style="background:#2f8f7f"></i>Serving as usual</div>
+      <div><i style="background:#14b8a6"></i>Serving as usual</div>
       <div><i style="background:#f59e0b"></i>Partly down, or quality dropped</div>
       <div><i style="background:#ef4444"></i>No service where there normally is</div>
-      <div><i style="background:#3a4a66"></i>Too few samples to tell</div>
+      <div><i style="background:#7c8aa5;opacity:.6"></i>Too few samples to tell</div>
       <div><i style="background:none;border:2px solid #a78bfa"></i>Out-of-place network received</div>
       <div><i style="background:none;border:2px solid #ef4444;border-radius:50%"></i>Silent site</div>
       <p>Fainter colour = only some of the operators are affected there.</p>
@@ -273,11 +273,10 @@ const TABLE = 'measurements_year_geo', CREDS_KEY = 'clickhouse_credentials';
 
 // ══════════════ WHAT COUNTS AS A PROBLEM — tune here ══════════════
 const T = {
-  minExp: 8,        // need at least this many samples EXPECTED now to judge an area/site at all (8 → zero by chance is 1 in 3,000)
-  minHours: 10,     // …and the network must have been seen there in at least this many of the 24 baseline hours
+  minExp: 8,        // a shortfall is judged only where at least this many samples would be expected now
   down: 0.15,       // observed / expected below this = no service
   partial: 0.5,     // below this = partly down
-  pMax: 0.0005,     // and the shortfall must be this unlikely by chance (Poisson)
+  pMax: 0.001,      // …and only when so few active half-hours would be this unlikely by chance (see compute)
   rsrpDrop: 8,      // dB below the baseline median = quality dropped
   legacyRise: 0.3,  // share of samples on 2G/3G up by this much = quality dropped
   baseEvery: 30,    // minutes between re-reads of the 24-hour baseline
@@ -350,7 +349,8 @@ function onPlmnInput(){
 }
 const monitored = op => { const [a, b] = op.split('-'); return S.mon.some(e => e.mcc === +a && (e.mnc === undefined || e.mnc === +b)); };
 const opColor = op => OPCOL[Math.max(0, S.ops.indexOf(op)) % OPCOL.length];
-const opName = op => S.names.get(op) || op;
+const KNOWN = { '425-01':'Partner', '425-02':'Cellcom', '425-03':'Pelephone', '425-05':'Jawwal', '425-06':'Ooredoo Palestine', '425-07':'HOT Mobile', '425-08':'Golan Telecom', '425-09':'We4G', '425-28':'PHI (Partner–HOT shared)' };
+const opName = op => (S.demo ? '' : KNOWN[op]) || S.names.get(op) || op;
 
 // ══════════════ SQL ══════════════
 let _cols = null;
@@ -370,34 +370,34 @@ function parts(cols, o){
   const ID = has('cell_nci') ? `if(tech = 'NR', ifNull(toString(cell_nci), ''), ifNull(toString(cell_eci), ''))` : `ifNull(toString(cell_eci), '')`;
   const LEG = `tech IN ('GSM', 'WCDMA', 'CDMA')`;
   // bin_lat / bin_lon lead the primary key; clean serving rows only; never trust a future timestamp
-  const where = mins => `timestamp > now() - INTERVAL ${mins} MINUTE AND timestamp <= now()
+  const where = (mins, upto) => `timestamp > now() - INTERVAL ${mins} MINUTE AND timestamp <= now()${upto ? ` - INTERVAL ${upto} MINUTE` : ''}
     AND bin_lat BETWEEN ${fl(b.la0)} AND ${fl(b.la1)} AND bin_lon BETWEEN ${fl(b.lo0)} AND ${fl(b.lo1)}
     AND location_lat_rounded BETWEEN ${b.la0} AND ${b.la1} AND location_lng_rounded BETWEEN ${b.lo0} AND ${b.lo1}
     AND neighborNo IS NULL${has('quality_flags') ? ` AND quality_flags = ''` : ''}`;
   const byMcc = new Map(); for(const e of o.mon){ if(!byMcc.has(e.mcc)) byMcc.set(e.mcc, []); byMcc.get(e.mcc).push(e.mnc); }
   const MON = '(' + [...byMcc].map(([m, l]) => l.includes(undefined) ? `network_mcc = ${m}` : `(network_mcc = ${m} AND toUInt32OrZero(toString(network_mnc)) IN (${l.join(', ')}))`).join(' OR ') + ')';
-  return { has, HX, OP, ID, LEG, where, MON, h3c };
+  return { has, HX, OP, ID, LEG, where, MON, h3c, win:o.win };
 }
 // One row per map cell × network. kind 'base' = the 24 hours, monitored networks; 'now' = the window, every network.
-function qHex(p, kind, mins){
-  const base = kind === 'base';
+function qHex(p, kind, mins, upto){
+  const base = kind === 'base', SLOT = `toStartOfInterval(timestamp, INTERVAL 30 MINUTE)`;
   return `SELECT ${p.HX} AS hx, ${p.OP} AS op, count() AS n, uniq(deviceInfo_deviceId) AS d,${base ? `
-      uniq(deviceInfo_deviceId, toStartOfHour(timestamp)) AS dh, uniq(toStartOfHour(timestamp)) AS hrs,` : ''}
+      uniq(deviceInfo_deviceId, toStartOfHour(timestamp)) AS dh,` : ''} uniq(${SLOT}) AS hrs,
       uniqIf(${p.ID}, ${p.ID} NOT IN (${BAD_ID})) AS c, quantileIf(0.5)(signal_rsrp, signal_rsrp < 0 AND NOT ${p.LEG}) AS r, countIf(${p.LEG}) AS leg,
       toUnixTimestamp(max(timestamp)) AS lts, topK(1)(toString(network_operator))[1] AS name
     FROM ${TABLE}
-    WHERE ${p.where(mins)}
+    WHERE ${p.where(mins, upto)}
       AND ifNull(network_mcc, 0) > 0${base ? ` AND ${p.MON}` : ''}
     GROUP BY hx, op${base ? `
     HAVING n >= 3` : ''}`;
 }
 // One row per network × site × band. A site that was sampled all day and is not sampled now is the outage signal.
-function qSites(p, kind, mins){
+function qSites(p, kind, mins, upto){
   const base = kind === 'base';
   return `SELECT ${p.OP} AS op, toString(tech) AS t, intDiv(toUInt64OrZero(${p.ID}), if(tech = 'NR', 4096, 256)) AS s, ${p.has('band_number') ? `ifNull(toString(band_number), '')` : `''`} AS b,
-      count() AS n,${base ? ` uniq(toStartOfHour(timestamp)) AS hrs, avg(location_lat_rounded) AS la, avg(location_lng_rounded) AS lo,` : ''} toUnixTimestamp(max(timestamp)) AS lts
+      count() AS n,${base ? ` uniq(toStartOfInterval(timestamp, INTERVAL 30 MINUTE)) AS hrs, avg(location_lat_rounded) AS la, avg(location_lng_rounded) AS lo,` : ''} toUnixTimestamp(max(timestamp)) AS lts
     FROM ${TABLE}
-    WHERE ${p.where(mins)}
+    WHERE ${p.where(mins, upto)}
       AND ${p.MON} AND tech IN ('LTE', 'NR') AND ${p.ID} NOT IN (${BAD_ID})
     GROUP BY op, t, s, b${base ? `
     HAVING n >= 30` : ''}`;
@@ -405,7 +405,7 @@ function qSites(p, kind, mins){
 function qTimeline(p){
   return `SELECT ${p.OP} AS op, toUnixTimestamp(toStartOfInterval(timestamp, INTERVAL 30 MINUTE)) AS t, count() AS n, uniq(deviceInfo_deviceId) AS d
     FROM ${TABLE}
-    WHERE ${p.where(1440)}
+    WHERE ${p.where(1440 + p.win)}
       AND ${p.MON}
     GROUP BY op, t
     ORDER BY t`;
@@ -446,7 +446,7 @@ function start(demo){
   if(typeof h3 === 'undefined'){ status('The H3 library could not be loaded — the map cells cannot be drawn', 'err'); return; }
   if(S.on) stop();
   Object.assign(S, { on:true, demo:!!demo, run:S.run+1, busy:false, baseAt:0, base:new Map(), now:new Map(), sBase:new Map(), sNow:new Map(), tl:[], gnss:null, ops:[], names:new Map(),
-    cells:new Map(), sites:[], foreign:[], areas:[], focus:'', bbox:b, mon, res:pickRes(b), win:+$('f-win').value || 60, demoS:null, tick:0, err:'' });
+    cells:new Map(), sites:[], foreign:[], areas:[], focus:'', bbox:b, mon, res:pickRes(b), win:+$('f-win').value || 360, demoS:null, tick:0, err:'' });
   $('demo-tag').style.display = demo ? 'block' : 'none'; $('empty').style.display = 'none';
   $('btn-run').innerHTML = '<span class="material-icons">stop</span>Stop monitoring'; $('btn-run').classList.add('stop'); $('btn-run').classList.remove('btn-primary');
   hexLayer.clearLayers(); hexObj.clear(); showArea(true); setPill(); tick(); reschedule();
@@ -465,8 +465,8 @@ async function tick(){
     else {
       const cols = await schema(), p = parts(cols, S), needBase = !S.baseAt || Date.now() - S.baseAt > T.baseEvery*60000;
       if(needBase){
-        status('Reading the 24-hour baseline…');
-        const [hb, sb, tl] = await Promise.all([ ch(qHex(p, 'base', 1440)), ch(qSites(p, 'base', 1440)).catch(e => { status('Sites baseline failed: ' + e.message.substring(0,160), 'err'); return { data:[] }; }),
+        status('Reading the 24-hour baseline (the day before the window)…');
+        const [hb, sb, tl] = await Promise.all([ ch(qHex(p, 'base', 1440 + S.win, S.win)), ch(qSites(p, 'base', 1440 + S.win, S.win)).catch(e => { status('Sites baseline failed: ' + e.message.substring(0,160), 'err'); return { data:[] }; }),
           ch(qTimeline(p)).catch(e => { status('Timeline failed: ' + e.message.substring(0,160), 'err'); return { data:[] }; }) ]);
         if(run !== S.run) return;
         S.base = new Map(hb.data.map(r => [r.hx + '|' + r.op, r])); S.sBase = new Map(sb.data.map(r => [`${r.op}|${r.t}|${r.s}|${r.b}`, r])); S.tl = tl.data; S.baseAt = Date.now();
@@ -477,7 +477,7 @@ async function tick(){
       if(run !== S.run) return;
       S.now = new Map(hn.data.map(r => [r.hx + '|' + r.op, r])); S.sNow = new Map(sn.data.map(r => [`${r.op}|${r.t}|${r.s}|${r.b}`, r]));
       if(!needBase) clearStatus();
-      status(`Now (last ${S.win} min): ${hn.data.length} rows · ${((performance.now()-t1)/1000).toFixed(1)}s · ${new Date().toTimeString().slice(0,8)}`, 'ok');
+      status(`Now (last ${S.win/60} h): ${hn.data.length} rows · ${((performance.now()-t1)/1000).toFixed(1)}s · ${new Date().toTimeString().slice(0,8)}`, 'ok');
       if($('l-gnss').checked && needBase) loadGnss();
     }
     S.tick++; S.err = ''; compute(); render();
@@ -494,7 +494,7 @@ async function loadGnss(){
 function onGnssToggle(){ if($('l-gnss').checked && S.on && !S.demo && !S.gnss) loadGnss(); else { if(!$('l-gnss').checked) $('n-gnss').textContent = 'off'; draw(); renderPanel(); } }
 
 // ══════════════ THE JUDGEMENT: now against the baseline ══════════════
-function poisCdf(k, mu){ let p = Math.exp(-mu), s = p; for(let i = 1; i <= k; i++){ p *= mu/i; s += p; } return Math.min(1, s); }
+function binomCdf(k, n, p){ if(k >= n) return 1; let s = 0, c = 1; for(let i = 0; i <= k; i++){ if(i) c *= (n - i + 1)/i; s += c * Math.pow(p, i) * Math.pow(1 - p, n - i); } return Math.min(1, s); }
 function compute(){
   const scale = S.win / 1440;
   // networks, biggest first
@@ -502,13 +502,12 @@ function compute(){
   S.ops = [...w.entries()].sort((a,b) => b[1]-a[1]).slice(0, 8).map(x => x[0]);
   // Fewer people are out at 4 am than at noon. D = how busy "now" is compared with the day's average, taken as the
   // median over all busy area × network pairs, so one outage cannot drag it down.
-  const ratios = [];
-  for(const [k, r] of S.base){ const e = +r.n * scale; if(e >= 15){ const q = S.now.get(k); ratios.push((q ? +q.n : 0) / e); } }
-  ratios.sort((a,b) => a-b);
-  const med = ratios.length ? ratios[Math.floor(ratios.length/2)] : 1;
+  let sumE = 0, sumO = 0;
+  for(const [k, r] of S.base){ sumE += +r.n * scale; const q = S.now.get(k); if(q) sumO += +q.n; }
   S.lts = 0; for(const r of S.now.values()) if(+r.lts > S.lts) S.lts = +r.lts;
-  S.stale = (S.now.size === 0) || med < 0.2 || (S.lts && Date.now()/1000 - S.lts > T.staleMin*60);
-  S.D = Math.max(0.2, Math.min(3, med || 1));
+  S.stale = (S.now.size === 0) || (S.lts > 0 && Date.now()/1000 - S.lts > T.staleMin*60);
+  S.D = sumE ? Math.max(0.05, Math.min(5, sumO/sumE)) : 1;
+  const slots = Math.max(1, Math.round(S.win/30)), pAct = r => Math.min(0.995, (+r.hrs || 0)/48 * Math.min(1, S.D));   // chance that a given half hour has a sample
   // area × network
   S.cells = new Map();
   const cell = hx => S.cells.get(hx) || S.cells.set(hx, { hx, ops:new Map(), foreign:[], w:0 }).get(hx);
@@ -516,12 +515,14 @@ function compute(){
     if(!S.ops.includes(r.op)) continue;
     const q = S.now.get(k), exp = +r.n * scale * S.D, obs = q ? +q.n : 0, wgt = (+r.dh || +r.n/8) / 24;
     let st = 'ok', why = '';
-    if(S.stale || exp < T.minExp || (+r.hrs || 24) < T.minHours) st = 'na';
+    if(S.stale) st = 'na';
     else {
-      const ratio = obs / exp, p = poisCdf(obs, exp);
-      if(ratio < T.down && p < T.pMax){ st = 'down'; why = `${obs} samples where about ${Math.round(exp)} are usual`; }
-      else if(ratio < T.partial && p < T.pMax){ st = 'part'; why = `${obs} samples where about ${Math.round(exp)} are usual`; }
-      else if(q && obs >= 10){
+      // Crowd samples come in bursts (a few devices, a few uploads), so sample counts alone mislead. A shortfall counts
+      // only if the network also shows up in far fewer half-hours than its own baseline makes likely.
+      const ratio = obs / Math.max(exp, 1e-9), short = ratio < T.partial, sure = exp >= T.minExp && binomCdf(q ? +q.hrs || 1 : 0, slots, pAct(r)) < T.pMax;
+      if(short && sure){ st = ratio < T.down ? 'down' : 'part'; why = `${obs} samples where about ${Math.round(exp)} are usual`; }
+      else if(!obs) st = 'na';                    // nothing now, but too little is usual here to call it
+      else if(obs >= 10 && !short){
         const lb = +r.leg / Math.max(1, +r.n), ln = +q.leg / obs;
         if(r.r != null && q.r != null && +q.r <= +r.r - T.rsrpDrop){ st = 'deg'; why = `signal ${(+q.r).toFixed(0)} dBm, usually ${(+r.r).toFixed(0)}`; }
         else if(ln - lb >= T.legacyRise){ st = 'deg'; why = `${Math.round(ln*100)}% of samples on 2G/3G, usually ${Math.round(lb*100)}%`; }
@@ -550,7 +551,7 @@ function compute(){
   const sm = new Map(); S.matrix = new Map();
   for(const [k, r] of S.sBase){
     if(!S.ops.includes(r.op)) continue;
-    const exp = +r.n * scale * S.D; if(S.stale || exp < T.minExp || (+r.hrs || 24) < T.minHours) continue;
+    const exp = +r.n * scale * S.D; if(S.stale || exp < T.minExp || Math.pow(1 - pAct(r), slots) >= T.pMax) continue;   // judged only if silence would be unlikely by chance
     const q = S.sNow.get(k), dn = !q || +q.n === 0, id = `${r.op}|${r.t}|${r.s}`;
     const s = sm.get(id) || sm.set(id, { id, op:r.op, t:r.t, s:r.s, la:0, lo:0, wn:0, bands:[], lts:0 }).get(id);
     s.la += +r.la * +r.n; s.lo += +r.lo * +r.n; s.wn += +r.n; s.bands.push({ b:r.b, dn, exp, n:+r.n }); if(q && +q.lts > s.lts) s.lts = +q.lts; if(dn && +r.lts > (s.blts || 0)) s.blts = +r.lts;
@@ -592,7 +593,7 @@ addDarkBasemap(map, { maxZoom: 16 });
 const rend = L.canvas({ padding: 0.3 });
 const areaLayer = L.layerGroup().addTo(map), hexLayer = L.layerGroup().addTo(map), ringLayer = L.layerGroup().addTo(map), siteLayer = L.layerGroup().addTo(map), gnssLayer = L.layerGroup().addTo(map), pillLayer = L.layerGroup().addTo(map);
 const hexObj = new Map();
-const COL = { ok:'#2f8f7f', part:'#f59e0b', down:'#ef4444', na:'#3a4a66' };
+const COL = { ok:'#14b8a6', part:'#f59e0b', down:'#ef4444', na:'#7c8aa5' };
 function showArea(fit){ areaLayer.clearLayers(); areaNote(); const b = bbox(); if(!b) return;
   L.rectangle([[b.la0, b.lo0], [b.la1, b.lo1]], { color:'#60a5fa', weight:1, dashArray:'6 5', fill:false, interactive:false }).addTo(areaLayer);
   if(fit && map.getSize().x > 50) map.fitBounds([[b.la0, b.lo0], [b.la1, b.lo1]], { paddingTopLeft:[20, 70], paddingBottomRight:[20, 110] }); }
@@ -608,7 +609,7 @@ function draw(){
   const showHex = $('l-hex').checked, live = new Set();
   for(const c of S.cells.values()){
     if(!c.ops.size && !c.foreign.length) continue;
-    const h = hexState(c, S.focus), style = { renderer:rend, stroke:true, color:'#0a1628', weight:0.6, opacity:0.9, fillColor:COL[h.st], fillOpacity: !showHex ? 0 : h.st === 'ok' ? 0.5 : h.st === 'na' ? 0.3 : 0.4 + 0.5*h.share };
+    const h = hexState(c, S.focus), style = { renderer:rend, stroke:true, color: h.st === 'na' ? '#475569' : '#0a1628', weight:0.8, opacity: showHex ? 0.9 : 0.25, fillColor:COL[h.st], fillOpacity: !showHex ? 0 : h.st === 'ok' ? 0.58 : h.st === 'na' ? 0.3 : 0.45 + 0.45*h.share };
     if(S.focus && !c.ops.has(S.focus)){ style.fillOpacity = 0; style.opacity = 0; }
     let o = hexObj.get(c.hx);
     if(!o){ o = L.polygon(h3.cellToBoundary(c.hx), style).addTo(hexLayer); o.on('click', ev => hexPopup(c.hx, ev.latlng)); hexObj.set(c.hx, o); } else o.setStyle(style);
@@ -633,7 +634,7 @@ function hexPopup(hx, latlng){
     return `<tr title="${esc(o.why)}"><td><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</td><td style="color:${lab[o.st][1]}">${lab[o.st][0]}</td>
       <td>${o.obs} / ${o.exp < 10 ? o.exp.toFixed(1) : Math.round(o.exp)}</td><td>${q && q.r != null ? (+q.r).toFixed(0) : '–'} / ${b.r != null ? (+b.r).toFixed(0) : '–'}</td><td>${q ? q.c : 0} / ${b.c}</td></tr>`; }).join('');
   const fo = c.foreign.map(f => `<div style="color:${f.cls === 'hostile' ? '#fca5a5' : '#c4b5fd'};margin-top:5px">${f.cls === 'hostile' ? 'Hostile-nation network' : 'Out-of-place network'} <b>${esc(f.op)}</b> ${esc(MCC[f.op.split('-')[0]] || '')} · ${f.d} device${f.d === 1 ? '' : 's'} · ${f.n} samples</div>`).join('');
-  L.popup({ maxWidth:420 }).setLatLng(latlng || [la, lo]).setContent(`<div class="pp"><h4>${esc(placeName(la, lo))}</h4><div class="sub mono">${la.toFixed(3)}, ${lo.toFixed(3)} · last ${S.win} min against 24 h</div>
+  L.popup({ maxWidth:420 }).setLatLng(latlng || [la, lo]).setContent(`<div class="pp"><h4>${esc(placeName(la, lo))}</h4><div class="sub mono">${la.toFixed(3)}, ${lo.toFixed(3)} · last ${S.win/60} h against the 24 h before</div>
     ${rows ? `<table><tr><th>Network</th><th>State</th><th>Samples now / usual</th><th>RSRP now / usual</th><th>Cells now / 24 h</th></tr>${rows}</table>` : '<div class="sub">No monitored network has a baseline here.</div>'}${fo}</div>`).openOn(map);
 }
 
@@ -644,7 +645,7 @@ function setPill(){
   if(S.err){ el.classList.add('late'); t.textContent = 'UPDATE FAILED'; }
   else if(S.stale && S.tick){ el.classList.add('late'); t.textContent = 'FEED BEHIND'; }
   else { el.classList.add('on'); t.textContent = 'LIVE'; }
-  $('rp-sub').textContent = S.tick ? `updated ${new Date().toTimeString().slice(0,8)} · now = last ${S.win} min` : 'reading…';
+  $('rp-sub').textContent = S.tick ? `updated ${new Date().toTimeString().slice(0,8)} · now = last ${S.win/60} h` : 'reading…';
 }
 function spark(vals, col, w, h){
   if(!vals || vals.length < 2) return '';
@@ -725,7 +726,7 @@ function renderPanel(){
         : `<div class="none">${S.gnss ? 'No group of devices reports a position far from its serving cell.' : 'Scan not finished yet.'}</div>`;
     }
   }
-  html += `<div class="note"><b>How to read this.</b> Everything is inferred from crowd samples, not from the operators' own systems. An area or site is judged only where the network was sampled through at least ${T.minHours} of the last 24 hours and at least ${T.minExp} samples would be expected now; expectation follows how busy the whole area is right now (×${S.D.toFixed(2)} of the daily average). “No service” means the samples that are normally there are missing — a lead for the NOC to confirm, not a confirmed outage.</div>`;
+  html += `<div class="note"><b>How to read this.</b> Everything is inferred from crowd samples, not from the operators' own systems. Now is the last ${S.win/60} hours; usual is the 24 hours before, scaled to how much data the whole area is sending right now (×${S.D.toFixed(2)}). Samples arrive in bursts, so a shortfall is called only where at least ${T.minExp} samples would be expected and the network shows up in far fewer half-hours than usual. Grey areas have too little data to call either way. “No service” means the samples that are normally there are missing — a lead for the NOC to confirm, not a confirmed outage.</div>`;
   B.innerHTML = html;
 }
 function renderTimeline(){
@@ -736,8 +737,8 @@ function renderTimeline(){
   let mx = 1; for(const op of ops) for(const v of (by.get(op) || new Map()).values()) if(v > mx) mx = v;
   const lines = ops.map(op => { const m = by.get(op) || new Map(); return `<polyline points="${sh.ts.map(t => `${x(t).toFixed(1)},${(H - 14 - (H-20)*(m.get(t) || 0)/mx).toFixed(1)}`).join(' ')}" fill="none" stroke="${opColor(op)}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>`; }).join('');
   const ticks = []; for(let t = Math.ceil(t0/10800)*10800; t <= t1; t += 10800) ticks.push(`<line x1="${x(t)}" y1="0" x2="${x(t)}" y2="${H-12}" stroke="#1e3a5f" stroke-width="1" vector-effect="non-scaling-stroke"/><text x="${x(t)}" y="${H-1}" fill="#64748b" font-size="10" text-anchor="middle" font-family="JetBrains Mono">${new Date(t*1000).toTimeString().slice(0,5)}</text>`);
-  const wx = x(t1 + 1800 - S.win*60);
-  el.innerHTML = `<div class="th"><b>Devices per half hour, last 24 h</b>${ops.map(op => `<span><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</span>`).join('')}<span style="margin-left:auto">shaded = now</span></div>
+  const wx = x(t1 + 1800 - S.win*60);  // the window sits at the right-hand end
+  el.innerHTML = `<div class="th"><b>Devices per half hour, the baseline day and now</b>${ops.map(op => `<span><span style="color:${opColor(op)}">●</span> ${esc(opName(op))}</span>`).join('')}<span style="margin-left:auto">shaded = now</span></div>
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><rect x="${Math.max(0, wx)}" y="0" width="${W - Math.max(0, wx)}" height="${H-12}" fill="rgba(59,130,246,.13)"/>${ticks.join('')}${lines}</svg>`;
 }
 
@@ -767,14 +768,14 @@ function demoTick(){
     return 1; };
   if(!S.base.size){
     for(const c of D.cells) D.ops.forEach(([op, name], oi) => { const n = Math.round(9000*c.w*D.share[oi]*(0.7 + 0.6*rnd())); if(n < 3) return;
-      S.base.set(c.hx + '|' + op, { hx:c.hx, op, name, n, d:Math.ceil(n/20), dh:Math.ceil(n/7), hrs:n > 120 ? 24 : n > 40 ? 14 : 6, c:Math.max(1, Math.round(c.w*4)), r:-104 + 16*rnd(), leg:Math.round(n*0.04), lts:now }); });
-    for(const s of D.sites) for(const x of s.bands) S.sBase.set(`${s.op}|${x.t}|${s.s}|${x.b}`, { op:s.op, t:x.t, s:s.s, b:x.b, n:x.n, hrs:x.n > 300 ? 24 : 12, la:s.la, lo:s.lo, lts:now - 600 });
+      S.base.set(c.hx + '|' + op, { hx:c.hx, op, name, n, d:Math.ceil(n/20), dh:Math.ceil(n/7), hrs:n > 120 ? 46 : n > 40 ? 30 : 12, c:Math.max(1, Math.round(c.w*4)), r:-104 + 16*rnd(), leg:Math.round(n*0.04), lts:now }); });
+    for(const s of D.sites) for(const x of s.bands) S.sBase.set(`${s.op}|${x.t}|${s.s}|${x.b}`, { op:s.op, t:x.t, s:s.s, b:x.b, n:x.n, hrs:x.n > 300 ? 46 : 30, la:s.la, lo:s.lo, lts:now - 600 });
     S.baseAt = Date.now();
   }
   S.now = new Map();
   for(const [k, r] of S.base){ const [la, lo] = h3.cellToLatLng(r.hx), f = hit(la, lo, r.op), n = pois(r.n*scale*dn*f); if(!n) continue;
     const quality = tick >= 2 && km(la, lo, 32.794, 35.531) < 8 && r.op === D.ops[0][0];
-    S.now.set(k, { hx:r.hx, op:r.op, name:r.name, n, d:Math.ceil(n/5), c:Math.max(1, Math.round(r.c*Math.min(1, f + 0.2))), r:r.r + (rnd()-0.5)*3 - (quality ? 12 : 0), leg:Math.round(n*(quality ? 0.5 : 0.04)), lts:now - Math.floor(rnd()*90) }); }
+    S.now.set(k, { hx:r.hx, op:r.op, name:r.name, n, hrs:Math.max(1, Math.min(Math.round(S.win/30*(f < 1 ? f : 1)), Math.ceil(n/2))), d:Math.ceil(n/5), c:Math.max(1, Math.round(r.c*Math.min(1, f + 0.2))), r:r.r + (rnd()-0.5)*3 - (quality ? 12 : 0), leg:Math.round(n*(quality ? 0.5 : 0.04)), lts:now - Math.floor(rnd()*90) }); }
   const near = (la, lo) => D.cells.slice().sort((a,b) => km(a.la, a.lo, la, lo) - km(b.la, b.lo, la, lo))[0];
   if(tick >= 2 && D.cells.length){ for(const [la, lo] of [[32.50, 35.50], [32.62, 35.55]]){ const c = near(la, lo); S.now.set(c.hx + '|416-01', { hx:c.hx, op:'416-01', name:'Demo Jordanian network', n:14, d:4, c:2, r:-108, leg:0, lts:now - 50 }); }
     const g = near(33.0, 35.75); S.now.set(g.hx + '|417-01', { hx:g.hx, op:'417-01', name:'', n:6, d:1, c:1, r:-112, leg:0, lts:now - 70 }); }
